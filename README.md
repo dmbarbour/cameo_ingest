@@ -132,8 +132,11 @@ archive.discover ─► xmi.parse_into / finalize ─► layout.parse_layout ─
 ## Development
 
 ```sh
+python3 scripts/fetch_samples.py [--small] [--strict]   # restore public sample models (~105 MB; --small ~11 MB)
 uv run pytest            # synthetic fixtures, plus smoke tests over samples/*.mdzip (<5 MB)
 ```
 
 The sample models in `samples/` are public third-party files and are gitignored; see
-`samples/SOURCES.md` for their origins and licenses.
+`samples/SOURCES.md` for their origins and licenses. `fetch_samples.py` pins each file's
+sha256 and reports when upstream content has changed. Without samples, the sample smoke
+tests are simply not collected.
