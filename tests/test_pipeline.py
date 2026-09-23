@@ -171,3 +171,30 @@ def test_llm_enrichment_is_labelled(tmp_path, monkeypatch):
     assert gen and all(c["metadata"]["provenance"]["derivation"]["method"] == "llm" for c in gen)
     extracted = [c for c in chunks if not c["metadata"]["kind"].startswith("generated:")]
     assert not any("gemma-4" in c["text"] for c in extracted)
+
+
+def test_ledger(tmp_path):
+    out = run(tmp_path, "drone.mdzip", make_mdzip())
+    ledger = (out / "drone.mdzip/LEDGER.md").read_text()
+    assert "**R-1**" in ledger and "The drone shall fly 30 min." in ledger
+    assert "satisfied by: Battery" in ledger
+    assert "Drone BDD" in ledger and "SysML Block Definition Diagram" in ledger
+    assert "drone.mdzip/LEDGER.md" in (out / "LEDGER.md").read_text()
+
+    chunks = [json.loads(line) for line in (out / "chunks.jsonl").open()]
+    kinds = {c["metadata"]["kind"] for c in chunks}
+    assert {"ledger:projects", "ledger:packages", "ledger:diagrams", "ledger:requirements",
+            "ledger:elements"} <= kinds
+    req = next(c for c in chunks if c["metadata"]["kind"] == "ledger:requirements")
+    # Self-describing header, no link noise, and ids row-for-row for the application.
+    assert "Model::Requirements" in req["text"] and "drone.mdzip" in req["text"]
+    assert "](" not in req["text"]
+    assert req["metadata"]["element_ids"] == ["r1"]
+    assert req["metadata"]["provenance"]["xmi_id"] == "p2"
+
+
+def test_ledger_natural_sort_and_split():
+    from cameo_ingest.ledger import _natural_key
+
+    ids = ["REQ.1.10", "REQ.1.2", "REQ.1", "REQ.2"]
+    assert sorted(ids, key=_natural_key) == ["REQ.1", "REQ.1.2", "REQ.1.10", "REQ.2"]

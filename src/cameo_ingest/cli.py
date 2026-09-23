@@ -10,10 +10,10 @@ from pathlib import Path
 
 from . import __version__
 from .archive import UnsupportedInput, discover
-from .emit import slug
 from .llm import LLM, LLMConfig
 from .pipeline import ingest_project
-from .provenance import RunInfo, SourceInfo, sha256_bytes, utc_now
+from .provenance import RunInfo, SourceInfo, Trace, sha256_bytes, sha256_text, utc_now
+from .text import front_matter, slug
 
 log = logging.getLogger("cameo_ingest")
 
@@ -28,6 +28,33 @@ def _parse_meta(pairs: list[str], files: list[str]) -> dict:
         k, v = p.split("=", 1)
         meta[k.strip()] = v
     return meta
+
+
+def write_root_ledger(out: Path, run: RunInfo, projects: list[dict]) -> dict:
+    """Top-level LEDGER.md: which projects this source file contained, and where."""
+    src = run.source
+    lines = [f"# Ledger: {Path(src.path).name}", "",
+             f"Source file `{src.path}` (sha256 `{src.sha256}`) contains {len(projects)} Cameo project(s).", ""]
+    if src.metadata:
+        lines += ["Source metadata: " + ", ".join(f"{k}={v}" for k, v in src.metadata.items()), ""]
+    for p in projects:
+        lines.append(f"- [{p['name']}]({p['dir']}/LEDGER.md) — archive path `{'!'.join(p['container'])}`; "
+                     f"saved by {p['exporter'].get('exporterVersion', 'unknown version')}; "
+                     f"{p['elements']} elements, {p['diagrams']} diagrams, {p['requirements']} requirements")
+    text = "\n".join(lines) + "\n"
+    trace = Trace(source_sha256=src.sha256)
+    fm = front_matter({"title": f"Ledger {Path(src.path).name}", "kind": "ledger",
+                       "provenance": {"source_path": src.path, "source_sha256": src.sha256,
+                                      "source_metadata": src.metadata, "run_id": run.run_id,
+                                      "tool": run.tool, "trace": trace.to_dict()}})
+    (out / "LEDGER.md").write_text(fm + text, encoding="utf-8")
+    return {
+        "id": sha256_text(f"{src.sha256}|ledger:projects")[:24],
+        "title": f"Projects in {Path(src.path).name}",
+        "text": text,
+        "metadata": {"kind": "ledger:projects", "file": "LEDGER.md", "source_metadata": src.metadata,
+                     "provenance": trace.to_dict()},
+    }
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -99,6 +126,10 @@ def main(argv: list[str] | None = None) -> int:
         for c in result.outputs.chunks:
             c["metadata"]["file"] = f"{name}/{c['metadata']['file']}"
             all_chunks.append(c)
+
+    root_ledger = write_root_ledger(out, run, manifest["projects"])
+    all_chunks.append(root_ledger)
+    manifest["files"].append({"path": "LEDGER.md", "sha256": sha256_bytes((out / "LEDGER.md").read_bytes())})
 
     with (out / "chunks.jsonl").open("w", encoding="utf-8") as f:
         for c in all_chunks:

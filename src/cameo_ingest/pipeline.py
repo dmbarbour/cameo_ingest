@@ -155,7 +155,6 @@ def ingest_project(run: RunInfo, project: Project, root: Path, llm: LLM, render:
                 annotations.setdefault(pkg_id, []).append(
                     Annotation("Summary", summary, tr.with_(derivation=deriv)))
 
-    out = writer.write_all()
     if image_notes:
         lines = ["# Embedded images", ""]
         for entry, rel, tr, desc in image_notes:
@@ -168,7 +167,8 @@ def ingest_project(run: RunInfo, project: Project, root: Path, llm: LLM, render:
                              el=None, trace=tr.with_(derivation=deriv))
             lines += [f"<sub>trace: `{tr.locator()}`</sub>", ""]
         writer.write_text("images.md", "\n".join(lines))
-        writer.write_indices()  # refresh chunks.jsonl with the image chunks
+
+    out = writer.write_all()
 
     summary = {
         "name": project.name,

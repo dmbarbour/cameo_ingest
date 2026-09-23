@@ -61,11 +61,19 @@ class ModelIndex:
     namespaces: dict[str, str] = field(default_factory=dict)  # prefix -> uri
     exporter: dict[str, str] = field(default_factory=dict)
     external_refs: set[str] = field(default_factory=set)  # href targets outside this project
+    _qn_cache: dict[str, str] = field(default_factory=dict, repr=False)
 
     def get(self, id_: str | None) -> Element | None:
         return self.elements.get(id_) if id_ else None
 
     def qualified_name(self, id_: str) -> str:
+        # Cached: the index is not modified once parsing has finished.
+        qn = self._qn_cache.get(id_)
+        if qn is None:
+            qn = self._qn_cache[id_] = self._qualified_name(id_)
+        return qn
+
+    def _qualified_name(self, id_: str) -> str:
         parts = []
         seen = set()
         cur = self.elements.get(id_)

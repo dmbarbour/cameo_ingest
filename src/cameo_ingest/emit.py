@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import csv
 import json
-import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -30,8 +29,10 @@ from . import diagrams as dg
 from . import semantics as sem
 from .archive import Project
 from .layout import Layout
+from .ledger import LedgerWriter
 from .model import Element, ModelIndex
 from .provenance import RunInfo, Trace, sha256_text
+from .text import front_matter, md_escape, slug
 
 SKIP_MEMBER_ROLES = {
     "ownedComment", "lowerValue", "upperValue", "defaultValue", "specification",
@@ -53,21 +54,6 @@ class Annotation:
 class Outputs:
     files: list[Path] = field(default_factory=list)
     chunks: list[dict[str, Any]] = field(default_factory=list)
-
-
-def slug(text: str, maxlen: int = 80) -> str:
-    s = re.sub(r"[^A-Za-z0-9._-]+", "_", text).strip("._")
-    return (s or "unnamed")[:maxlen]
-
-
-def front_matter(meta: dict[str, Any]) -> str:
-    # JSON values are valid YAML 1.2, which keeps this dependency-free and unambiguous.
-    lines = ["---"] + [f"{k}: {json.dumps(v, ensure_ascii=False)}" for k, v in meta.items()] + ["---", ""]
-    return "\n".join(lines)
-
-
-def md_escape(text: str) -> str:
-    return text.replace("\r\n", "\n").strip()
 
 
 class ProjectWriter:
@@ -200,6 +186,7 @@ class ProjectWriter:
         for dia_id, rel in self.dia_file.items():
             self.write_diagram(dia_id, rel)
         self.write_readme()
+        LedgerWriter(self).write()
         self.write_tables()
         self.write_indices()
         return self.out
