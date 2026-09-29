@@ -15,6 +15,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from .layout import Layout, View
 from .model import ModelIndex
+from .text import md_inline
 
 MAX_SIDE = 2000
 MARGIN = 20
@@ -50,7 +51,7 @@ def element_label(ix: ModelIndex, v: View) -> str:
             tid = next(tgt for r, tgt in el.refs if r == "type")
             name = f"{name} : {ix.label(tid)}"
         pre = f"«{st[0]}» " if st else ""
-        return (pre + name).strip() or f"<{el.kind}>"
+        return (pre + name).strip() or f"({el.kind})"
     if v.element:  # element from a used project / library
         return v.element.rsplit("#", 1)[-1] if "#" in v.element else v.element
     return v.text or ""
@@ -81,12 +82,12 @@ def describe(ix: ModelIndex, layout: Layout, link) -> tuple[list[str], list[str]
             # Linkable elements (blocks, requirements...) get a link; features such as
             # parts and ports read better as "«stereotype» name : Type".
             linked = link(v.element)
-            base = linked if linked.startswith("[") else element_label(ix, v)
+            base = linked if linked.startswith("[") else md_inline(element_label(ix, v))
         else:
-            base = element_label(ix, v) or v.cls
+            base = md_inline(element_label(ix, v)) or v.cls
         owner = _anchor_owner(v, by_id)
         if owner is not None and v.cls in ("Pin", "Port", "ObjectNode", "ParameterNode"):
-            return f"{element_label(ix, owner) or owner.cls}.{base}"
+            return f"{md_inline(element_label(ix, owner)) or owner.cls}.{base}"
         return base
 
     nodes = []
@@ -96,7 +97,7 @@ def describe(ix: ModelIndex, layout: Layout, link) -> tuple[list[str], list[str]
         if not v.element and not v.text:
             continue
         indent = "  " * max(0, v.depth - (1 if _in_frame(v, by_id) else 0))
-        label = ref(v) if v.element else f'"{v.text}"'
+        label = ref(v) if v.element else f'"{md_inline(v.text or "")}"'
         nodes.append(f"{indent}- {v.cls}: {label}")
     edge_lines = []
     for e in edges(layout):
@@ -105,8 +106,8 @@ def describe(ix: ModelIndex, layout: Layout, link) -> tuple[list[str], list[str]
         if v.element and v.element in ix.elements:
             el = ix.elements[v.element]
             st = ix.stereotype_names(el.id)
-            name = " ".join([f"«{s}»" for s in st] + ([el.name] if el.name else []))
-            conveyed = [ix.label(t) for r, t in el.refs if r == "conveyed"]
+            name = " ".join([f"«{s}»" for s in st] + ([md_inline(el.name)] if el.name else []))
+            conveyed = [md_inline(ix.label(t)) for r, t in el.refs if r == "conveyed"]
             if conveyed:
                 name += f" (conveys {', '.join(conveyed)})"
         arrow = "→" if v.cls in DIRECTED else "—"

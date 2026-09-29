@@ -44,6 +44,7 @@ MODEL = """<?xml version='1.0' encoding='UTF-8'?>
    <packagedElement xmi:type='uml:Class' xmi:id='b2' name='Battery'/>
    <packagedElement xmi:type='uml:Class' xmi:id='long1' name='LONG alpha'/>
    <packagedElement xmi:type='uml:Class' xmi:id='long2' name='LONG beta'/>
+   <packagedElement xmi:type='uml:Class' xmi:id='odd' name='Cell [A*] &lt;v2&gt;'/>
   </packagedElement>
   <packagedElement xmi:type='uml:Package' xmi:id='p2' name='Requirements'>
    <packagedElement xmi:type='uml:Class' xmi:id='r1' name='Endurance'/>
@@ -116,8 +117,9 @@ def check_invariants(out: Path) -> None:
         text = md.read_text(encoding="utf-8")
         head = text.split("\n---\n", 1)[0]
         assert head.startswith("---\n") and "provenance:" in head, md
-        dup = [a for a, n in Counter(re.findall(r"\{#([^}]+)\}", text)).items() if n > 1]
+        dup = [a for a, n in Counter(re.findall(r'<a id="([^"]+)"></a>', text)).items() if n > 1]
         assert not dup, (md, dup[:3])
+        assert "<unnamed>" not in text and "{#" not in text, md  # placeholders and anchors (BASE-009)
     for f in out.rglob("*.csv"):
         with f.open(encoding="utf-8", newline="") as fh:
             assert all(r.get("trace", "").startswith("sha256:") for r in csv.DictReader(fh)), f
@@ -166,7 +168,17 @@ def test_mdzip_end_to_end(tmp_path):
 
     pkg = (proj / "packages/Model__Structure.md").read_text()
     assert "A delivery drone." in pkg and "battery" in pkg and "[1..2]" in pkg
-    assert "-long1}" in pkg and "-long2}" in pkg  # anchors keep the id after long names (BASE-003)
+    assert '-long1"></a>' in pkg and '-long2"></a>' in pkg  # anchors keep the id after long names (BASE-003)
+    assert "## «Block» Drone\n" in pkg  # no anchor syntax in headings (BASE-009R2)
+    assert "## Cell \\[A\\*\\] \\<v2>\n" in pkg  # names are escaped (BASE-009R3)
+    ledger = [json.loads(line) for line in (out / "chunks.jsonl").open()]
+    elements = next(c for c in ledger if c["metadata"]["kind"] == "ledger:elements" and "Structure" in c["text"])
+    assert "Cell [A*] <v2>" in elements["text"]  # ...but plain in chunk text
+    from cameo_ingest.archive import discover
+    from cameo_ingest.pipeline import parse_project
+
+    ix = parse_project(next(discover(make_mdzip(), "drone.mdzip")))
+    assert ix.label("s1") == "(Abstraction)"  # not an HTML-like "<Abstraction>" (BASE-009R1)
 
 
 def test_provenance_everywhere(tmp_path):

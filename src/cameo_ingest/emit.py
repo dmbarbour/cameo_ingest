@@ -32,7 +32,7 @@ from .layout import Layout
 from .ledger import LedgerWriter
 from .model import Element, ModelIndex
 from .provenance import RunInfo, Trace, sha256_text
-from .text import front_matter, md_escape, slug
+from .text import front_matter, md_escape, md_inline, slug
 
 DIAGRAM_INFO = "DiagramInfo"  # MagicDraw_Profile stereotype holding a diagram's author and dates
 SKIP_MEMBER_ROLES = {
@@ -147,7 +147,7 @@ class ProjectWriter:
         return f"{slug(el.name or el.kind, 80).lower()}-{slug(el.id, 200)}"
 
     def link(self, target_id: str, from_file: str) -> str:
-        label = self.ix.label(target_id)
+        label = md_inline(self.ix.label(target_id))
         dest = self.file_of.get(target_id)
         if not dest:
             return label
@@ -201,8 +201,8 @@ class ProjectWriter:
         ix = self.ix
         st = ix.stereotype_names(el.id)
         st_txt = " ".join(f"«{s}»" for s in st)
-        title = f"{st_txt + ' ' if st_txt else ''}{el.name or '<unnamed>'}"
-        lines = [f'{"#" * level} {title} {{#{self.anchor(el)}}}', ""]
+        title = f"{st_txt + ' ' if st_txt else ''}{md_inline(el.name) if el.name else '(unnamed)'}"
+        lines = [f'{"#" * level} {title}', ""]
         lines.append(f"- **Kind:** {el.kind}")
         qn = ix.qualified_name(el.id)
         if qn:
@@ -244,7 +244,7 @@ class ProjectWriter:
         if rels:
             lines.append("**Relationships:**")
             for r in rels:
-                conveyed = [ix.label(t) for t in sem.refs(ix.elements[r.id], "conveyed")]
+                conveyed = [md_inline(ix.label(t)) for t in sem.refs(ix.elements[r.id], "conveyed")]
                 extra = f" (conveys {', '.join(conveyed)})" if conveyed else ""
                 if r.source == el.id:
                     lines.append(f"- {r.kind} → {self.link(r.target, from_file)}{extra}")
@@ -311,7 +311,7 @@ class ProjectWriter:
             if st:
                 desc += " " + " ".join(f"«{s}»" for s in st)
             if c.name:
-                desc += f" **{c.name}**"
+                desc += f" **{md_inline(c.name)}**"
             t = sem.refs(c, "type")
             if t:
                 desc += f" : {self.link(t[0], from_file)}"
@@ -326,11 +326,11 @@ class ProjectWriter:
             if c.kind == "Slot":
                 feat = sem.refs(c, "definingFeature")
                 vals = [sem.value_text(ix, v) for v in sem.children(ix, c, "value")]
-                desc = f"{indent}- slot {ix.label(feat[0]) if feat else '?'} = {', '.join(v or '' for v in vals)}"
+                desc = f"{indent}- slot {md_inline(ix.label(feat[0])) if feat else '?'} = {', '.join(v or '' for v in vals)}"
             if c.kind in sem.RELATIONSHIP_KINDS:
                 r = self.rel_by_id.get(c.id)
                 if r:
-                    desc += f": {ix.label(r.source)} → {ix.label(r.target)}"
+                    desc += f": {md_inline(ix.label(r.source))} → {md_inline(ix.label(r.target))}"
             spec = sem.value_text(ix, next(iter(sem.children(ix, c, "specification")), None))
             if spec:
                 desc += f" — `{spec}`"
@@ -362,7 +362,7 @@ class ProjectWriter:
         self.generated_chunks(pkg, rel)
         # Every non-package section element whose nearest package is this one.
         for el in self._section_elements_in(pkg):
-            body.append(self.section(el, rel, 2))
+            body += [f'<a id="{self.anchor(el)}"></a>\n', self.section(el, rel, 2)]
             anchor = f"{rel}#{self.anchor(el)}"
             self.chunk(kind="requirement" if sem.is_requirement(ix, el) else "element",
                        title=f"{el.kind} {ix.qualified_name(el.id)}", text=self.section(el, rel, 2, generated=False),
@@ -394,7 +394,7 @@ class ProjectWriter:
         d = ix.diagrams[dia_id]
         el = ix.elements[dia_id]
         qn = ix.qualified_name(dia_id)
-        lines = [f"# Diagram: {d.name or dia_id}", ""]
+        lines = [f"# Diagram: {md_inline(d.name or dia_id)}", ""]
         lines.append(f"- **Diagram type:** {d.diagram_type or 'unknown'}")
         if d.uml_type and d.uml_type != d.diagram_type:
             lines.append(f"- **UML diagram kind:** {d.uml_type}")
@@ -469,7 +469,7 @@ class ProjectWriter:
         st_counts: dict[str, int] = defaultdict(int)
         for a in ix.stereotypes.values():
             st_counts[a.name] += 1
-        lines = [f"# Cameo project: {self.project.name}", ""]
+        lines = [f"# Cameo project: {md_inline(self.project.name)}", ""]
         if self.run.source.metadata:
             lines.append("**Source metadata:** " + ", ".join(f"{k}={v}" for k, v in self.run.source.metadata.items()))
             lines.append("")

@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 
 from . import semantics as sem
 from .model import Element
-from .text import front_matter, md_escape
+from .text import front_matter, md_escape, md_inline, md_plain
 
 if TYPE_CHECKING:
     from .emit import ProjectWriter
@@ -39,7 +39,7 @@ REQ_LINKS = {
 }
 
 FILE = "LEDGER.md"
-_MD_LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")
+_MD_LINK = re.compile(r"\[((?:\\.|[^\]\\])+)\]\([^)]*\)")
 
 
 def _clip(text: str, n: int) -> str:
@@ -88,7 +88,7 @@ class LedgerWriter:
         d = self.ix.diagrams[dia_id]
         row = f"- {self.w.link(dia_id, FILE)} — {d.diagram_type or 'diagram'}"
         if d.owner and d.owner in self.ix.elements and self.ix.elements[d.owner].kind not in sem.PACKAGE_KINDS:
-            row += f"; context {self.ix.label(d.owner)}"
+            row += f"; context {md_inline(self.ix.label(d.owner))}"
         if d.shown:
             row += f"; {len(d.shown)} elements shown"
         return row
@@ -106,7 +106,7 @@ class LedgerWriter:
                 continue
             incoming = r.target == el.id
             phrases = REQ_LINKS.get(r.kind.lower(), (f"{r.kind} from", f"{r.kind} to"))
-            links[phrases[0] if incoming else phrases[1]].append(self.ix.label(r.source if incoming else r.target))
+            links[phrases[0] if incoming else phrases[1]].append(md_inline(self.ix.label(r.source if incoming else r.target)))
         if links:
             row += " (" + "; ".join(f"{k}: {', '.join(v[:6])}{' …' if len(v) > 6 else ''}"
                                     for k, v in links.items()) + ")"
@@ -134,7 +134,7 @@ class LedgerWriter:
         parts: list[list[tuple[str, str]]] = [[]]
         size = 0
         for eid, r in items:
-            plain = _MD_LINK.sub(r"\1", r)
+            plain = md_plain(_MD_LINK.sub(r"\1", r))
             if parts[-1] and (len(parts[-1]) >= MAX_ROWS or size + len(plain) > MAX_CHARS):
                 parts.append([])
                 size = 0

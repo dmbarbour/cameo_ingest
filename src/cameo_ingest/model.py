@@ -105,4 +105,4 @@ class ModelIndex:
         if el.name:
             return el.name
         # Unnamed relationships and literals: describe by type.
-        return f"<{el.kind}>"
+        return f"({el.kind})"
