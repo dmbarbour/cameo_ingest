@@ -32,3 +32,9 @@ line-length = 120
 # Enrichment and per-stream parsing deliberately catch broad exceptions so one bad
 # stream or LLM call never aborts an ingest.
 ignore = ["BLE001"]
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: runs on large sample models (minutes); run with `pytest -m slow`",
+]
+addopts = "-m 'not slow'"

@@ -29,13 +29,17 @@ log = logging.getLogger(__name__)
 
 SCALAR_ATTRS_NEVER_REFS = {"name", "body", "value", "visibility", "aggregation", "Text", "Id"}
 
+# Only the bare versioned namespaces, e.g. http://www.omg.org/spec/UML/20131001 or
+# http://schema.omg.org/spec/XMI/2.1. Cameo declares profiles below the UML namespace
+# (.../UML/20131001/StandardProfile, .../MagicDrawProfile); those must keep their own prefix.
+_OMG_NS = re.compile(r"https?://(?:www|schema)\.omg\.org/spec/(UML|XMI)/[\d.]+/?")
+
 
 def _prefix_for(uri: str, uri2prefix: dict[str, str]) -> str:
     # Normalize the versioned OMG namespaces so downstream code can rely on "uml"/"xmi".
-    if re.search(r"omg\.org/spec/UML/\d+", uri) or uri.startswith("http://schema.omg.org/spec/UML"):
-        return "uml"
-    if re.search(r"omg\.org/spec/XMI/\d+", uri) or uri.startswith("http://schema.omg.org/spec/XMI"):
-        return "xmi"
+    m = _OMG_NS.fullmatch(uri)
+    if m:
+        return m.group(1).lower()
     return uri2prefix.get(uri, uri)
 
 
@@ -283,6 +287,13 @@ def finalize(index: ModelIndex) -> None:
                 el.attrs[k] = to_text(v)
     for app in index.stereotypes.values():
         for k, vals in app.tags.items():
-            app.tags[k] = [to_text(v) if "<" in v and is_html(v) else v for v in vals]
+            out: list[str] = []
+            for v in vals:
+                toks = v.split()
+                if len(toks) > 1 and all(t in ids for t in toks):
+                    out += toks  # an id list stored as one attribute, e.g. a table's scope
+                else:
+                    out.append(to_text(v) if "<" in v and is_html(v) else v)
+            app.tags[k] = out
     for dia in index.diagrams.values():
         dia.shown = list(dict.fromkeys(s for s in dia.shown if s in ids))

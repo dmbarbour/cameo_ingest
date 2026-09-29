@@ -80,16 +80,27 @@ def _check_member(info: zipfile.ZipInfo) -> None:
         raise UnsupportedInput(f"member {info.filename!r} has a suspicious compression ratio")
 
 
-_XMI_ROOT = re.compile(rb"<(?:[A-Za-z_][\w.-]*:)?(?:XMI|Model|Package)[\s>/]")
+_START_TAG = re.compile(rb"<([A-Za-z_][\w.-]*(?::[A-Za-z_][\w.-]*)?)[\s>/]")
+_COMMENT = re.compile(rb"<!--.*?-->", re.DOTALL)
+_XMI_ROOTS = {"XMI", "Model", "Package"}
+
+
+def first_tag(head: bytes) -> str | None:
+    """Qualified name of the first element start tag in `head` (the first bytes of an
+    XML document), skipping any BOM, XML declaration, comments and doctype. None if
+    `head` does not look like XML."""
+    head = head.lstrip(b"\xef\xbb\xbf \t\r\n")
+    if not head.startswith(b"<"):
+        return None
+    head = _COMMENT.sub(b"", head)
+    m = _START_TAG.search(head)
+    return m.group(1).decode("ascii") if m else None
 
 
 def sniff_xmi(head: bytes) -> bool:
     """True if the first bytes look like an XMI document (root xmi:XMI or uml:Model)."""
-    head = head.lstrip(b"\xef\xbb\xbf \t\r\n")
-    if not head.startswith(b"<"):
-        return False
-    m = re.search(rb"<(?![?!])", head)  # first element start tag
-    return bool(m and _XMI_ROOT.match(head, m.start()) and b"xmi" in head)
+    tag = first_tag(head)
+    return bool(tag and tag.split(":")[-1] in _XMI_ROOTS and b"xmi" in head)
 
 
 def _xmi_entries(zf: zipfile.ZipFile) -> list[str]:

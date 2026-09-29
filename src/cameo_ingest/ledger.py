@@ -36,7 +36,6 @@ REQ_LINKS = {
     "trace": ("traced from", "traces to"),
     "copy": ("copied by", "copies"),
     "allocate": ("allocated from", "allocated to"),
-    "containment": ("contained in", "contains"),
 }
 
 FILE = "LEDGER.md"

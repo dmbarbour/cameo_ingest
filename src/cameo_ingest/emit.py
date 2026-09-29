@@ -34,6 +34,7 @@ from .model import Element, ModelIndex
 from .provenance import RunInfo, Trace, sha256_text
 from .text import front_matter, md_escape, slug
 
+DIAGRAM_INFO = "DiagramInfo"  # MagicDraw_Profile stereotype holding a diagram's author and dates
 SKIP_MEMBER_ROLES = {
     "ownedComment", "lowerValue", "upperValue", "defaultValue", "specification",
     "generalization", "interfaceRealization", "ownedDiagram",
@@ -141,7 +142,9 @@ class ProjectWriter:
                     self.file_of[el.id] = f"{self.pkg_file[pkg.id]}#{self.anchor(el)}"
 
     def anchor(self, el: Element) -> str:
-        return slug(f"{el.name or el.kind}-{el.id}", 120).lower()
+        # Only the name part is shortened, so the id always keeps anchors unique. Ids keep
+        # their case: EMF-style ids (e.g. "_2VHvQXmuEe6Klrv3p62i1g") are case-sensitive.
+        return f"{slug(el.name or el.kind, 80).lower()}-{slug(el.id, 200)}"
 
     def link(self, target_id: str, from_file: str) -> str:
         label = self.ix.label(target_id)
@@ -398,6 +401,9 @@ class ProjectWriter:
         if d.owner:
             lines.append(f"- **Owner / context:** {self.link(d.owner, rel)}")
         lines.append(f"- **Qualified name:** `{qn}`")
+        for app in ix.applications(dia_id, DIAGRAM_INFO):  # author and dates
+            for k, vals in app.tags.items():
+                lines.append(f"- **{k.replace('_', ' ')}:** {', '.join(vals)}")
         lines.append("")
         doc = sem.documentation(ix, el)
         if doc:
@@ -411,7 +417,10 @@ class ProjectWriter:
                 lines += [f"**Connections ({len(edges)}):**"] + edges + [""]
         tbl = self.table_config(el)
         if tbl:
-            lines += ["**Table / matrix configuration** (rows are computed by Cameo and not stored in the file):"]
+            if any(w in (d.diagram_type or "") for w in ("Table", "Matrix")):
+                lines.append("**Table / matrix configuration** (rows are computed by Cameo and not stored in the file):")
+            else:
+                lines.append("**Stereotypes and tagged values:**")
             lines += tbl + [""]
         if d.shown and layout is None:
             lines.append(f"**Elements shown ({len(d.shown)}):**")
@@ -439,9 +448,12 @@ class ProjectWriter:
         self.write_text(rel, fm + text)
 
     def table_config(self, el: Element) -> list[str]:
-        """Settings of generic tables / matrices, stored as a stereotype on the diagram."""
+        """Stereotypes on a diagram other than DiagramInfo; for tables and matrices, these
+        hold the configuration (scope, row types, columns)."""
         out = []
         for app in self.ix.applications(el.id):
+            if app.name == DIAGRAM_INFO:
+                continue
             for k, vals in app.tags.items():
                 shown = [self.ix.qualified_name(v) or v if v in self.ix.elements else v for v in vals]
                 if len(shown) > 12:

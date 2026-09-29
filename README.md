@@ -165,10 +165,13 @@ archive.discover ─► xmi.parse_into / finalize ─► layout.parse_layout ─
 
 ```sh
 python3 scripts/fetch_samples.py [--small] [--strict]   # restore public sample models (~105 MB; --small ~11 MB)
-uv run pytest            # synthetic fixtures, plus smoke tests over samples/*.mdzip (<5 MB)
+uv run pytest            # synthetic fixtures, plus the samples under 5 MB (about 10 s)
+uv run pytest -m slow    # the large samples: TMT, TMT-2024x, SAF_FFDS, SAF_Plugin (about 1 min)
 ```
 
 The sample models in `samples/` are public third-party files and are gitignored; see
 `samples/SOURCES.md` for their origins and licenses. `fetch_samples.py` pins each file's
-sha256 and reports when upstream content has changed. Without samples, the sample smoke
-tests are simply not collected.
+sha256 and reports when upstream content has changed. Without samples, the sample tests
+are simply not collected. Every sample run is checked for the same output invariants
+(unique chunk ids and anchors, provenance on every file and row, LLM text only in labelled
+chunks), and a few samples have pinned counts.
