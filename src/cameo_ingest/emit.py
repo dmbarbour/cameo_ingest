@@ -91,14 +91,12 @@ class ProjectWriter:
 
     def file_provenance(self, **extra: Any) -> dict[str, Any]:
         return {
-            "source_path": self.run.source.path,
+            "source_name": self.run.source.name,
             "source_sha256": self.run.source.sha256,
             "source_metadata": self.run.source.metadata,
             "container": list(self.project.trace_container),
             "model_entries": self.project.model_entries,
             "exporter": self.ix.exporter,
-            "run_id": self.run.run_id,
-            "generated": self.run.started,
             "tool": self.run.tool,
             **extra,
         }
@@ -474,7 +472,7 @@ class ProjectWriter:
             lines.append("**Source metadata:** " + ", ".join(f"{k}={v}" for k, v in self.run.source.metadata.items()))
             lines.append("")
         exp = ", ".join(f"{k}: {v}" for k, v in ix.exporter.items())
-        lines += [f"- **Source file:** `{self.run.source.path}` (sha256 `{self.run.source.sha256}`)",
+        lines += [f"- **Source file:** `{self.run.source.name}` (sha256 `{self.run.source.sha256}`)",
                   f"- **Archive path:** `{'!'.join(self.project.trace_container) or self.project.name}`",
                   f"- **Exporter:** {exp or 'unknown'}",
                   (f"- **Elements:** {len(ix.elements)}; **diagrams:** {len(ix.diagrams)}; "

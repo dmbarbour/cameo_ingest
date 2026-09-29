@@ -33,8 +33,8 @@ def _parse_meta(pairs: list[str], files: list[str]) -> dict:
 def write_root_ledger(out: Path, run: RunInfo, projects: list[dict]) -> dict:
     """Top-level LEDGER.md: which projects this source file contained, and where."""
     src = run.source
-    lines = [f"# Ledger: {Path(src.path).name}", "",
-             f"Source file `{src.path}` (sha256 `{src.sha256}`) contains {len(projects)} Cameo project(s).", ""]
+    lines = [f"# Ledger: {src.name}", "",
+             f"Source file `{src.name}` (sha256 `{src.sha256}`) contains {len(projects)} Cameo project(s).", ""]
     if src.metadata:
         lines += ["Source metadata: " + ", ".join(f"{k}={v}" for k, v in src.metadata.items()), ""]
     for p in projects:
@@ -43,14 +43,14 @@ def write_root_ledger(out: Path, run: RunInfo, projects: list[dict]) -> dict:
                      f"{p['elements']} elements, {p['diagrams']} diagrams, {p['requirements']} requirements")
     text = "\n".join(lines) + "\n"
     trace = Trace(source_sha256=src.sha256)
-    fm = front_matter({"title": f"Ledger {Path(src.path).name}", "kind": "ledger",
-                       "provenance": {"source_path": src.path, "source_sha256": src.sha256,
-                                      "source_metadata": src.metadata, "run_id": run.run_id,
-                                      "tool": run.tool, "trace": trace.to_dict()}})
+    fm = front_matter({"title": f"Ledger {src.name}", "kind": "ledger",
+                       "provenance": {"source_name": src.name, "source_sha256": src.sha256,
+                                      "source_metadata": src.metadata, "tool": run.tool,
+                                      "trace": trace.to_dict()}})
     (out / "LEDGER.md").write_text(fm + text, encoding="utf-8")
     return {
         "id": sha256_text(f"{src.sha256}|ledger:projects")[:24],
-        "title": f"Projects in {Path(src.path).name}",
+        "title": f"Projects in {src.name}",
         "text": text,
         "metadata": {"kind": "ledger:projects", "file": "LEDGER.md", "source_metadata": src.metadata,
                      "provenance": trace.to_dict()},
@@ -112,7 +112,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: no Cameo/XMI model found in {args.source}", file=sys.stderr)
         return 3
 
-    manifest = {"run": run.to_dict(), "projects": [], "failed": [], "files": []}
+    # manifest.json depends only on the input, the options and the tool version, so two runs
+    # can be compared file by file; run-specific facts go to run.json (BASE-015).
+    manifest = {
+        "tool": run.tool,
+        "source": {"name": source.name, "sha256": source.sha256, "size": source.size, "metadata": source.metadata},
+        "options": {"render": not args.no_render, "llm": run.llm},
+        "projects": [], "failed": [], "files": [],
+    }
     all_chunks = []
     used: set[str] = set()
     for proj in projects:
@@ -144,9 +151,11 @@ def main(argv: list[str] | None = None) -> int:
     with (out / "chunks.jsonl").open("w", encoding="utf-8") as f:
         for c in all_chunks:
             f.write(json.dumps(c, ensure_ascii=False) + "\n")
-    manifest["run"]["finished"] = utc_now()
-    manifest["run"]["llm_calls"] = llm.calls
     (out / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
+    record = {"run_id": run.run_id, "started": run.started, "finished": utc_now(), "tool": run.tool,
+              "source_path": source.path, "argv": sys.argv[1:] if argv is None else list(argv),
+              "llm_calls": llm.calls}
+    (out / "run.json").write_text(json.dumps(record, ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"{len(projects)} project(s), {len(all_chunks)} chunks, {len(manifest['files'])} files -> {out}")
     if manifest["failed"]:
         print(f"error: {len(manifest['failed'])} of {len(projects)} project(s) failed; see manifest.json",

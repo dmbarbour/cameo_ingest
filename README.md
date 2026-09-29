@@ -34,14 +34,17 @@ into your shell with `set -a; . ./.env; set +a`.
 
 LLM responses are cached under `OUT/.cache/llm`, or `--cache-dir`, keyed by model, prompt and
 image hash, so re-runs are cheap and repeatable. A failed LLM call is logged and skipped; it
-never fails the ingest. The API key is never written to the outputs.
+never fails the ingest. The API key is never written to the outputs. Generated text is only
+reproducible while the cache is kept: a fresh cache gets fresh answers from the model.
 
 ## Output
 
 ```
 out/
-  manifest.json          run provenance (source path, sha256, --meta, tool version, LLM config),
-                         per-project summary, and every output file with its sha256
+  manifest.json          source (file name, sha256, --meta), tool version, options, per-project
+                         summary, failed projects, and every output file with its sha256
+  run.json               this run only: id, start and finish times, source path, command line,
+                         LLM calls made
   chunks.jsonl           all chunks from all projects: {id, title, text, metadata}
   LEDGER.md              the projects found in the source file, with counts
   <project>/
@@ -55,7 +58,7 @@ out/
                          table/matrix configuration
     diagrams/<name>.png  a sketch redrawn from the layout data (boxes, labels, paths), not a
                          Cameo rendering
-    images/              embedded raster images (attachment streams)
+    images/, images.md   embedded raster images (attachment streams)
     tables/              elements, relationships, requirements, properties, tagged_values,
                          diagrams (.csv)
     index/               elements.jsonl (full structure), hierarchy.json, chunks.jsonl
@@ -69,6 +72,10 @@ Every artifact carries a trace:
 - Every element section ends with a visible `trace:` locator.
 - Every CSV row has a `trace` column.
 - Every chunk has `metadata.provenance`.
+
+The same input, options and tool version give byte-identical output, apart from `run.json`,
+wherever the input file is stored. Outputs name the source by file name and sha256; its local
+path is recorded only in `run.json`.
 
 A locator looks like this:
 

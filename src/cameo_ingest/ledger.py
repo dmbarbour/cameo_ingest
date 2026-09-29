@@ -146,7 +146,7 @@ class LedgerWriter:
         for i, part in enumerate(parts, 1):
             of = f" (part {i} of {len(parts)})" if len(parts) > 1 else ""
             header = (f"{heading} ledger{of} — Cameo project {self.w.project.name}, {where}. "
-                      f"Source file `{src.path}` (archive path `{chain}`), {len(rows)} entries in this group.")
+                      f"Source file `{src.name}` (archive path `{chain}`), {len(rows)} entries in this group.")
             text = header + "\n\n" + "\n".join(r for _, r in part)
             tr = self.w.trace(pkg) if pkg is not None else self.w.trace()
             self.w.chunk(kind=f"ledger:{kind}", title=f"{heading} ledger: {where}{of}", text=text, file=FILE,
@@ -171,7 +171,7 @@ class LedgerWriter:
             f"# Ledger: {w.project.name}", "",
             ("Compact listing of everything in this project, grouped by package. Each entry links to its "
              "full description."), "",
-            f"- **Source:** `{w.run.source.path}` (sha256 `{w.run.source.sha256}`)",
+            f"- **Source:** `{w.run.source.name}` (sha256 `{w.run.source.sha256}`)",
             f"- **Archive path:** `{'!'.join(w.project.trace_container) or w.project.name}`",
             f"- **Packages:** {len(pkgs)}; **diagrams:** {len(ix.diagrams)}; **requirements:** {n_req}", "",
             "## Packages", "",

@@ -17,6 +17,7 @@ import datetime as _dt
 import hashlib
 import uuid
 from dataclasses import asdict, dataclass, field
+from pathlib import PurePath
 from typing import Any
 
 from . import __version__
@@ -44,6 +45,13 @@ class SourceInfo:
     sha256: str
     size: int
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def name(self) -> str:
+        """File name only. Outputs name the source by file name and hash, never by local
+        path, so the same file ingested from another directory gives identical output;
+        the path is kept in the run record (run.json)."""
+        return PurePath(self.path).name
 
 
 @dataclass(frozen=True)
@@ -99,6 +107,3 @@ class RunInfo:
     started: str = field(default_factory=utc_now)
     tool: str = TOOL
     llm: dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
