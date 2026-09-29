@@ -29,6 +29,9 @@ Supported inputs are recognized by their content, so the file extension doesn't 
 | `CAMEO_INGEST_VISION_MODEL` | Model for diagram and image descriptions. Defaults to the text model. |
 | `CAMEO_INGEST_LLM_TIMEOUT`, `CAMEO_INGEST_LLM_MAX_CALLS` | Per-request timeout (default 120 s) and a per-run budget (default 500). |
 
+`.env.example` lists these variables. Copy it to `.env`, which is gitignored, and load it
+into your shell with `set -a; . ./.env; set +a`.
+
 LLM responses are cached under `OUT/.cache/llm`, or `--cache-dir`, keyed by model, prompt and
 image hash, so re-runs are cheap and repeatable. A failed LLM call is logged and skipped; it
 never fails the ingest. The API key is never written to the outputs.
