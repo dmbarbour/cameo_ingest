@@ -13,6 +13,7 @@ import io
 import logging
 import re
 import zipfile
+import zlib
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
@@ -21,8 +22,11 @@ log = logging.getLogger(__name__)
 
 ZIP_MAGIC = b"PK\x03\x04"
 MAX_NESTING = 4
-MAX_MEMBER_BYTES = 4 << 30  # 4 GiB uncompressed per member
-MAX_RATIO = 400  # uncompressed / compressed, beyond which we suspect a zip bomb
+# Zip-bomb guards, set far above anything a valid model needs (the largest sample input
+# decompresses to 138 MB, and its highest member ratio is 54:1).
+MAX_TOTAL_BYTES = 10 * 10**9  # decompressed bytes per input, nested archives included
+MAX_RATIO = 1000  # uncompressed / compressed
+RATIO_MIN_BYTES = 64 << 20  # small members may legitimately compress far better
 
 # Well-known MagicDraw / Cameo entry names. Anything else that sniffs as XMI is
 # also accepted, so unknown versions still work.
@@ -38,6 +42,10 @@ class UnsupportedInput(Exception):
     pass
 
 
+# What a damaged archive member raises when read (bad CRC, corrupt deflate stream...).
+_READ_ERRORS = (zipfile.BadZipFile, zlib.error, EOFError)
+
+
 @dataclass
 class Project:
     """One Cameo project: a set of named entries, one or more of which hold XMI."""
@@ -48,6 +56,7 @@ class Project:
     entry_names: list[str]
     _zip: zipfile.ZipFile | None = None
     _bare: bytes | None = None
+    _budget: _Budget | None = None
     notes: list[str] = field(default_factory=list)
 
     @property
@@ -58,7 +67,8 @@ class Project:
     def open(self, entry: str):
         if self._zip is not None:
             info = self._zip.getinfo(entry)
-            _check_member(info)
+            if self._budget is not None:
+                self._budget.take(self.trace_container, info)
             return self._zip.open(info)
         assert self._bare is not None
         return io.BytesIO(self._bare)
@@ -73,11 +83,25 @@ class Project:
         return len(self._bare or b"")
 
 
-def _check_member(info: zipfile.ZipInfo) -> None:
-    if info.file_size > MAX_MEMBER_BYTES:
-        raise UnsupportedInput(f"member {info.filename!r} too large ({info.file_size} bytes)")
-    if info.compress_size and info.file_size / info.compress_size > MAX_RATIO and info.file_size > 64 << 20:
-        raise UnsupportedInput(f"member {info.filename!r} has a suspicious compression ratio")
+class _Budget:
+    """Decompressed bytes allowed for one input. Each archive member counts once, however
+    often it is opened (layout streams are opened twice: once to sniff, once to parse)."""
+
+    def __init__(self) -> None:
+        self.remaining = MAX_TOTAL_BYTES
+        self.seen: set[str] = set()
+
+    def take(self, chain: tuple[str, ...], info: zipfile.ZipInfo) -> None:
+        if info.compress_size and info.file_size > RATIO_MIN_BYTES and info.file_size / info.compress_size > MAX_RATIO:
+            raise UnsupportedInput(f"member {info.filename!r} has a suspicious compression ratio "
+                                   f"({info.file_size // info.compress_size}:1)")
+        key = "!".join((*chain, info.filename))
+        if key in self.seen:
+            return
+        if info.file_size > self.remaining:
+            raise UnsupportedInput(f"input exceeds {MAX_TOTAL_BYTES:,} decompressed bytes (at member {key!r})")
+        self.remaining -= info.file_size
+        self.seen.add(key)
 
 
 _START_TAG = re.compile(rb"<([A-Za-z_][\w.-]*(?::[A-Za-z_][\w.-]*)?)[\s>/]")
@@ -121,14 +145,19 @@ def _xmi_entries(zf: zipfile.ZipFile) -> list[str]:
         n = info.filename
         if info.is_dir() or info.file_size < 64 or n.startswith(("BINARY-", "proxy.")):
             continue
-        with zf.open(info) as f:
-            if sniff_xmi(f.read(4096)):
-                found.append(n)
+        try:
+            with zf.open(info) as f:
+                if sniff_xmi(f.read(4096)):
+                    found.append(n)
+        except _READ_ERRORS as e:
+            log.warning("skipping unreadable member %s: %s", n, e)
     return found
 
 
-def discover(data: bytes, name: str, container: tuple[str, ...] = (), depth: int = 0) -> Iterator[Project]:
+def discover(data: bytes, name: str, container: tuple[str, ...] = (), depth: int = 0,
+             budget: _Budget | None = None) -> Iterator[Project]:
     """Yield every project found in `data` (the bytes of a file called `name`)."""
+    budget = budget or _Budget()
     if data.startswith(ZIP_MAGIC):
         try:
             zf = zipfile.ZipFile(io.BytesIO(data))
@@ -144,27 +173,29 @@ def discover(data: bytes, name: str, container: tuple[str, ...] = (), depth: int
                 model_entries=models,
                 entry_names=[i.filename for i in zf.infolist() if not i.is_dir()],
                 _zip=zf,
+                _budget=budget,
             )
         # Always look for nested projects too: .rdzip bundles, and .mdzip files that
         # embed used projects / modules.
         if depth >= MAX_NESTING:
             return
+        chain = container + (name,)
         for info in zf.infolist():
             if info.is_dir() or info.file_size < 22:
                 continue
             ext = PurePosixPath(info.filename).suffix.lower()
-            with zf.open(info) as f:
-                head = f.read(4)
-            if head != ZIP_MAGIC and ext not in PROJECT_EXTS - {".xml"}:
-                continue
-            if models and head != ZIP_MAGIC:
-                continue  # XMI members of this project were handled above
-            _check_member(info)
-            inner = zf.read(info)
             try:
-                yield from discover(inner, info.filename, container + (name,), depth + 1)
-            except UnsupportedInput as e:
-                log.warning("skipping nested member: %s", e)
+                with zf.open(info) as f:
+                    head = f.read(4)
+                if head != ZIP_MAGIC and ext not in PROJECT_EXTS - {".xml"}:
+                    continue
+                if models and head != ZIP_MAGIC:
+                    continue  # XMI members of this project were handled above
+                budget.take(chain, info)
+                inner = zf.read(info)
+                yield from discover(inner, info.filename, chain, depth + 1, budget)
+            except (UnsupportedInput, *_READ_ERRORS) as e:  # one bad member must not stop the rest
+                log.warning("skipping nested member %s: %s", "!".join((*chain, info.filename)), e)
         return
     if sniff_xmi(data[:4096]):
         yield Project(name=name, container=container, model_entries=[name], entry_names=[name], _bare=data)

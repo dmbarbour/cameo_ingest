@@ -63,7 +63,9 @@ def build_parser() -> argparse.ArgumentParser:
         description="Convert a Cameo/MagicDraw project (.mdzip, .mdzipx, .mdxml, or a bundle such as .rdzip "
                     "containing them) into provenance-tagged Markdown, CSV and JSON for RAG ingestion.",
         epilog="LLM enrichment is enabled only when a model is named (--text-model or CAMEO_INGEST_TEXT_MODEL); "
-               "it uses OPENAI_API_KEY / OPENAI_BASE_URL. Model content is then sent to that endpoint.",
+               "it uses OPENAI_API_KEY / OPENAI_BASE_URL. Model content is then sent to that endpoint. "
+               "Exit status: 0 success; 2 usage error or non-empty output directory; 3 no model found or "
+               "unsupported input; 4 some projects failed (the others are written; see manifest.json).",
     )
     ap.add_argument("source", type=Path, help="input file")
     ap.add_argument("-o", "--out", type=Path, required=True, help="output directory (created if missing)")
@@ -110,7 +112,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: no Cameo/XMI model found in {args.source}", file=sys.stderr)
         return 3
 
-    manifest = {"run": run.to_dict(), "projects": [], "files": []}
+    manifest = {"run": run.to_dict(), "projects": [], "failed": [], "files": []}
     all_chunks = []
     used: set[str] = set()
     for proj in projects:
@@ -118,8 +120,16 @@ def main(argv: list[str] | None = None) -> int:
         while name.lower() in used:
             name += "_"
         used.add(name.lower())
-        log.info("ingesting %s -> %s", "!".join(proj.trace_container) or proj.name, name)
-        result = ingest_project(run, proj, out / name, llm, render=not args.no_render)
+        where = "!".join(proj.trace_container) or proj.name
+        log.info("ingesting %s -> %s", where, name)
+        try:
+            result = ingest_project(run, proj, out / name, llm, render=not args.no_render)
+        except Exception as e:  # one bad project must not stop the others (BASE-004)
+            log.error("project %s failed: %s: %s", where, type(e).__name__, e)
+            log.debug("traceback for %s", where, exc_info=True)
+            manifest["failed"].append({"dir": name, "container": list(proj.trace_container),
+                                       "error": f"{type(e).__name__}: {e}"})
+            continue
         manifest["projects"].append({"dir": name, **result.summary})
         for f in result.outputs.files:
             manifest["files"].append({"path": str(f.relative_to(out)), "sha256": sha256_bytes(f.read_bytes())})
@@ -138,6 +148,10 @@ def main(argv: list[str] | None = None) -> int:
     manifest["run"]["llm_calls"] = llm.calls
     (out / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"{len(projects)} project(s), {len(all_chunks)} chunks, {len(manifest['files'])} files -> {out}")
+    if manifest["failed"]:
+        print(f"error: {len(manifest['failed'])} of {len(projects)} project(s) failed; see manifest.json",
+              file=sys.stderr)
+        return 4
     return 0
 
 

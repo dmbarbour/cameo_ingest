@@ -203,6 +203,43 @@ def test_rejects_non_model(tmp_path):
     assert main([str(src), "-o", str(tmp_path / "out")]) == 3
 
 
+def test_failed_project_does_not_stop_others(tmp_path, caplog):
+    truncated = io.BytesIO()
+    with zipfile.ZipFile(truncated, "w") as z:
+        z.writestr("com.nomagic.magicdraw.uml_model.model", MODEL[:2000])
+    good = make_mdzip()
+    outer = io.BytesIO()
+    with zipfile.ZipFile(outer, "w", compression=zipfile.ZIP_STORED) as z:
+        z.writestr("good.mdzip", good)
+        z.writestr("bad.mdzip", truncated.getvalue())
+        z.writestr("corrupt.mdzip", good)
+    data = bytearray(outer.getvalue())
+    i = data.rfind(good) + len(good) // 2  # damage the stored copy of corrupt.mdzip: bad CRC
+    data[i] ^= 0xFF
+    src = tmp_path / "bundle.rdzip"
+    src.write_bytes(bytes(data))
+    out = tmp_path / "out"
+    assert main([str(src), "-o", str(out), "--no-llm", "--no-render"]) == 4
+    manifest = json.loads((out / "manifest.json").read_text())
+    assert [p["dir"] for p in manifest["projects"]] == ["good.mdzip"]
+    assert [f["dir"] for f in manifest["failed"]] == ["bad.mdzip"]
+    assert "XMLSyntaxError" in manifest["failed"][0]["error"]
+    assert "skipping nested member bundle.rdzip!corrupt.mdzip" in caplog.text
+    check_invariants(out)
+
+
+def test_decompression_budget(tmp_path, monkeypatch):
+    from cameo_ingest import archive
+
+    monkeypatch.setattr(archive, "MAX_TOTAL_BYTES", 1000)
+    src = tmp_path / "drone.mdzip"
+    src.write_bytes(make_mdzip())
+    out = tmp_path / "out"
+    assert main([str(src), "-o", str(out), "--no-llm", "--no-render"]) == 4
+    failed = json.loads((out / "manifest.json").read_text())["failed"]
+    assert "exceeds 1,000 decompressed bytes" in failed[0]["error"]
+
+
 def test_first_tag():
     from cameo_ingest.archive import first_tag, sniff_xmi
 
