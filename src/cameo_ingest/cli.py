@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -28,6 +29,27 @@ def _parse_meta(pairs: list[str], files: list[str]) -> dict:
         k, v = p.split("=", 1)
         meta[k.strip()] = v
     return meta
+
+
+NO_MODEL = """error: no LLM model is configured. Either
+  - pass --no-llm to ingest without LLM summaries and descriptions, or
+  - name a model with --text-model / --vision-model, or set CAMEO_INGEST_TEXT_MODEL
+    (or OPENAI_MODEL) in the environment or in a file loaded with --env FILE.
+The endpoint comes from OPENAI_BASE_URL and OPENAI_API_KEY; see .env.example."""
+
+
+def load_env(path: Path) -> None:
+    """Load variables from a dotenv file. Variables already set in the environment win,
+    as with python-dotenv's default. Values are never logged."""
+    from dotenv import dotenv_values
+
+    values = {k: v for k, v in dotenv_values(path).items() if v is not None}
+    loaded = [k for k in values if k not in os.environ]
+    for k in loaded:
+        os.environ[k] = values[k]
+    kept = sorted(set(values) - set(loaded))
+    log.info("loaded %s from %s%s", ", ".join(loaded) or "no variables", path,
+             f"; already set, so not loaded: {', '.join(kept)}" if kept else "")
 
 
 def write_root_ledger(out: Path, run: RunInfo, projects: list[dict]) -> dict:
@@ -62,10 +84,12 @@ def build_parser() -> argparse.ArgumentParser:
         prog="cameo-ingest",
         description="Convert a Cameo/MagicDraw project (.mdzip, .mdzipx, .mdxml, or a bundle such as .rdzip "
                     "containing them) into provenance-tagged Markdown, CSV and JSON for RAG ingestion.",
-        epilog="LLM enrichment is enabled only when a model is named (--text-model or CAMEO_INGEST_TEXT_MODEL); "
-               "it uses OPENAI_API_KEY / OPENAI_BASE_URL. Model content is then sent to that endpoint. "
-               "Exit status: 0 success; 2 usage error or non-empty output directory; 3 no model found or "
-               "unsupported input; 4 some projects failed (the others are written; see manifest.json).",
+        epilog="Either name an LLM model (--text-model, CAMEO_INGEST_TEXT_MODEL or OPENAI_MODEL) or pass "
+               "--no-llm. The LLM is reached through OPENAI_BASE_URL / OPENAI_API_KEY, and model content is "
+               "sent to that endpoint. "
+               "Exit status: 0 success; 2 usage or configuration error, or non-empty output directory; "
+               "3 no model found or unsupported input; 4 some projects failed (the others are written; see "
+               "manifest.json); 5 the LLM endpoint check failed.",
     )
     ap.add_argument("source", type=Path, help="input file")
     ap.add_argument("-o", "--out", type=Path, required=True, help="output directory (created if missing)")
@@ -73,9 +97,19 @@ def build_parser() -> argparse.ArgumentParser:
                     help="provenance metadata recorded with every output (repeatable)")
     ap.add_argument("--meta-file", action="append", default=[], metavar="JSON",
                     help="JSON object of provenance metadata (repeatable; --meta wins)")
-    ap.add_argument("--text-model", help="LLM for summaries (overrides CAMEO_INGEST_TEXT_MODEL)")
-    ap.add_argument("--vision-model", help="LLM for image descriptions (overrides CAMEO_INGEST_VISION_MODEL)")
-    ap.add_argument("--no-llm", action="store_true", help="disable LLM enrichment even if configured")
+    ap.add_argument("--env", type=Path, metavar="FILE",
+                    help="load environment variables from a dotenv file (variables already set win)")
+    ap.add_argument("--text-model", help="LLM for summaries (overrides CAMEO_INGEST_TEXT_MODEL, OPENAI_MODEL)")
+    ap.add_argument("--vision-model", help="LLM for image descriptions (overrides CAMEO_INGEST_VISION_MODEL; "
+                                           "default: the text model)")
+    ap.add_argument("--no-llm", action="store_true", help="ingest without LLM enrichment (required when no "
+                                                          "model is configured)")
+    ap.add_argument("--no-preflight", action="store_true",
+                    help="skip the check that each LLM model answers before parsing starts")
+    ap.add_argument("--llm-timeout", type=float, metavar="SECONDS", help="per-request timeout (default 120)")
+    ap.add_argument("--llm-retries", type=int, metavar="N", help="retries per request (default 2)")
+    ap.add_argument("--llm-max-calls", type=int, metavar="N", help="stop calling the LLM after N requests "
+                                                                   "(default: no limit)")
     ap.add_argument("--no-render", action="store_true", help="do not render diagram images")
     ap.add_argument("--cache-dir", type=Path, help="LLM response cache (default: OUT/.cache)")
     ap.add_argument("--force", action="store_true", help="allow writing into a non-empty output directory")
@@ -88,20 +122,38 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     logging.basicConfig(level=logging.WARNING - 10 * args.verbose, format="%(levelname)s %(name)s: %(message)s")
 
+    if args.env is not None:
+        if not args.env.is_file():
+            print(f"error: --env file {args.env} not found", file=sys.stderr)
+            return 2
+        load_env(args.env)
+    cfg = LLMConfig.from_env(args.text_model, args.vision_model, timeout=args.llm_timeout,
+                             retries=args.llm_retries, max_calls=args.llm_max_calls)
+    if args.no_llm:
+        cfg.text_model = cfg.vision_model = None
+    elif not cfg.enabled:  # fail fast rather than silently skip enrichment (BASE-020)
+        print(NO_MODEL, file=sys.stderr)
+        return 2
+
     out: Path = args.out
     if out.exists() and any(p.name != ".cache" for p in out.iterdir()) and not args.force:
         print(f"error: output directory {out} is not empty (use --force)", file=sys.stderr)
         return 2
+    llm = LLM(cfg, args.cache_dir or out / ".cache" / "llm")
+    if cfg.enabled and not args.no_preflight:
+        log.info("checking LLM endpoint %s", cfg.base_url or "(OpenAI default)")
+        err = llm.preflight()
+        if err:
+            print(f"error: LLM endpoint check failed ({cfg.base_url or 'OpenAI default endpoint'}): {err}\n"
+                  "Check OPENAI_BASE_URL, OPENAI_API_KEY and the model name, or pass --no-preflight.",
+                  file=sys.stderr)
+            return 5
     out.mkdir(parents=True, exist_ok=True)
 
     data = args.source.read_bytes()
     source = SourceInfo(path=str(args.source), sha256=sha256_bytes(data), size=len(data),
                         metadata=_parse_meta(args.meta, args.meta_file))
-    cfg = LLMConfig.from_env(args.text_model, args.vision_model)
-    if args.no_llm:
-        cfg.text_model = cfg.vision_model = None
     run = RunInfo(source=source, llm=cfg.public() if cfg.enabled else {})
-    llm = LLM(cfg, args.cache_dir or out / ".cache" / "llm")
 
     try:
         projects = list(discover(data, args.source.name))

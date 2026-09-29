@@ -8,7 +8,8 @@ MagicDraw 18.x through Cameo 2026x, and it has been checked against 14 public sa
 ```sh
 uv sync
 uv run cameo-ingest MODEL.mdzip -o out/ --meta program=XYZ --meta received=2026-09-01 \
-    [--meta-file provenance.json] [--no-llm] [--no-render] [--force] [-v]
+    (--no-llm | --env .env | --text-model MODEL) \
+    [--meta-file provenance.json] [--no-render] [--force] [-v]
 ```
 
 Supported inputs are recognized by their content, so the file extension doesn't matter:
@@ -22,15 +23,24 @@ Supported inputs are recognized by their content, so the file extension doesn't 
 
 ## Configuration
 
-| Variable | Purpose |
-|---|---|
-| `OPENAI_API_KEY`, `OPENAI_BASE_URL` | Any OpenAI-compatible endpoint, such as vLLM or Ollama serving gemma. |
-| `CAMEO_INGEST_TEXT_MODEL` | Model for package summaries. **LLM use stays off unless a model is named** here or with `--text-model`. |
-| `CAMEO_INGEST_VISION_MODEL` | Model for diagram and image descriptions. Defaults to the text model. |
-| `CAMEO_INGEST_LLM_TIMEOUT`, `CAMEO_INGEST_LLM_MAX_CALLS` | Per-request timeout (default 120 s) and a per-run budget (default 500). |
+LLM enrichment (package summaries, diagram and image descriptions) needs an explicit
+choice: either name a model or pass `--no-llm`. With neither, the tool stops at once and
+says how to configure one. When a model is named, one tiny request per model checks the
+endpoint before parsing starts, so a wrong key, URL or model name fails in seconds rather
+than hours later (`--no-preflight` skips the check).
 
-`.env.example` lists these variables. Copy it to `.env`, which is gitignored, and load it
-into your shell with `set -a; . ./.env; set +a`.
+| Variable | Flag | Purpose |
+|---|---|---|
+| `OPENAI_API_KEY`, `OPENAI_BASE_URL` | | Any OpenAI-compatible endpoint, such as vLLM or Ollama serving gemma. |
+| `CAMEO_INGEST_TEXT_MODEL`, then `OPENAI_MODEL` | `--text-model` | Model for package summaries. |
+| `CAMEO_INGEST_VISION_MODEL` | `--vision-model` | Model for diagram and image descriptions. Defaults to the text model. |
+| `CAMEO_INGEST_LLM_TIMEOUT` | `--llm-timeout` | Seconds per request (default 120). |
+| `CAMEO_INGEST_LLM_RETRIES` | `--llm-retries` | Retries per request (default 2). |
+| `CAMEO_INGEST_LLM_MAX_CALLS` | `--llm-max-calls` | Stop calling the LLM after N requests (default: no limit). |
+
+Flags take precedence over variables. `.env.example` lists the variables: copy it to `.env`,
+which is gitignored, and pass `--env .env`. Variables already set in the environment take
+precedence over the file, and the log names the variables loaded but never their values.
 
 LLM responses are cached under `OUT/.cache/llm`, or `--cache-dir`, keyed by model, prompt and
 image hash, so re-runs are cheap and repeatable. A failed LLM call is logged and skipped; it
