@@ -105,6 +105,10 @@ accept more. It matters for large models: at about 11 s per diagram description,
 1,413 requests take about 4 hours one at a time. Rendering is the costliest step without an
 LLM: about 50 s for TMT's 1,241 sketches (`--no-render` skips them).
 
+`--image-size PX` (default 768) sets the longest side of sketches, and of the images sent to the
+vision model: `google/gemma-4-31B-it` on DeepInfra squeezes every image into 768 × 768 px, so
+larger sketches only lose legibility.
+
 ## Output
 
 ```
@@ -124,10 +128,12 @@ out/
     packages/<qn>.md     one file per package, one section per element (blocks, requirements,
                          activities, use cases…), with members, tagged values, relationships
                          in both directions, and "shown in diagrams"
-    diagrams/<name>.md   diagram type, author and dates, shapes (by nesting), connections, and
-                         the table/matrix configuration
-    diagrams/<name>.png  a sketch redrawn from the layout data (boxes, labels, paths), not a
-                         Cameo rendering
+    diagrams/<name>.md   diagram type, author and dates, a numbered legend of the shapes (by
+                         nesting), connections from source to target with the items they carry,
+                         and the table/matrix configuration
+    diagrams/<name>.png  a sketch redrawn from the layout data at --image-size (768 px): shapes
+                         tagged with their legend numbers, arrows at the target; not a Cameo
+                         rendering
     images/, images.md   embedded raster images (attachment streams)
     tables/              elements, relationships, requirements, properties, tagged_values,
                          diagrams (.csv)

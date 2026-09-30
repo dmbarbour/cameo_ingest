@@ -48,6 +48,30 @@ class Relationship:
     name: str | None
 
 
+@dataclass
+class ItemFlow:
+    """What a connector (or association) carries: a SysML «ItemFlow», an InformationFlow
+    that names the connector in `realizingConnector` (or the association in `realization`)."""
+
+    id: str
+    items: list[str]  # ids of the conveyed classifiers
+    source: str | None  # informationSource: usually a part or port at one end
+    target: str | None
+
+
+def item_flows(ix: ModelIndex) -> dict[str, list[ItemFlow]]:
+    """Item flows by the id of the connector or association that realizes them (FU-002)."""
+    out: dict[str, list[ItemFlow]] = {}
+    for el in ix.elements.values():
+        if el.kind != "InformationFlow":
+            continue
+        flow = ItemFlow(el.id, refs(el, "conveyed"), next(iter(refs(el, "informationSource")), None),
+                        next(iter(refs(el, "informationTarget")), None))
+        for realizer in refs(el, "realizingConnector") + refs(el, "realization"):
+            out.setdefault(realizer, []).append(flow)
+    return out
+
+
 def is_section(ix: ModelIndex, el: Element) -> bool:
     if el.kind in RELATIONSHIP_KINDS:
         return False

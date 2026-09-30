@@ -74,7 +74,7 @@ of the others.
 
 | Step | Work | Status |
 |---|---|---|
-| DV-01 | The diagram graph: nodes with stable numbers and nesting, edges with model direction and item flows. The legend, text lists and sketch all built from it. Unit tests. | Not started |
+| DV-01 | The diagram graph: nodes with stable numbers and nesting, edges with model direction and item flows. The legend, text lists and sketch all built from it. Unit tests. | Done, with the review's FU-001, FU-002, FU-007 and FU-008 fixes |
 | DV-02 | Partitioning: the modeller's groups, components, communities with geometric weights and size bounds, and boundary nodes. Unit tests on small graphs; module statistics over TMT (how many modules per diagram, and their sizes). | Not started |
 | DV-03 | Views: module crops with faded boundary nodes, and the overview with module outlines, all at the model's image size. | Not started |
 | DV-04 | Requests and output: `module-description@v1` and `diagram-synthesis@v1`; module chunks; the page layout; the request log records module and view. | Not started |

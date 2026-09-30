@@ -40,7 +40,7 @@ An output tree remembers these choices, so later runs need no flags."""
 
 # Run settings an output tree remembers (never secrets: --env names a file).
 SETTINGS = ("env", "text_model", "vision_model", "llm_timeout", "llm_retries", "llm_max_calls",
-            "llm_concurrency", "cache_dir")
+            "llm_concurrency", "cache_dir", "image_size")
 
 PROGRESS_LOGGER = "cameo_ingest.progress"
 _handlers: list[logging.Handler] = []  # ours, replaced when main() runs again (as in tests)
@@ -136,6 +136,9 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--render", dest="render", action="store_const", const=True, default=None,
                    help="render diagram sketches (the default)")
     g.add_argument("--no-render", dest="render", action="store_const", const=False, help="do not render sketches")
+    g.add_argument("--image-size", type=int, metavar="PX",
+                   help="longest side of diagram sketches and of images sent to the vision model (default 768, "
+                        "what gemma-4 on DeepInfra sees)")
     g.add_argument("--llm-timeout", type=float, metavar="SECONDS", help="per-request timeout (default 120)")
     g.add_argument("--llm-retries", type=int, metavar="N", help="retries per request (default 2)")
     g.add_argument("--llm-max-calls", type=int, metavar="N", help="stop calling the LLM after N requests in a run "
@@ -266,7 +269,8 @@ def run_tree(args: argparse.Namespace, argv: list[str]) -> int:
             add_inputs(state, args)
         state.save_settings(settings)
         options = {"render": settings.get("render", True), "text_model": cfg.text_model,
-                   "vision_model": cfg.vision_model, "max_calls": cfg.max_calls}
+                   "vision_model": cfg.vision_model, "max_calls": cfg.max_calls,
+                   "image_size": settings.get("image_size") or 768}
         runner = Runner(state, out, llm, options, Progress(heartbeat=args.heartbeat),
                         concurrency=settings.get("llm_concurrency") or 1)
         previous = signal.signal(signal.SIGTERM, _interrupt)

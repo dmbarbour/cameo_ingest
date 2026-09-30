@@ -134,7 +134,7 @@ def _answer(requests: list[_Request], progress: Progress, label: str, concurrenc
 
 
 def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM, render: bool = True,
-                   progress: Progress = QUIET, concurrency: int = 1) -> ProjectResult:
+                   progress: Progress = QUIET, concurrency: int = 1, image_size: int = dg.IMAGE_SIZE) -> ProjectResult:
     ix = parse_project(project, progress)
     annotations: dict[str, list[Annotation]] = {}
     base = Trace(content_sha256=content.sha256)
@@ -146,16 +146,18 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
     reused = 0  # sketches drawn by an interrupted attempt with the same tool and options
     if render and layouts:
         with progress.phase(f"{project.display_name}: rendering", len(layouts), "diagram") as ph:
-            for dia_id, layout in layouts.items():
+            for dia_id in layouts:
                 ph.advance()
                 d = ix.diagrams[dia_id]
                 el = ix.elements[dia_id]
+                graph = writer.graph(dia_id)
                 rel = writer.dia_file[dia_id].removesuffix(".md") + ".png"
                 path = root / rel
                 if path.exists():
                     reused += 1
                 else:
-                    png = dg.render_png(ix, layout, f"{d.diagram_type or 'Diagram'}: {ix.qualified_name(dia_id)}")
+                    png = dg.render_png(ix, graph, f"{d.diagram_type or 'Diagram'}: {ix.qualified_name(dia_id)}",
+                                        size=image_size)
                     if png is None:
                         continue
                     path.parent.mkdir(parents=True, exist_ok=True)
@@ -168,7 +170,7 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
                 annotations.setdefault(dia_id, []).append(
                     Annotation("Diagram sketch (re-drawn from layout data, not a Cameo rendering)", "", tr, image=rel))
                 if llm.cfg.vision_model:
-                    nodes, edges = dg.describe(ix, layout, lambda e: ix.label(e))
+                    nodes, edges = dg.describe(ix, graph, lambda e: ix.label(e))
                     notes = {}
                     if max(len(nodes), len(edges)) > DIAGRAM_CONTEXT_ITEMS:
                         truncated += 1

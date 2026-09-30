@@ -95,11 +95,11 @@ def _entry(name: str) -> zipfile.ZipInfo:
     return zipfile.ZipInfo(name, date_time=(2026, 1, 1, 0, 0, 0))
 
 
-def make_mdzip(model: str = MODEL) -> bytes:
+def make_mdzip(model: str = MODEL, layout: str = LAYOUT) -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
         z.writestr(_entry("com.nomagic.magicdraw.uml_model.model"), model)
-        z.writestr(_entry("BINARY-1"), LAYOUT)
+        z.writestr(_entry("BINARY-1"), layout)
         z.writestr(_entry("BINARY-img1"), PNG_RED)
         z.writestr(_entry("BINARY-img2"), PNG_BLUE)
         z.writestr(_entry("Records.properties"), "#Compatibility entry\n")

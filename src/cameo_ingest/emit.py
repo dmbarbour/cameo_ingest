@@ -75,12 +75,23 @@ class ProjectWriter:
         for r in self.rels:
             self.rels_by_end[r.source].append(r)
             self.rels_by_end[r.target].append(r)
+        self.flows = sem.item_flows(ix)
+        self._graphs: dict[str, dg.DiagramGraph] = {}
         self.diagrams_showing: dict[str, list[str]] = defaultdict(list)
         for d in ix.diagrams.values():
             for e in d.shown:
                 self.diagrams_showing[e].append(d.id)
         self.file_of: dict[str, str] = {}  # element id -> relative md path (+anchor)
         self._plan_files()
+
+    def graph(self, dia_id: str) -> dg.DiagramGraph | None:
+        """The diagram's shapes and connections, numbered (built once)."""
+        layout = self.layouts.get(dia_id)
+        if layout is None:
+            return None
+        if dia_id not in self._graphs:
+            self._graphs[dia_id] = dg.build(self.ix, layout, self.rel_by_id, self.flows)
+        return self._graphs[dia_id]
 
     # -- provenance ------------------------------------------------------------
     def trace(self, el: Element | None = None, **kw: Any) -> Trace:
@@ -416,10 +427,12 @@ class ProjectWriter:
         if doc:
             lines += ["**Documentation:**", "", md_escape(doc), ""]
         layout = self.layouts.get(dia_id)
-        if layout is not None:
-            nodes, edges = dg.describe(ix, layout, lambda e: self.link(e, rel))
+        graph = self.graph(dia_id)
+        if graph is not None:
+            nodes, edges = dg.describe(ix, graph, lambda e: self.link(e, rel))
             if nodes:
-                lines += [f"**Shapes ({len(nodes)}), indented by nesting:**"] + nodes + [""]
+                lines += [f"**Shapes ({len(nodes)}), numbered as in the sketch and indented by nesting:**"]
+                lines += nodes + [""]
             if edges:
                 lines += [f"**Connections ({len(edges)}):**"] + edges + [""]
         tbl = self.table_config(el)

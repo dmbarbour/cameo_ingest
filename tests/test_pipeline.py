@@ -13,7 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from fixture_model import MODEL, make_mdzip
+from fixture_model import LAYOUT, MODEL, make_mdzip
 
 from cameo_ingest.cli import main
 from cameo_ingest.llm import PREFLIGHT_PROMPT
@@ -53,6 +53,7 @@ def provenance(out: Path) -> dict[str, dict]:
 
 
 def run(tmp_path: Path, name: str, data: bytes) -> Path:
+    tmp_path.mkdir(parents=True, exist_ok=True)
     src = tmp_path / name
     src.write_bytes(data)
     out = tmp_path / "out"
@@ -131,6 +132,65 @@ def test_mdzip_end_to_end(tmp_path):
 
     ix = parse_project(next(discover(make_mdzip(), "drone.mdzip")))
     assert ix.label("s1") == "(Abstraction)"  # not an HTML-like "<Abstraction>" (BASE-009R1)
+
+
+# The Drone diagram again, with the «refine» abstraction drawn as Cameo stores it: the first
+# end of a directed path is its target (FU-001).
+LAYOUT_DIRECTED = LAYOUT.replace("</mdOwnedViews>", """ <mdElement elementClass='Class' xmi:id='v4'><elementID xmi:idref='r1'/><geometry>200, 200, 100, 60</geometry></mdElement>
+ <mdElement elementClass='Abstraction' xmi:id='v5'><elementID xmi:idref='rf1'/><linkFirstEndID xmi:idref='v4'/><linkSecondEndID xmi:idref='v1'/>
+  <geometry>250, 200; 60, 70; </geometry></mdElement>
+</mdOwnedViews>""")
+# A second part, a connector between the two parts, and an item flow over it (FU-002).
+MODEL_IBD = MODEL.replace("""    </ownedAttribute>
+    <xmi:Extension""", """    </ownedAttribute>
+    <ownedAttribute xmi:type='uml:Property' xmi:id='a2' name='motor' aggregation='composite' type='m1'/>
+    <ownedConnector xmi:type='uml:Connector' xmi:id='cn1'>
+     <end xmi:type='uml:ConnectorEnd' xmi:id='cn1a' role='a1'/><end xmi:type='uml:ConnectorEnd' xmi:id='cn1b' role='a2'/>
+    </ownedConnector>
+    <xmi:Extension""").replace("""   <packagedElement xmi:type='uml:Class' xmi:id='b2' name='Battery'/>""", """   <packagedElement xmi:type='uml:Class' xmi:id='b2' name='Battery'/>
+   <packagedElement xmi:type='uml:Class' xmi:id='m1' name='Motor'/>
+   <packagedElement xmi:type='uml:Class' xmi:id='e1' name='Energy'/>
+   <packagedElement xmi:type='uml:InformationFlow' xmi:id='if1' name='flow for Energy'>
+    <conveyed xmi:idref='e1'/><informationSource xmi:idref='b2'/><informationTarget xmi:idref='m1'/>
+    <realizingConnector xmi:idref='cn1'/>
+   </packagedElement>""")
+LAYOUT_IBD = LAYOUT.replace("</mdOwnedViews>", """ <mdElement elementClass='Part' xmi:id='v6'><elementID xmi:idref='a1'/><geometry>10, 200, 100, 60</geometry></mdElement>
+ <mdElement elementClass='Part' xmi:id='v7'><elementID xmi:idref='a2'/><geometry>200, 200, 100, 60</geometry></mdElement>
+ <mdElement elementClass='Connector' xmi:id='v8'><elementID xmi:idref='cn1'/><linkFirstEndID xmi:idref='v7'/><linkSecondEndID xmi:idref='v6'/>
+  <geometry>200, 230; 110, 230; </geometry></mdElement>
+ <mdElement elementClass='ConnectorEnd' xmi:id='v9'><geometry>195, 225, 10, 10</geometry></mdElement>
+</mdOwnedViews>""")
+
+
+def test_diagram_directions_item_flows_and_labels(tmp_path):
+    """Directed edges run from source to target (FU-001), connectors show the items they
+    carry and which way (FU-002), labels read cleanly (FU-003), and the sketch is drawn at
+    the model's image size with no connector-end boxes (FU-007, FU-012)."""
+    from PIL import Image
+
+    out = run(tmp_path, "drone.mdzip", make_mdzip(layout=LAYOUT_DIRECTED))
+    page = (project_dir(out) / "diagrams/Drone_BDD.md").read_text()
+    refine = next(line for line in page.splitlines() if "«Refine»" in line)
+    assert refine.index("Drone") < refine.index("→[Abstraction: «Refine»]→") < refine.index("Endurance"), refine
+    assert "numbered as in the sketch" in page and "- [1] Class: «Block» [Drone]" in page
+    with Image.open(project_dir(out) / "diagrams/Drone_BDD.png") as img:
+        assert max(img.size) <= 768
+
+    out = run(tmp_path / "ibd", "drone.mdzip", make_mdzip(MODEL_IBD, LAYOUT_IBD))
+    page = (project_dir(out) / "diagrams/Drone_BDD.md").read_text()
+    # The flow names the parts' types, Battery to Motor; the connector is listed that way.
+    assert "- [3] battery : Battery —[Connector: carries Energy →]— [4] motor : Motor" in page, page
+    assert "ConnectorEnd" not in page  # a decoration, not a shape
+
+    from cameo_ingest.archive import discover
+    from cameo_ingest.diagrams import element_label
+    from cameo_ingest.layout import View
+    from cameo_ingest.pipeline import parse_project
+
+    ix = parse_project(next(discover(make_mdzip(), "drone.mdzip")))
+    ix.elements["a1"].name = None  # an unnamed part reads as its type, not ": Battery"
+    assert element_label(ix, View("v", "Part", "a1")) == "Battery"
+    assert element_label(ix, View("v", "Diagram", "d1")) == "Drone BDD"  # «DiagramInfo» is not shown
 
 
 def test_provenance_everywhere(tmp_path):
@@ -353,6 +413,32 @@ def test_samples(tmp_path, sample):
         pages = [p.read_text(encoding="utf-8") for p in out.glob("by-sha256/*/diagrams/*.md")]
         assert sum("**Table / matrix configuration**" in p for p in pages) == expected["table_configs"]
         assert sum("**Shapes (" in p for p in pages) == expected["diagrams_with_shapes"]
+        check_edge_directions(sample)
+
+
+def check_edge_directions(sample: Path) -> None:
+    """Every drawn edge that shows a model relationship between the shapes (or pins) at its
+    ends runs from the relationship's source to its target (FU-001)."""
+    from cameo_ingest import diagrams as dg
+    from cameo_ingest import semantics as sem
+    from cameo_ingest.archive import discover
+    from cameo_ingest.pipeline import load_layouts, parse_project
+
+    proj = next(discover(sample.read_bytes(), sample.name))
+    ix = parse_project(proj)
+    rels = {r.id: r for r in sem.relationships(ix)}
+    flows = sem.item_flows(ix)
+    checked = 0
+    for layout in load_layouts(proj, ix).values():
+        for lk in dg.build(ix, layout, rels, flows).links:
+            rel = rels.get(lk.view.element or "")
+            if rel is None or not lk.directed or lk.source is None or lk.target is None:
+                continue
+            ends = (lk.source.element, lk.target.element)
+            if {rel.source, rel.target} == set(ends):
+                assert ends == (rel.source, rel.target), (rel.metaclass, lk.view.view_id)
+                checked += 1
+    assert checked
 
 
 SAF = [SAMPLES_DIR / "resource_bundles/SAF_Plugin_2026-09-16.zip",
