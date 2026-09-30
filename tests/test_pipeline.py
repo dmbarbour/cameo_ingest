@@ -186,6 +186,22 @@ def test_failed_project_does_not_stop_others(tmp_path, caplog):
     check_invariants(out)
 
 
+def test_same_name_other_content_is_not_mixed(tmp_path):
+    """Two inputs called drone.mdzip, from different directories and with different
+    content, never write into the same project directory (BASE-016R1)."""
+    out = tmp_path / "out"
+    for d, model in (("a", MODEL), ("b", MODEL.replace("name='Requirements'", "name='Needs'"))):
+        (tmp_path / d).mkdir()
+        (tmp_path / d / "drone.mdzip").write_bytes(make_mdzip(model))
+    assert main([str(tmp_path / "a/drone.mdzip"), "-o", str(out), "--no-llm", "--no-render"]) == 0
+    assert main([str(tmp_path / "b/drone.mdzip"), "-o", str(out), "--no-llm", "--no-render", "--force"]) == 4
+    failed = json.loads((out / "manifest.json").read_text())["failed"]
+    assert "holds output from different content" in failed[0]["error"]
+    assert not (out / "drone.mdzip/packages/Model__Needs.md").exists()  # a's output is untouched
+    # The same content again is fine.
+    assert main([str(tmp_path / "a/drone.mdzip"), "-o", str(out), "--no-llm", "--no-render", "--force"]) == 0
+
+
 def test_decompression_budget(tmp_path, monkeypatch):
     from cameo_ingest import archive
 

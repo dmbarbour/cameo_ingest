@@ -86,6 +86,20 @@ def load_env(path: Path) -> None:
              f"; already set, so not loaded: {', '.join(kept)}" if kept else "")
 
 
+def prior_source(project_dir: Path) -> str | None:
+    """sha256 of the input that an existing project directory was written from, read from
+    its README front matter; None if there is no such output."""
+    readme = project_dir / "README.md"
+    if not readme.is_file():
+        return None
+    for line in readme.read_text(encoding="utf-8").splitlines()[1:]:
+        if line == "---":
+            break
+        if line.startswith("provenance: "):
+            return json.loads(line.removeprefix("provenance: ")).get("source_sha256")
+    return None
+
+
 def write_root_ledger(out: Path, run: RunInfo, projects: list[dict]) -> dict:
     """Top-level LEDGER.md: which projects this source file contained, and where."""
     src = run.source
@@ -230,6 +244,13 @@ def main(argv: list[str] | None = None) -> int:
             name += "_"
         used.add(name.lower())
         where = "!".join(proj.trace_container) or proj.name
+        prior = prior_source(out / name)
+        if prior is not None and prior != source.sha256:  # stopgap until content-addressed output (BASE-016)
+            error = (f"{out / name} holds output from different content (sha256 {prior[:16]}, this input "
+                     f"{source.sha256[:16]}); use another output directory")
+            log.error("project %s not written: %s", where, error)
+            manifest["failed"].append({"dir": name, "container": list(proj.trace_container), "error": error})
+            continue
         log.info("ingesting %s -> %s", where, name)
         try:
             result = ingest_project(run, proj, out / name, llm, render=not args.no_render, progress=progress,
