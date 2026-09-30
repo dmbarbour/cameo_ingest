@@ -362,11 +362,38 @@ DIAGRAM_SYNTHESIS = Template(
     image_first=True,
 )
 
+# Version 2 of both (2026-09-30, from the first live run on the drone sample): the answers
+# named modules by number ("sends it to M2"), which means nothing outside the diagram's page.
+MODULE_DESCRIPTION_V2 = Template(
+    id="module-description",
+    version=2,
+    purpose=MODULE_DESCRIPTION.purpose,
+    text=MODULE_DESCRIPTION.text.replace(
+        "what it takes from or passes to the other modules. ",
+        "what it takes from or passes to the other modules, naming the shapes at the other end rather than "
+        "their modules' numbers. "),
+    slots=MODULE_DESCRIPTION.slots,
+    image_first=True,
+)
+
+DIAGRAM_SYNTHESIS_V2 = Template(
+    id="diagram-synthesis",
+    version=2,
+    purpose=DIAGRAM_SYNTHESIS.purpose,
+    text=DIAGRAM_SYNTHESIS.text.replace(
+        "Do not repeat the module descriptions; relate them. ",
+        "Do not repeat the module descriptions; relate them. Refer to each module by what it does, not by its "
+        "label (M1, M2...), which means nothing outside this diagram. "),
+    slots=DIAGRAM_SYNTHESIS.slots,
+    image_first=True,
+)
+
 # The versions in use. Their keys are part of a run's options, so that a project written
 # with other versions is written again (FU-014).
-CURRENT = {t.id: t for t in (DIAGRAM_DESCRIPTION_V4, MODULE_DESCRIPTION, DIAGRAM_SYNTHESIS, IMAGE_DESCRIPTION_V2,
-                             PACKAGE_SUMMARY_V2)}
+CURRENT = {t.id: t for t in (DIAGRAM_DESCRIPTION_V4, MODULE_DESCRIPTION_V2, DIAGRAM_SYNTHESIS_V2,
+                             IMAGE_DESCRIPTION_V2, PACKAGE_SUMMARY_V2)}
 
 TEMPLATES = {t.key: t for t in (DIAGRAM_DESCRIPTION, IMAGE_DESCRIPTION, PACKAGE_SUMMARY, DIAGRAM_DESCRIPTION_V2,
                                 PACKAGE_SUMMARY_V2, DIAGRAM_DESCRIPTION_V3, DIAGRAM_DESCRIPTION_V4,
-                                IMAGE_DESCRIPTION_V2, MODULE_DESCRIPTION, DIAGRAM_SYNTHESIS)}
+                                IMAGE_DESCRIPTION_V2, MODULE_DESCRIPTION, DIAGRAM_SYNTHESIS, MODULE_DESCRIPTION_V2,
+                                DIAGRAM_SYNTHESIS_V2)}
