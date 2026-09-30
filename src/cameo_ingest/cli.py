@@ -24,6 +24,7 @@ from . import runner as tree
 from .archive import ZIP_MAGIC, sniff_xmi
 from .diagrams import IMAGE_PIXELS
 from .llm import LLM, LLMConfig
+from .modules import thresholds
 from .progress import Progress
 from .prompts import CURRENT
 from .runner import Runner
@@ -42,7 +43,7 @@ An output tree remembers these choices, so later runs need no flags."""
 
 # Run settings an output tree remembers (never secrets: --env names a file).
 SETTINGS = ("env", "text_model", "vision_model", "llm_timeout", "llm_retries", "llm_max_calls",
-            "llm_concurrency", "cache_dir", "image_pixels")
+            "llm_concurrency", "cache_dir", "image_pixels", "diagram_modules")
 
 PROGRESS_LOGGER = "cameo_ingest.progress"
 _handlers: list[logging.Handler] = []  # ours, replaced when main() runs again (as in tests)
@@ -141,6 +142,10 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--image-pixels", type=int, metavar="N",
                    help="pixel budget of diagram sketches and of images sent to the vision model (default 645120: "
                         "gemma-4's 280 soft tokens of 48 x 48 px, all that DeepInfra gives it)")
+    g.add_argument("--diagram-modules", metavar="N:MIN:MAX",
+                   help="split diagrams of more than N shapes into modules of MIN to MAX shapes, each drawn and "
+                        "described on its own (default 25:6:25; N = 0 never splits). For tuning: the default "
+                        "should serve")
     g.add_argument("--llm-timeout", type=float, metavar="SECONDS", help="per-request timeout (default 120)")
     g.add_argument("--llm-retries", type=int, metavar="N", help="retries per request (default 2)")
     g.add_argument("--llm-max-calls", type=int, metavar="N", help="stop calling the LLM after N requests in a run "
@@ -242,6 +247,11 @@ def run_tree(args: argparse.Namespace, argv: list[str]) -> int:
             print(f"error: --env file {env} not found", file=sys.stderr)
             return 2
         load_env(env)
+    try:
+        modules = thresholds(settings.get("diagram_modules"))
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
     cfg = LLMConfig.from_env(settings.get("text_model"), settings.get("vision_model"),
                              timeout=settings.get("llm_timeout"), retries=settings.get("llm_retries"),
                              max_calls=settings.get("llm_max_calls"))
@@ -272,7 +282,7 @@ def run_tree(args: argparse.Namespace, argv: list[str]) -> int:
         state.save_settings(settings)
         options = {"render": settings.get("render", True), "text_model": cfg.text_model,
                    "vision_model": cfg.vision_model, "max_calls": cfg.max_calls,
-                   "image_pixels": settings.get("image_pixels") or IMAGE_PIXELS,
+                   "image_pixels": settings.get("image_pixels") or IMAGE_PIXELS, "modules": list(modules),
                    "templates": sorted(t.key for t in CURRENT.values()) if cfg.enabled else []}
         runner = Runner(state, out, llm, options, Progress(heartbeat=args.heartbeat),
                         concurrency=settings.get("llm_concurrency") or 1)

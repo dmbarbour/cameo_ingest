@@ -21,6 +21,7 @@ from typing import Any
 from . import exports
 from .archive import UnsupportedInput, discover
 from .llm import LLM
+from .modules import DEFAULTS
 from .pipeline import ingest_project
 from .progress import Progress
 from .provenance import TOOL, ContentInfo, sha256_bytes, sha256_text, utc_now
@@ -189,7 +190,8 @@ class Runner:
         try:
             result = ingest_project(content, project, work, self.llm, render=self.options["render"],
                                     progress=self.progress, concurrency=self.concurrency,
-                                    image_pixels=self.options["image_pixels"])
+                                    image_pixels=self.options["image_pixels"],
+                                    modules=tuple(self.options.get("modules", DEFAULTS)))
         except Exception as e:  # one bad project must not stop the others (BASE-004)
             log.error("project %s (sha256:%s) failed: %s: %s", content.name, sha[:16], type(e).__name__, e)
             log.debug("traceback for %s", content.name, exc_info=True)

@@ -280,10 +280,93 @@ IMAGE_DESCRIPTION_V2 = Template(
     image_first=True,
 )
 
+# Large diagrams (plan DV, 2026-09-30): each module is described on its own, then the
+# diagram as a whole from those descriptions (FU-011).
+_MODULES = ("The diagram is too large to read in one image, so its shapes have been split into modules of "
+            "shapes that are connected and drawn close together.")
+
+MODULE_DESCRIPTION = Template(
+    id="module-description",
+    version=1,
+    purpose="A description of one module of a large diagram, for a search index, stored as a "
+            "generated:module_description chunk (with the module's place in the diagram) and shown in the "
+            "module's section of the diagram's page. The diagram-synthesis request builds on these.",
+    text=(
+        "You are helping to index a systems engineering model (UML/SysML, authored in Cameo) for search. "
+        f"{_MODULES} The image above is a sketch of one module, redrawn from the diagram's layout: the "
+        "module's shapes are drawn in full and the rest of the diagram is faded; shapes of other modules "
+        "that connect to this one keep their numbers, at the picture's edge when they lie outside it. "
+        f"Below is the module's content as text. {_NOTATION} {_DEPENDENCIES}\n\n"
+        "Explain what this part of the diagram shows about the system: what it does or is made of, what "
+        "its main flows or dependencies achieve, and what it takes from or passes to the other modules. "
+        "Do not restate the legend or list every connection: they are already recorded exactly. Group or "
+        "order elements only as the diagram itself does. Base every statement on the text and the sketch; "
+        f"when the module shows little, say little. {_STYLE} At most 120 words.\n\n"
+        "Diagram: {{DIAGRAM}}\nModule: {{MODULE}}\nLegend:\n{{LEGEND}}\nConnections within the module:\n"
+        "{{CONNECTIONS}}\nConnections with other modules:\n{{BOUNDARY}}"
+    ),
+    slots=(
+        Slot("DIAGRAM", "text", "the diagram's name and type, '<name> (<diagram type>)'."),
+        Slot("MODULE", "text", "'M<k> of <n>': the module's number, in reading order, and the diagram's count."),
+        Slot("LEGEND", "text",
+             "one line per shape of the module, '- [<number>] <shape kind>: <label>', numbered as in the whole "
+             "diagram and indented two spaces per level of nesting within the module; labels as in "
+             "diagram-description. 6 to 25 lines by default (--diagram-modules)."),
+        Slot("CONNECTIONS", "text",
+             "one line per connection between shapes of the module, in the notation the text explains, or "
+             "'(none)'."),
+        Slot("BOUNDARY", "text",
+             "one line per connection between a shape of the module and one of another module, whose end "
+             "reads '[n] label (in M<j>)', or '(none)'."),
+        Slot("SKETCH", "image",
+             "a PNG of the module's region of the diagram at the vision model's pixel budget (--image-pixels), "
+             "sides in multiples of 48: the module's shapes numbered and named as in the whole sketch, other "
+             "shapes faded grey, those of connected modules with their numbers, and connections leaving the "
+             "picture ending in their far shape's number; the title gives the diagram and 'module M<k> of "
+             "<n>'."),
+    ),
+    image_first=True,
+)
+
+DIAGRAM_SYNTHESIS = Template(
+    id="diagram-synthesis",
+    version=1,
+    purpose="A description of a large diagram as a whole, for a search index, built from its modules' "
+            "descriptions; stored as its generated:diagram_description chunk and shown on the diagram's page.",
+    text=(
+        "You are helping to index a systems engineering model (UML/SysML, authored in Cameo) for search. "
+        f"{_MODULES} The image above is the whole diagram, redrawn from its layout, with each module's "
+        "shapes tinted and outlined and labelled M1, M2 and so on. Below are each module's description, "
+        "written from a closer view of it, and the connections between modules, whose shapes carry the "
+        "numbers in the image. Connections read '[a] source →[kind: name]→ [b] target' for directed "
+        "relationships and '[a] —[kind]— [b]' for undirected ones.\n\n"
+        "Explain what the whole diagram tells a reader about the system: what it is for, what each module "
+        "contributes, and how the modules work together, following the connections between them. Do not "
+        "repeat the module descriptions; relate them. Base every statement on the descriptions, the "
+        f"connections and the image. {_STYLE} At most 200 words.\n\n"
+        "Diagram: {{DIAGRAM}}\nModules:\n{{MODULES}}\nConnections between modules:\n{{CROSSING}}"
+    ),
+    slots=(
+        Slot("DIAGRAM", "text", "the diagram's name and type, '<name> (<diagram type>)'."),
+        Slot("MODULES", "text",
+             "one paragraph per module: 'M<k> (<n> shapes): ' and its module-description answer, or '(not "
+             "described)' when that request got no answer."),
+        Slot("CROSSING", "text",
+             "one line per connection between modules, in the notation the text explains, each end followed "
+             "by '(in M<j>)', or '(none)'."),
+        Slot("OVERVIEW", "image",
+             "a PNG of the whole diagram at the vision model's pixel budget (--image-pixels), sides in "
+             "multiples of 48: the sketch of diagram-description, with each module's shapes tinted in its "
+             "colour and its region outlined and labelled M<k>."),
+    ),
+    image_first=True,
+)
+
 # The versions in use. Their keys are part of a run's options, so that a project written
 # with other versions is written again (FU-014).
-CURRENT = {t.id: t for t in (DIAGRAM_DESCRIPTION_V4, IMAGE_DESCRIPTION_V2, PACKAGE_SUMMARY_V2)}
+CURRENT = {t.id: t for t in (DIAGRAM_DESCRIPTION_V4, MODULE_DESCRIPTION, DIAGRAM_SYNTHESIS, IMAGE_DESCRIPTION_V2,
+                             PACKAGE_SUMMARY_V2)}
 
 TEMPLATES = {t.key: t for t in (DIAGRAM_DESCRIPTION, IMAGE_DESCRIPTION, PACKAGE_SUMMARY, DIAGRAM_DESCRIPTION_V2,
                                 PACKAGE_SUMMARY_V2, DIAGRAM_DESCRIPTION_V3, DIAGRAM_DESCRIPTION_V4,
-                                IMAGE_DESCRIPTION_V2)}
+                                IMAGE_DESCRIPTION_V2, MODULE_DESCRIPTION, DIAGRAM_SYNTHESIS)}

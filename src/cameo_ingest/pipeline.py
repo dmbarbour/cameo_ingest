@@ -11,6 +11,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from . import diagrams as dg
+from . import modules as mod
 from . import semantics as sem
 from .archive import Project, first_tag
 from .emit import Annotation, Outputs, ProjectWriter, slug
@@ -103,10 +104,11 @@ def _image_mime(head: bytes) -> str | None:
 class _Request:
     """One LLM request, made after rendering so that requests can run in parallel."""
 
-    kind: str  # "diagram", "image" or "summary"
+    kind: str  # "diagram", "module", "image" or "summary"
     key: str  # diagram id, image entry or package id
     trace: Trace
     call: Callable[[], Any]
+    module: int | None = None  # of a large diagram
 
 
 def _ask_with_image(llm: LLM, template: Template, values: dict[str, str], root: Path, rel: str, mime: str,
@@ -167,15 +169,34 @@ def _answer(requests: list[_Request], progress: Progress, label: str, concurrenc
             pool.shutdown(wait=False, cancel_futures=True)
 
 
+def _draw(path: Path, draw: Callable[[], bytes | None]) -> bool:
+    """Write a sketch unless an interrupted attempt already did (a sketch on disk is always
+    complete); False when there is nothing to draw."""
+    if path.exists():
+        return True
+    png = draw()
+    if png is None:
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_bytes(png)
+    tmp.replace(path)
+    return True
+
+
+SKETCH = "re-drawn from layout data, not a Cameo rendering"
+
+
 def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM, render: bool = True,
-                   progress: Progress = QUIET, concurrency: int = 1,
-                   image_pixels: int = dg.IMAGE_PIXELS) -> ProjectResult:
+                   progress: Progress = QUIET, concurrency: int = 1, image_pixels: int = dg.IMAGE_PIXELS,
+                   modules: tuple[int, int, int] = mod.DEFAULTS) -> ProjectResult:
     ix = parse_project(project, progress)
     annotations: dict[str, list[Annotation]] = {}
     base = Trace(content_sha256=content.sha256)
     layouts = load_layouts(project, ix, progress)
-    writer = ProjectWriter(content, project, ix, root, annotations, layouts)
+    writer = ProjectWriter(content, project, ix, root, annotations, layouts, modules)
     requests: list[_Request] = []
+    large: list[tuple[str, mod.Partition, Trace, str]] = []  # described as a whole once their modules are
     truncated = 0  # LLM inputs cut short to fit the prompt
 
     reused = 0  # sketches drawn by an interrupted attempt with the same tool and options
@@ -186,25 +207,39 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
                 d = ix.diagrams[dia_id]
                 el = ix.elements[dia_id]
                 graph = writer.graph(dia_id)
+                part = writer.partition(dia_id)  # a large diagram: an overview and a view per module (plan DV)
+                title = f"{d.diagram_type or 'Diagram'}: {ix.qualified_name(dia_id)}"
                 rel = writer.dia_file[dia_id].removesuffix(".md") + ".png"
-                path = root / rel
-                if path.exists():
-                    reused += 1
+                reused += (root / rel).exists()
+                if part is not None:
+                    drawn = _draw(root / rel, partial(mod.overview_png, ix, graph, part, title, image_pixels))
                 else:
-                    png = dg.render_png(ix, graph, f"{d.diagram_type or 'Diagram'}: {ix.qualified_name(dia_id)}",
-                                        pixels=image_pixels)
-                    if png is None:
-                        continue
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    tmp = path.with_name(path.name + ".tmp")  # a sketch on disk is always complete
-                    tmp.write_bytes(png)
-                    tmp.replace(path)
-                writer.out.files.append(path)
+                    drawn = _draw(root / rel, partial(dg.render_png, ix, graph, title, pixels=image_pixels))
+                if not drawn:
+                    continue
+                writer.out.files.append(root / rel)
                 tr = writer.trace(el).with_(entry=d.streams[0] if d.streams else el.entry, line=None,
                                             derivation=Derivation(method="rendered", inputs=tuple(d.streams)))
-                annotations.setdefault(dia_id, []).append(
-                    Annotation("Diagram sketch (re-drawn from layout data, not a Cameo rendering)", "", tr, image=rel))
-                if llm.cfg.vision_model and graph.trivial():  # nothing to describe (FU-010)
+                label = f"Diagram sketch with its modules outlined ({SKETCH})" if part else f"Diagram sketch ({SKETCH})"
+                annotations.setdefault(dia_id, []).append(Annotation(label, "", tr, image=rel))
+                diagram = f"{d.name} ({d.diagram_type})"
+                if part is not None:
+                    for m in part.modules:
+                        mrel = writer.module_image(dia_id, m.num)
+                        if not _draw(root / mrel, partial(mod.module_png, ix, graph, part, m.num, title, image_pixels)):
+                            continue
+                        writer.out.files.append(root / mrel)
+                        annotations[dia_id].append(
+                            Annotation(f"Module M{m.num} sketch ({SKETCH})", "", tr, image=mrel, module=m.num))
+                        if llm.cfg.vision_model:
+                            call = partial(_ask_with_image, llm, CURRENT["module-description"],
+                                           mod.module_values(ix, graph, part, m.num, diagram), root, mrel,
+                                           "image/png", project=content.token,
+                                           inputs=(writer.trace(el).locator(), tr.locator()),
+                                           notes={"module": f"M{m.num} of {len(part.modules)}"})
+                            requests.append(_Request("module", dia_id, tr, call, m.num))
+                    large.append((dia_id, part, tr, rel))
+                elif llm.cfg.vision_model and graph.trivial():  # nothing to describe (FU-010)
                     llm.skip(writer.trace(el).locator(), "skipped_trivial",
                              f"{len(graph.nodes)} shape(s), {len(graph.links)} connection(s)")
                 elif llm.cfg.vision_model:
@@ -218,7 +253,7 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
                                                "limit": DIAGRAM_CONTEXT_ITEMS}}
                         cut_note = (f"\n(Only the first {DIAGRAM_CONTEXT_ITEMS} shapes and connections are listed: "
                                     f"the diagram has {len(nodes)} shapes and {len(edges)} connections.)")
-                    values = {"DIAGRAM": f"{d.name} ({d.diagram_type})",
+                    values = {"DIAGRAM": diagram,
                               "LEGEND": "\n".join(nodes[:DIAGRAM_CONTEXT_ITEMS]),
                               "CONNECTIONS": "\n".join(edges[:DIAGRAM_CONTEXT_ITEMS]) or "(none)",
                               "CUT_NOTE": cut_note}
@@ -281,16 +316,41 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
                     f"{SUMMARY_INPUT_CHARS:,}", DIAGRAM_CONTEXT_ITEMS, DIAGRAM_CONTEXT_ITEMS)
 
     image_desc: dict[str, tuple[str, Derivation]] = {}
+    described: dict[tuple[str, int], str] = {}  # modules of large diagrams
     for req, res in zip(requests, _answer(requests, progress, project.display_name, concurrency), strict=True):
         if res is None:
             continue
         text, deriv = res
         if req.kind == "diagram":
             annotations[req.key].append(Annotation("Diagram description", text, req.trace.with_(derivation=deriv)))
+        elif req.kind == "module":
+            assert req.module is not None
+            annotations[req.key].append(Annotation("Module description", text, req.trace.with_(derivation=deriv),
+                                                   module=req.module))
+            described[(req.key, req.module)] = text
         elif req.kind == "summary":
             annotations.setdefault(req.key, []).append(Annotation("Summary", text, req.trace.with_(derivation=deriv)))
         else:
             image_desc[req.key] = res
+
+    # Large diagrams as a whole, from their modules' descriptions (plan DV).
+    wholes = []
+    for dia_id, part, tr, rel in large:
+        texts = [described.get((dia_id, m.num)) for m in part.modules]
+        if not any(texts):
+            continue  # the module requests got no answer: nor would this one
+        d, el = ix.diagrams[dia_id], ix.elements[dia_id]
+        values = mod.synthesis_values(ix, writer.graph(dia_id), part, f"{d.name} ({d.diagram_type})", texts)  # type: ignore[arg-type]
+        missing = sum(t is None for t in texts)
+        call = partial(_ask_with_image, llm, CURRENT["diagram-synthesis"], values, root, rel, "image/png",
+                       project=content.token, inputs=(writer.trace(el).locator(), tr.locator()),
+                       notes={"modules": len(part.modules), **({"undescribed": missing} if missing else {})})
+        wholes.append(_Request("diagram", dia_id, tr, call))
+    for req, res in zip(wholes, _answer(wholes, progress, f"{project.display_name} (large diagrams)", concurrency),
+                        strict=True):
+        if res is not None:
+            text, deriv = res
+            annotations[req.key].append(Annotation("Diagram description", text, req.trace.with_(derivation=deriv)))
 
     if image_notes:
         lines = ["# Embedded images", ""]

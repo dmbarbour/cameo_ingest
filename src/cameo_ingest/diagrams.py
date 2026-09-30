@@ -251,9 +251,12 @@ def build(ix: ModelIndex, layout: Layout, rels: dict[str, Relationship],
     return g
 
 
-def describe(ix: ModelIndex, g: DiagramGraph, link) -> tuple[list[str], list[str]]:
+def describe(ix: ModelIndex, g: DiagramGraph, link, nodes: list[Node] | None = None,
+             links: list[Link] | None = None, where=None) -> tuple[list[str], list[str]]:
     """Markdown bullet lines for (legend, connections). `link(id)` renders a reference to
-    an element; plain `ix.label` gives plain text, as in the LLM request."""
+    an element; plain `ix.label` gives plain text, as in the LLM request. `nodes` and `links`
+    narrow the lists (to a module), indenting from the shallowest shape; `where(node)` adds
+    text after each shape, such as its module."""
 
     def ref(n: Node) -> str:
         v = n.view
@@ -269,11 +272,13 @@ def describe(ix: ModelIndex, g: DiagramGraph, link) -> tuple[list[str], list[str
         if node is None:
             return "(not shown)"
         pin = g.pins.get(view.view_id or "")
-        return f"[{node.num}] {ref(node)}" + (f".{md_inline(pin)}" if pin else "")
+        return f"[{node.num}] {ref(node)}" + (f".{md_inline(pin)}" if pin else "") + (where(node) if where else "")
 
-    legend = [f"{'  ' * n.depth}- [{n.num}] {n.view.cls}: {ref(n)}" for n in g.nodes]
+    shapes = g.nodes if nodes is None else nodes
+    top = min((n.depth for n in shapes), default=0)
+    legend = [f"{'  ' * (n.depth - top)}- [{n.num}] {n.view.cls}: {ref(n)}{where(n) if where else ''}" for n in shapes]
     lines = []
-    for lk in g.links:
+    for lk in g.links if links is None else links:
         arrow = "→" if lk.directed else "—"
         detail = "; ".join(x for x in (md_inline(lk.label), lk.verb,
                                        "carries " + ", ".join(md_inline(i) for i in lk.items) if lk.items else "")
@@ -340,6 +345,10 @@ def render_png(ix: ModelIndex, g: DiagramGraph, title: str, pixels: int = IMAGE_
     x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
     w, h = max(1.0, x1 - x0), max(1.0, y1 - y0)
     W, H, scale = canvas(w, h, pixels)
+    if f.outlines:  # room above the drawing for module labels
+        pad = (FONT_PX + 16) / scale
+        y0, h = y0 - pad, h + pad
+        W, H, scale = canvas(w, h, pixels)
     img = Image.new("RGB" if f.fills or f.outlines else "L", (W, H), "white")
     d = ImageDraw.Draw(img)
     font = ImageFont.load_default(size=FONT_PX)
@@ -424,13 +433,16 @@ def render_png(ix: ModelIndex, g: DiagramGraph, title: str, pixels: int = IMAGE_
         name = _shown_name(ix, n.view)
         if room > 4 * FONT_PX * 0.5 and c[1] - a[1] >= FONT_PX + 2 and name:
             d.text((a[0] + tw + 8, a[1] + 1), _fit(d, name, font, room), fill=text_fill, font=font)
+    big = ImageFont.load_default(size=FONT_PX + 4)
     for label, (bx0, by0, bx1, by1), colour in f.outlines:  # an overview's modules
         a, c = P(bx0, by0), P(bx1, by1)
         d.rectangle([a[0] - 3, a[1] - 3, c[0] + 3, c[1] + 3], outline=colour, width=2)
-        big = ImageFont.load_default(size=FONT_PX + 4)
-        lw = d.textlength(label, font=big)
-        d.rectangle([a[0] - 3, a[1] - 3, a[0] + lw + 5, a[1] + FONT_PX + 6], fill=colour)
-        d.text((a[0] + 1, a[1] - 2), label, fill="white", font=big)
+        lw, lh = d.textlength(label, font=big) + 8, FONT_PX + 9
+        # The label sits outside the outline's top left corner, so that it hides no shape's
+        # number: there is room above the drawing.
+        top = max(TITLE_PX, a[1] - 3 - lh)
+        d.rectangle([a[0] - 3, top, a[0] - 3 + lw, top + lh], fill=colour)
+        d.text((a[0] + 1, top + 1), label, fill="white", font=big)
     if f.region is not None:
         seen = tagged
         for num, (px, py) in stubs:

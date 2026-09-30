@@ -50,7 +50,7 @@ TEMPLATE_RUBRIC = [
     ("notes", "free text"),
 ]
 # Labels under which responses appear on pages (see emit.annotation_md and images.md).
-_LABELS = ("Diagram description", "Summary", "Description")
+_LABELS = ("Diagram description", "Module description", "Summary", "Description")
 
 
 def _strip_front_matter(text: str) -> str:

@@ -27,6 +27,21 @@ from .model import ModelIndex
 LARGE = 25  # split diagrams with more shapes than this
 MIN_SHAPES = 6
 MAX_SHAPES = 25
+DEFAULTS = (LARGE, MIN_SHAPES, MAX_SHAPES)
+
+
+def thresholds(spec: str | None) -> tuple[int, int, int]:
+    """The --diagram-modules setting, 'N:MIN:MAX', as numbers; empty for the defaults. N = 0
+    never splits. A lever for tuning and tests: the defaults should serve."""
+    if not spec:
+        return DEFAULTS
+    try:
+        large, lo, hi = (int(x) for x in spec.split(":"))
+    except ValueError:
+        raise ValueError(f"--diagram-modules expects N:MIN:MAX, such as 25:6:25, not {spec!r}") from None
+    if large < 0 or not 1 <= lo <= hi or hi < 2:
+        raise ValueError(f"--diagram-modules {spec}: needs N >= 0 and 1 <= MIN <= MAX, MAX >= 2")
+    return large, lo, hi
 
 Box = tuple[float, float, float, float]  # x0, y0, x1, y1 in diagram coordinates
 
@@ -160,8 +175,9 @@ class _Graph:
 
 
 def partition(g: DiagramGraph, large: int = LARGE, lo: int = MIN_SHAPES, hi: int = MAX_SHAPES) -> Partition | None:
-    """Modules of a diagram with more than `large` shapes; None for a smaller one."""
-    if len(g.nodes) <= large:
+    """Modules of a diagram with more than `large` shapes; None for a smaller one, or when
+    `large` is 0."""
+    if not large or len(g.nodes) <= large:
         return None
     G = _Graph(g)
     if len(G.nodes) <= large:
@@ -235,7 +251,7 @@ def overview_png(ix: ModelIndex, g: DiagramGraph, part: Partition, title: str,
                  pixels: int = dg.IMAGE_PIXELS) -> bytes | None:
     """The whole diagram, each module's shapes tinted and outlined with its number (M1...)."""
     frame = dg.Frame(fills={k: colour(m, True) for k, m in part.module_of.items()},
-                     outlines=[(f"M{m.num}", m.box, colour(m.num, False)) for m in part.modules], tags=False)
+                     outlines=[(f"M{m.num}", m.box, colour(m.num, False)) for m in part.modules])
     return dg.render_png(ix, g, f"{title}: {len(part.modules)} modules", pixels, frame)
 
 
@@ -249,3 +265,43 @@ def module_png(ix: ModelIndex, g: DiagramGraph, part: Partition, num: int, title
     pad = max(20.0, 0.04 * max(x1 - x0, y1 - y0))
     frame = dg.Frame(region=(x0 - pad, y0 - pad, x1 + pad, y1 + pad), focus=set(m.shapes), tagged=set(m.boundary))
     return dg.render_png(ix, g, f"{title}: module M{num} of {len(part.modules)}", pixels, frame)
+
+
+# -- text -----------------------------------------------------------------------------------------
+def module_lists(ix: ModelIndex, g: DiagramGraph, part: Partition, num: int,
+                 link=None) -> tuple[list[str], list[str], list[str]]:
+    """Module `num`'s (legend, connections within it, connections with other modules), as
+    Markdown bullet lines; plain text unless `link(id)` renders links. Shapes of other modules
+    read '[n] label (in M<j>)'."""
+    link = link or ix.label
+    shapes = set(part.modules[num - 1].shapes)
+    inside, edge = part.links(g, num)
+
+    def where(n: dg.Node) -> str:
+        return "" if n.num in shapes else f" (in M{part.module_of[n.num]})"
+
+    legend, lines = dg.describe(ix, g, link, nodes=[n for n in g.nodes if n.num in shapes], links=inside)
+    _, boundary = dg.describe(ix, g, link, nodes=[], links=edge, where=where)
+    return legend, lines, boundary
+
+
+def crossing_lines(ix: ModelIndex, g: DiagramGraph, part: Partition, link=None) -> list[str]:
+    """Connections between modules, each end followed by '(in M<j>)'."""
+    return dg.describe(ix, g, link or ix.label, nodes=[], links=part.crossing(g),
+                       where=lambda n: f" (in M{part.module_of[n.num]})")[1]
+
+
+def module_values(ix: ModelIndex, g: DiagramGraph, part: Partition, num: int, diagram: str) -> dict[str, str]:
+    """The text slots of a module-description request."""
+    legend, lines, boundary = module_lists(ix, g, part, num)
+    return {"DIAGRAM": diagram, "MODULE": f"M{num} of {len(part.modules)}", "LEGEND": "\n".join(legend),
+            "CONNECTIONS": "\n".join(lines) or "(none)", "BOUNDARY": "\n".join(boundary) or "(none)"}
+
+
+def synthesis_values(ix: ModelIndex, g: DiagramGraph, part: Partition, diagram: str,
+                     texts: list[str | None]) -> dict[str, str]:
+    """The text slots of a diagram-synthesis request, from the modules' descriptions."""
+    modules = "\n\n".join(f"M{m.num} ({len(m.shapes)} shapes): {text or '(not described)'}"
+                           for m, text in zip(part.modules, texts, strict=True))
+    return {"DIAGRAM": diagram, "MODULES": modules,
+            "CROSSING": "\n".join(crossing_lines(ix, g, part)) or "(none)"}

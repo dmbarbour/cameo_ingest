@@ -607,6 +607,67 @@ def test_llm_enrichment_is_labelled(tmp_path, fake_openai):
     assert not any("gemma-4" in c["text"] for c in extracted)
 
 
+def large_layout() -> str:
+    """The fixture's diagram with two chains of 15 steps added, far apart: 32 shapes."""
+    views = []
+    for i in range(30):
+        x, y = (0 if i < 15 else 3000) + 150 * (i % 5), 200 + 100 * ((i % 15) // 5)
+        views.append(f"<mdElement elementClass='Note' xmi:id='n{i}'><text>step {i}</text>"
+                     f"<geometry>{x}, {y}, 100, 40</geometry></mdElement>")
+        if i % 15:  # Cameo stores a flow's target as its first end
+            views.append(f"<mdElement elementClass='ControlFlow' xmi:id='f{i}'><linkFirstEndID xmi:idref='n{i}'/>"
+                         f"<linkSecondEndID xmi:idref='n{i - 1}'/><geometry>{x - 50}, {y + 20}; {x}, {y + 20}; "
+                         "</geometry></mdElement>")
+    views.append("<mdElement elementClass='ControlFlow' xmi:id='f15'><linkFirstEndID xmi:idref='n15'/>"
+                 "<linkSecondEndID xmi:idref='n14'/><geometry>700, 420; 3000, 220; </geometry></mdElement>")
+    return LAYOUT.replace("</mdOwnedViews>", "\n".join(views) + "\n</mdOwnedViews>")
+
+
+def test_large_diagram_modules(tmp_path, fake_openai):
+    """A large diagram is split into modules, each drawn, described and chunked with its place
+    in the diagram; the diagram is then described as a whole from them (plan DV)."""
+    import sqlite3
+
+    from PIL import Image
+
+    src = tmp_path / "drone.mdzip"
+    src.write_bytes(make_mdzip(layout=large_layout()))
+    out = tmp_path / "out"
+    assert main([str(src), "-o", str(out), "--vision-model", "v", "--no-preflight"]) == 0
+    check_invariants(out)
+    pdir = project_dir(out)
+    page = (pdir / "diagrams/Drone_BDD.md").read_text()
+    assert "**Modules (2):**" in page and "## Module M2 of 2" in page and '<a id="module-m2"></a>' in page
+    assert "- [3] Note: \"step 0\" (M" in page  # the legend gives each shape's module
+    for k in (1, 2):
+        with Image.open(pdir / f"diagrams/Drone_BDD.modules/M{k}.png") as img:
+            assert img.mode == "L" and img.size[0] * img.size[1] <= 645_120
+    with Image.open(pdir / "diagrams/Drone_BDD.png") as img:
+        assert img.mode == "RGB"  # the overview, modules tinted
+    chunks = [json.loads(line) for line in (out / "chunks.jsonl").open()]
+    mods = [c for c in chunks if c["metadata"]["kind"] == "generated:module_description"]
+    assert [c["metadata"]["module"]["number"] for c in mods] == [1, 2]
+    m = mods[0]["metadata"]["module"]
+    assert m["of"] == 2 and m["anchor"] == "diagrams/Drone_BDD.md#module-m1" and len(m["box"]) == 4
+    assert m["image"] == "diagrams/Drone_BDD.modules/M1.png" and m["shapes"]
+    assert sum(len(c["metadata"]["module"]["shapes"]) for c in mods) == 32
+    assert "module m1 of 2, showing" in mods[0]["text"]
+    whole = [c for c in chunks if c["metadata"]["kind"] == "generated:diagram_description"]
+    assert [c["metadata"]["provenance"]["derivation"]["template"] for c in whole] == ["diagram-synthesis@v1"]
+    db = sqlite3.connect(out / ".cache/llm.sqlite")
+    rows = db.execute("SELECT template, prompt, image_path FROM requests WHERE template LIKE 'module%' "
+                      "OR template LIKE 'diagram%' ORDER BY rowid").fetchall()
+    assert [r[0] for r in rows] == ["module-description@v1"] * 2 + ["diagram-synthesis@v1"]
+    assert "Module: M2 of 2" in rows[1][1] and "(in M" in rows[1][1]
+    assert rows[2][1].count("A block definition diagram showing Drone") == 2 and rows[2][2] == "diagrams/Drone_BDD.png"
+
+    # The thresholds are a setting: N = 0 draws and describes every diagram whole.
+    assert main(["run", "-o", str(out), "--diagram-modules", "0:6:25", "--no-preflight"]) == 0
+    page = (project_dir(out) / "diagrams/Drone_BDD.md").read_text()
+    assert "## Module" not in page and "generated:module_description" not in (out / "chunks.jsonl").read_text()
+    assert main(["run", "-o", str(out), "--diagram-modules", "25:6"]) == 2
+
+
 def test_templates_and_request_log(tmp_path, fake_openai):
     """Prompts are named, versioned templates with described slots (plan LQ-01), and every
     request is logged with what it asked (LQ-02)."""
