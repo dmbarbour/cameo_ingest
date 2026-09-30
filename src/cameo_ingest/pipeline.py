@@ -18,7 +18,7 @@ from .layout import Layout, parse_layout
 from .llm import LLM
 from .model import ModelIndex
 from .progress import QUIET, Progress
-from .prompts import DIAGRAM_DESCRIPTION, IMAGE_DESCRIPTION, PACKAGE_SUMMARY, Template
+from .prompts import DIAGRAM_DESCRIPTION_V2, IMAGE_DESCRIPTION, PACKAGE_SUMMARY_V2, Template
 from .provenance import ContentInfo, Derivation, Trace
 from .text import front_matter
 from .xmi import finalize, parse_into
@@ -105,10 +105,37 @@ class _Request:
 
 
 def _ask_with_image(llm: LLM, template: Template, values: dict[str, str], root: Path, rel: str, mime: str,
-                    **kw: Any) -> Any:
+                    image_size: int = 0, notes: dict | None = None, **kw: Any) -> Any:
     # The image is read back from disk only when the request runs, so queued requests
     # don't hold every diagram in memory.
-    return llm.ask(template, values, image=(root / rel).read_bytes(), mime=mime, image_path=rel, **kw)
+    data = (root / rel).read_bytes()
+    notes = dict(notes or {})
+    if image_size:  # the model sees at most image_size px anyway: send no more (FU-012R3)
+        data, mime, scaled = _fit_image(data, mime, image_size)
+        if scaled:
+            notes["scaled"] = scaled
+    return llm.ask(template, values, image=data, mime=mime, image_path=rel, notes=notes, **kw)
+
+
+def _fit_image(data: bytes, mime: str, size: int) -> tuple[bytes, str, dict | None]:
+    """The image scaled down to at most `size` px on its longer side, as PNG; unchanged if it
+    already fits or can't be read."""
+    import io
+
+    from PIL import Image
+
+    try:
+        with Image.open(io.BytesIO(data)) as img:
+            if max(img.size) <= size:
+                return data, mime, None
+            original = img.size
+            img.thumbnail((size, size))
+            buf = io.BytesIO()
+            img.save(buf, "PNG")
+            return buf.getvalue(), "image/png", {"from": list(original), "to": list(img.size)}
+    except Exception as e:  # a damaged or unusual image is sent as it is
+        log.debug("cannot scale an image: %s", e)
+        return data, mime, None
 
 
 def _answer(requests: list[_Request], progress: Progress, label: str, concurrency: int) -> list[Any]:
@@ -169,21 +196,27 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
                                             derivation=Derivation(method="rendered", inputs=tuple(d.streams)))
                 annotations.setdefault(dia_id, []).append(
                     Annotation("Diagram sketch (re-drawn from layout data, not a Cameo rendering)", "", tr, image=rel))
-                if llm.cfg.vision_model:
+                if llm.cfg.vision_model and graph.trivial():  # nothing to describe (FU-010)
+                    llm.skip(writer.trace(el).locator(), "skipped_trivial",
+                             f"{len(graph.nodes)} shape(s), {len(graph.links)} connection(s)")
+                elif llm.cfg.vision_model:
                     nodes, edges = dg.describe(ix, graph, lambda e: ix.label(e))
-                    notes = {}
+                    notes, cut_note = {}, ""
                     if max(len(nodes), len(edges)) > DIAGRAM_CONTEXT_ITEMS:
                         truncated += 1
                         llm.truncated(writer.trace(el).locator(), f"{len(nodes)} shapes, {len(edges)} connections; "
                                                                   f"the first {DIAGRAM_CONTEXT_ITEMS} of each sent")
                         notes = {"truncated": {"shapes": len(nodes), "connections": len(edges),
                                                "limit": DIAGRAM_CONTEXT_ITEMS}}
-                    context = "\n".join([f"Diagram: {d.name} ({d.diagram_type})", "Shapes:"]
-                                        + nodes[:DIAGRAM_CONTEXT_ITEMS] + ["Connections:"]
-                                        + edges[:DIAGRAM_CONTEXT_ITEMS])
-                    call = partial(_ask_with_image, llm, DIAGRAM_DESCRIPTION, {"CONTEXT": context}, root, rel,
-                                   "image/png", project=content.token,
-                                   inputs=(writer.trace(el).locator(), tr.locator()), notes=notes)
+                        cut_note = (f"\n(Only the first {DIAGRAM_CONTEXT_ITEMS} shapes and connections are listed: "
+                                    f"the diagram has {len(nodes)} shapes and {len(edges)} connections.)")
+                    values = {"DIAGRAM": f"{d.name} ({d.diagram_type})",
+                              "LEGEND": "\n".join(nodes[:DIAGRAM_CONTEXT_ITEMS]),
+                              "CONNECTIONS": "\n".join(edges[:DIAGRAM_CONTEXT_ITEMS]) or "(none)",
+                              "CUT_NOTE": cut_note}
+                    call = partial(_ask_with_image, llm, DIAGRAM_DESCRIPTION_V2, values, root, rel, "image/png",
+                                   project=content.token, inputs=(writer.trace(el).locator(), tr.locator()),
+                                   notes=notes)
                     requests.append(_Request("diagram", dia_id, tr, call))
 
     if reused:
@@ -206,8 +239,8 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
         tr = base.with_(entry=entry)
         image_notes.append((entry, rel, tr))
         if llm.cfg.vision_model:
-            call = partial(_ask_with_image, llm, IMAGE_DESCRIPTION, {}, writer.root, rel, mime, project=content.token,
-                           inputs=(tr.locator(),))
+            call = partial(_ask_with_image, llm, IMAGE_DESCRIPTION, {}, writer.root, rel, mime, image_size=image_size,
+                           project=content.token, inputs=(tr.locator(),))
             requests.append(_Request("image", entry, tr, call))
 
     # Package summaries from the deterministic text, so the LLM only rephrases what is there.
@@ -222,12 +255,15 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
             text = writer.section(pkg, rel, 1, trace=False) + "\n".join(
                 writer.section(e, rel, 2, trace=False) for e in sections)
             tr = writer.trace(pkg)
-            notes = {}
+            notes, cut_note = {}, ""
             if len(text) > SUMMARY_INPUT_CHARS:
                 truncated += 1
                 llm.truncated(tr.locator(), f"{len(text):,} characters; the first {SUMMARY_INPUT_CHARS:,} sent")
                 notes = {"truncated": {"characters": len(text), "limit": SUMMARY_INPUT_CHARS}}
-            call = partial(llm.ask, PACKAGE_SUMMARY, {"PACKAGE_TEXT": text[:SUMMARY_INPUT_CHARS]},
+                cut_note = (f"The text was cut at {SUMMARY_INPUT_CHARS:,} of its {len(text):,} characters, so the "
+                            "later elements are known by name only. ")
+            call = partial(llm.ask, PACKAGE_SUMMARY_V2,
+                           {"CUT_NOTE": cut_note, "PACKAGE_TEXT": text[:SUMMARY_INPUT_CHARS]},
                            project=content.token, inputs=(tr.locator(),), notes=notes)
             requests.append(_Request("summary", pkg_id, tr, call))
 

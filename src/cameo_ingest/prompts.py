@@ -126,4 +126,76 @@ PACKAGE_SUMMARY = Template(
     ),
 )
 
-TEMPLATES = {t.key: t for t in (DIAGRAM_DESCRIPTION, IMAGE_DESCRIPTION, PACKAGE_SUMMARY)}
+# Version 2 (2026-09-30): meaning rather than restated structure (FU-009), the notation
+# explained, grouping only as drawn and no Markdown (FU-004), the legend and numbered sketch
+# (FU-008), and saying when input was cut (FU-005, FU-011).
+_NOTATION = (
+    "In the sketch, each shape carries a number; the legend gives its full label. Connections read "
+    "'[a] source →[kind: name]→ [b] target' for directed relationships (flows, dependencies, "
+    "generalizations, «satisfy», «deriveReqt»...) and '[a] —[kind]— [b]' for undirected ones; "
+    "'carries X →' names what flows along a connector, in the direction of the arrow."
+)
+_STYLE = ("Write plain prose, without headings, lists, bold or code formatting, and use the element "
+          "names exactly as written.")
+
+DIAGRAM_DESCRIPTION_V2 = Template(
+    id="diagram-description",
+    version=2,
+    purpose=DIAGRAM_DESCRIPTION.purpose,
+    text=(
+        "You are helping to index a systems engineering model (UML/SysML, authored in Cameo) for search. "
+        "Below is one diagram: a sketch redrawn from its layout (the attached image), and its content as "
+        f"text. {_NOTATION}\n\n"
+        "Explain what this diagram tells a reader about the system: what it is for, what it shows the "
+        "system or its parts doing or being made of, and which flows or dependencies matter most and why. "
+        "Do not restate the legend or list every connection: they are already recorded exactly. Group or "
+        "order elements only as the diagram itself does (nesting, frames, partitions, the order of flows). "
+        "Base every statement on the text and the sketch; when the diagram shows little, say little. "
+        f"{_STYLE} At most 150 words.\n\n"
+        "Diagram: {{DIAGRAM}}\nLegend:\n{{LEGEND}}\nConnections:\n{{CONNECTIONS}}{{CUT_NOTE}}"
+    ),
+    slots=(
+        Slot("DIAGRAM", "text", "the diagram's name and type, '<name> (<diagram type>)'."),
+        Slot("LEGEND", "text",
+             "one line per shape, '- [<number>] <shape kind>: <label>', indented two spaces per level of "
+             "nesting; labels are '«stereotype» name : Type', an unnamed typed element shows its type alone. "
+             "Pins and ports are not listed; they appear in connections as '[n] Owner.pin'. At most 150 lines."),
+        Slot("CONNECTIONS", "text",
+             "one line per connection, in the notation the text explains, with directions taken from the model "
+             "and the items a connector carries. At most 150 lines."),
+        Slot("CUT_NOTE", "text",
+             "empty, or a line saying that only the first 150 shapes or connections are listed, and how many "
+             "there are (large diagrams: plan DV splits them instead)."),
+        Slot("SKETCH", "image",
+             "a PNG sketch redrawn from the layout data, at most --image-size (768) px on its longer side: shapes "
+             "tagged with their legend numbers and, where it fits on one line, their name; pins and ports as "
+             "dots; arrowheads at the target; small mid-line arrows for item flows; the title gives the diagram "
+             "type and qualified name."),
+    ),
+)
+
+PACKAGE_SUMMARY_V2 = Template(
+    id="package-summary",
+    version=2,
+    purpose=PACKAGE_SUMMARY.purpose,
+    text=(
+        "You are helping to index a systems engineering model (UML/SysML, authored in Cameo) for search. "
+        "Below is the extracted text of one package, in Markdown: the package's own description and members, "
+        "then a section for each element in it. {{CUT_NOTE}}Summarize what this package models: its purpose, "
+        "its main elements, and how they relate. Use only the information given, and do not speculate. "
+        f"{_STYLE} At most 150 words.\n\n---\n{{{{PACKAGE_TEXT}}}}"
+    ),
+    slots=(
+        Slot("CUT_NOTE", "text",
+             "empty, or a sentence saying the text was cut at 12,000 of its N characters, so that later "
+             "elements are known by name only."),
+        Slot("PACKAGE_TEXT", "text",
+             "the package's Markdown page as extracted, without trace lines: the package's own section (kind, "
+             "qualified name, documentation, members with links), then one section per element (stereotypes, "
+             "requirement text, documentation, tagged values, members, relationships, diagrams showing it). "
+             "At most 12,000 characters (FU-005)."),
+    ),
+)
+
+TEMPLATES = {t.key: t for t in (DIAGRAM_DESCRIPTION, IMAGE_DESCRIPTION, PACKAGE_SUMMARY,
+                                DIAGRAM_DESCRIPTION_V2, PACKAGE_SUMMARY_V2)}

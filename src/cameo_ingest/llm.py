@@ -249,6 +249,11 @@ class LLM:
             self.outcomes["truncated_input"] += 1
         log.debug("LLM input for %s truncated: %s", item, what)
 
+    def skip(self, item: str, outcome: str, detail: str = "") -> None:
+        """Record that an item was deliberately left without generated text."""
+        with self._lock:
+            self._skip(item, outcome, detail)
+
     def _skip(self, item: str, outcome: str, detail: str = "") -> None:
         """Record an item left without generated text. Call with the lock held."""
         self.outcomes[outcome] += 1

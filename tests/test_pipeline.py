@@ -548,17 +548,17 @@ def test_templates_and_request_log(tmp_path, fake_openai):
     db = sqlite3.connect(out / ".cache/llm.sqlite")
     rows = db.execute("SELECT template, project, item, image_path, prompt, notes FROM requests ORDER BY template, "
                       "image_path").fetchall()
-    assert [(r[0], r[3]) for r in rows] == [("diagram-description@v1", "diagrams/Drone_BDD.png"),
+    assert [(r[0], r[3]) for r in rows] == [("diagram-description@v2", "diagrams/Drone_BDD.png"),
                                            ("image-description@v1", "images/BINARY-img1.png"),
                                            ("image-description@v1", "images/BINARY-img2.png"),
-                                           ("package-summary@v1", None)]
+                                           ("package-summary@v2", None)]
     assert all(r[1] == token and r[2].startswith(token[:23]) for r in rows)
-    assert rows[0][4].startswith(TEMPLATES["diagram-description@v1"].text.split("{{")[0])
+    assert rows[0][4].startswith(TEMPLATES["diagram-description@v2"].text.split("{{")[0])
     assert "Diagram: Drone BDD (SysML Block Definition Diagram)" in rows[0][4]
     chunks = [json.loads(line) for line in (out / "chunks.jsonl").open()]
     templates = {c["metadata"]["provenance"]["derivation"].get("template") for c in chunks
                  if c["metadata"]["kind"].startswith("generated:")}
-    assert templates == {"diagram-description@v1", "image-description@v1", "package-summary@v1"}
+    assert templates == {"diagram-description@v2", "image-description@v1", "package-summary@v2"}
 
 
 def test_quality_sample(tmp_path, fake_openai, capsys):
@@ -581,7 +581,7 @@ def test_quality_sample(tmp_path, fake_openai, capsys):
     summary = next(i for i in items if i["kind"] == "summary")
     assert "Model::Structure" in summary["prompt"] and summary["image"] is None
     page = (set_dir / "index.html").read_text()
-    assert '<span class="slot">⟦CONTEXT:' in page and '<span class="slot">⟦IMAGE SKETCH' in page
+    assert '<span class="slot">⟦LEGEND:' in page and '<span class="slot">⟦IMAGE SKETCH' in page
     assert page.count("src='data:image/png;base64,") == 2  # the diagram sketch and the embedded image
     with (set_dir / "rate-items.csv").open() as f:
         assert [r["item"] for r in csv.DictReader(f)] == [i["id"] for i in items]
