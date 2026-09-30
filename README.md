@@ -103,7 +103,8 @@ writes the debug detail to a file, whatever the console shows.
 them one by one. The default is 1, which suits a local server; hosted endpoints usually
 accept more. It matters for large models: at about 11 s per diagram description, TMT's
 1,413 requests take about 4 hours one at a time. Rendering is the costliest step without an
-LLM: about 50 s for TMT's 1,241 sketches (`--no-render` skips them).
+LLM: about 40 s for TMT's 1,241 sketches and the module views of its 44 large diagrams
+(`--no-render` skips them).
 
 `--image-pixels N` (default 645,120) is the pixel budget of sketches and of the images sent to the
 vision model. `google/gemma-4-31B-it` on DeepInfra sees every image through 280 soft tokens of
@@ -111,6 +112,21 @@ vision model. `google/gemma-4-31B-it` on DeepInfra sees every image through 280 
 it exactly, with sides in multiples of 48, and larger images are scaled down to it. Images go
 before the text in each request, as Google advises (see
 `docs/research/gemma4-images-2026-09-30.md`).
+
+### Large diagrams and packages
+
+A diagram with more than 25 shapes is too large to read in one image at that budget. It is
+split into modules of 6 to 25 shapes that are connected and drawn close together
+(`docs/research/diagram-partitioning-2026-09-30.md`). Each module is drawn and described on
+its own, and the diagram is then described as a whole from those descriptions.
+`--diagram-modules N:MIN:MAX` (default `25:6:25`; `N` = 0 never splits) changes the
+thresholds; it is there for tuning, and the default should serve.
+
+A package whose text is over 12,000 characters is summarized in parts of 3,000 to 12,000
+characters, grouped by nesting, relationships and order. The package is then summarized from
+its parts' summaries, through runs of at most 30 of them when there are more. Short parts
+keep each request well within what the model reads evenly; one long request loses the middle
+of a large package (`docs/research/sandwiching-2026-09-30.md`).
 
 ## Output
 
@@ -130,14 +146,19 @@ out/
                          (ID, text, satisfy/verify/derive links) and elements, grouped by package
     packages/<qn>.md     one file per package, one section per element (blocks, requirements,
                          activities, use cases…), with members, tagged values, relationships
-                         in both directions, and "shown in diagrams"
+                         in both directions (dependencies with their verbs), and "shown in
+                         diagrams"; a large package's summary is followed by its parts'
+                         summaries
     diagrams/<name>.md   diagram type, author and dates, a numbered legend of the shapes (by
                          nesting), connections from source to target, with the items they carry
                          and, for dependencies, how they read ("is derived from", "satisfies"),
                          and the table/matrix configuration
     diagrams/<name>.png  a sketch redrawn from the layout data to the model's pixel budget: shapes
                          tagged with their legend numbers, arrows at the target; not a Cameo
-                         rendering
+                         rendering. For a large diagram, its modules are tinted and outlined
+    diagrams/<name>.modules/M<k>.png
+                         a large diagram's module k, cropped and drawn to the pixel budget,
+                         the rest of the diagram faded; the page has a section per module
     images/, images.md   embedded raster images (attachment streams)
     tables/              elements, relationships, requirements, properties, tagged_values,
                          diagrams (.csv)
@@ -189,6 +210,8 @@ text. `metadata.kind` says what the chunk is:
 | `ledger:requirements`, `ledger:diagrams`, `ledger:elements`, `ledger:packages` | One line per item for one package (split into parts of about 60 lines); `metadata.element_ids` lists the ids row by row | "Which requirements cover thermal control?", "List the activity diagrams", "Where does REQ-2-APS-0086 come from?" |
 | `ledger:projects` | One line per project in the tree, with where it was found; `metadata.tokens` row by row | "Which models came from supplier X?" |
 | `generated:*` | LLM summaries and descriptions (`provenance.derivation.method = "llm"`) | Extra recall; weight or filter them separately |
+| `generated:module_description` | One module of a large diagram. `metadata.module` locates it: `number` and `of`, the legend's shape numbers (`shapes`), `elements`, its `box` in diagram coordinates, the page `anchor` and the `image` | "What does this part of the activity do?" |
+| `generated:module_summary` | One part (or run of parts) of a large package. `metadata.part` gives `number` to `last` of `of`, the `elements` it covers and the page `anchor` | "Which part of the requirements covers pointing?" |
 
 In the root `chunks.jsonl`, `metadata.source_metadata` holds the `--meta` values of every
 input the content was found in, as lists (`{"program": ["XYZ"]}`), ready for filtering. The
@@ -261,6 +284,11 @@ runner: inputs ─► archive.discover ─► state (contents, sightings) ─►
   `geometry` and link ends. They produce a deterministic node and edge list, which is the
   authoritative description. They also produce a PNG sketch that a vision model describes,
   with the node and edge list as context, so a weak model has less room to hallucinate.
+- **Modules and parts** (`modules.py`). Large diagrams are split by Louvain community
+  detection (`networkx`) on their connections, weighted by how close the shapes are drawn.
+  Large packages are split the same way, with document order in place of geometry and
+  sizes in characters. LLM requests run in rounds: modules and parts first, then the
+  descriptions and summaries built from their answers.
 - **State and publishing** (`state.py`, `runner.py`, `exports.py`). A project is built in a
   work directory and published by one rename plus one database transaction, so a project
   directory is always complete, and files a new version no longer produces disappear with
@@ -283,8 +311,11 @@ runner: inputs ─► archive.discover ─► state (contents, sightings) ─►
   rasterizer such as `cairosvg` or `resvg`.
 - **Attachments** (`BINARY-*` PNG, JPEG or PDF) are listed at project level but not yet
   linked to their owning elements. PDF and Office attachments aren't converted yet.
-- **Chunk sizes.** Very large requirement or tag sections aren't split; downstream chunkers
-  may need to split them.
+- **Chunk sizes.** Very large requirement or member sections aren't split; downstream chunkers
+  may need to split them. Tagged values are cut at 4,000 characters on pages, and
+  hex-encoded images are described rather than shown.
+- **Sequence diagrams and swimlanes** are split into modules like any other diagram. Bands
+  along the time axis, and activity partitions, would be better module boundaries.
 - **Deleted diagrams.** Diagrams whose layout stream is missing still get a page, listing
   the elements known from the XMI.
 

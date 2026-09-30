@@ -10,7 +10,7 @@ here.
 |---|---|---|
 | [Resumable, content-addressed ingest](resumable-ingest-2026-09-29.md) | Completed 2026-09-29 | BASE-008R1, BASE-016R2, BASE-017R1, BASE-021R1 |
 | [Measuring LLM enrichment quality](llm-quality-2026-09-30.md) | LQ-01 to LQ-03 done; judge panel (LQ-04 to LQ-06) deferred | FU-006R1 (and measures fixes for FU-001, FU-002, FU-004, FU-005) |
-| [Modular views of large diagrams and packages](diagram-views-2026-09-30.md) | Accepted; in progress (DV-01 done) | FU-011R1, FU-005R1 |
+| [Modular views of large diagrams and packages](diagram-views-2026-09-30.md) | In progress: DV-01 to DV-06 done; evaluation (DV-07) and docs (DV-08) under way | FU-011R1, FU-005R1 |
 
 ## Tentative
 
@@ -34,5 +34,8 @@ These plans are not yet written. The first comes from the LLM quality plan's ope
   sketch. This needs a real sample and an SVG rasterizer such as `cairosvg` or `resvg`.
 - **Attachments.** Link `BINARY-*` images and documents to the elements that own them, and
   convert PDF and Office attachments to text.
-- **Chunk splitting.** Split very large requirement and tagged-value sections so that
-  downstream chunkers don't have to.
+- **Chunk splitting.** Split very large requirement and member sections so that downstream
+  chunkers don't have to. Long tagged values are already cut on pages (FU-020).
+- **Better module boundaries.** Split sequence diagrams into bands along the time axis, and
+  activity diagrams along their partitions (swimlanes, from the model's `inPartition`),
+  rather than by connectivity alone. Both were found in plan DV's partitioning study.
