@@ -25,7 +25,7 @@ from PIL import Image, ImageDraw, ImageFont
 from .layout import Layout, View
 from .model import ModelIndex
 from .semantics import ItemFlow, Relationship
-from .text import md_inline
+from .text import md_inline, one_line
 
 # gemma-4 fills a budget of 280 soft tokens of 48 x 48 px (645,120 px) at the image's own aspect
 # ratio, with sides in multiples of 48 (docs/research/gemma4-images-2026-09-30.md, FU-015).
@@ -90,11 +90,6 @@ def element_label(ix: ModelIndex, v: View) -> str:
     return ((f"«{st[0]}» " if st else "") + name).strip() or f"({el.kind})"
 
 
-def _one_line(text: str) -> str:
-    """Names and notes may span lines; the legend and sketch give each on one (FU-016)."""
-    return " ".join(text.split())
-
-
 def _shown_name(ix: ModelIndex, v: View) -> str:
     """The name drawn in a shape: its own, or for an unnamed typed element its type, as in
     the legend (FU-018)."""
@@ -154,14 +149,14 @@ def build(ix: ModelIndex, layout: Layout, rels: dict[str, Relationship],
         owner = g.node_of.get(v.parent or "")
         if v.cls in ATTACHED and owner is not None and owner.view.view_id == v.parent:
             g.node_of[v.view_id or ""] = owner
-            g.pins[v.view_id or ""] = _one_line(element_label(ix, v))
+            g.pins[v.view_id or ""] = one_line(element_label(ix, v))
             g.pin_views.append(v)
             continue
         parent = by_id.get(v.parent or "")
         while parent is not None and (parent.view_id or "") not in g.node_of:
             parent = by_id.get(parent.parent or "")
         up = g.node_of[parent.view_id or ""] if parent is not None else None
-        node = Node(len(g.nodes) + 1, v, _one_line(element_label(ix, v) if v.element else f'"{v.text}"'),
+        node = Node(len(g.nodes) + 1, v, one_line(element_label(ix, v) if v.element else f'"{v.text}"'),
                     up.depth + 1 if up else 0, up.num if up else None)
         g.nodes.append(node)
         g.node_of[v.view_id or ""] = node
@@ -487,7 +482,7 @@ def _fit(d: ImageDraw.ImageDraw, text: str, font, width: float) -> str:
     """`text` on one line, cut with an ellipsis to fit `width` px (the legend has it all):
     the longest prefix that fits, found by bisection, since notes and requirement texts
     can run to thousands of characters."""
-    text = _one_line(text)  # Pillow can't measure text with line breaks (FU-016)
+    text = one_line(text)  # Pillow can't measure text with line breaks (FU-016)
     if d.textlength(text, font=font) <= width:
         return text
     lo, hi = 0, len(text) - 1  # the longest fitting prefix has lo to hi characters

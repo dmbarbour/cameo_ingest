@@ -63,11 +63,12 @@ Share of the element names mentioned, by third of the package:
 - **Parts cover packages best where they are coherent.** In TMT's "TMT-APS Use Cases" (283,430
   characters), parts name 32 elements, against 17 in one request and 19 sandwiched. In
   "Migrated" (119,257) the counts are 27, 9 and 12.
-- **Results packages defeat every way.** Packages of analysis results, made of instance
-  specifications with long dotted names ("m3 Alignment Duration Scenario.aPS Mission
-  Logical12.aps operational blackbox.pplc"), get answers that list or skip names, however
-  they are asked: in four of them (113 to 370 elements), no way names more than 4. See FU-022
-  in the follow-up review.
+- **The name count misses results packages.** Packages of analysis results are made of instance
+  specifications with long generated names ("m3 Alignment Duration Scenario.aPS Mission
+  Logical12.aps operational blackbox.pplc"). Answers rarely repeat such names in full, so in
+  four of these packages (113 to 370 elements) no way of asking is credited with more than 4.
+  Read, though, their summaries from parts are sound. What the parts cost is FU-022 in the
+  follow-up review.
 
 ## Decision
 

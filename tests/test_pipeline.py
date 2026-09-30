@@ -725,6 +725,47 @@ def test_large_package_parts(tmp_path, fake_openai, monkeypatch):
     assert "summaries of the whole package" in prompt and re.search(r"\nParts \d+ to \d+: ", prompt)
 
 
+def instances_model() -> str:
+    """The fixture model with a package of analysis results: a run and 60 instances of Battery
+    whose slots set a value, about 20,000 characters."""
+    instances = "".join(
+        f"<packagedElement xmi:type='uml:InstanceSpecification' xmi:id='in{i}' name='run.battery pack.cell{i}'>"
+        f"<classifier xmi:idref='b2'/><slot xmi:type='uml:Slot' xmi:id='sl{i}'><definingFeature xmi:idref='a1'/>"
+        f"<value xmi:type='uml:LiteralReal' xmi:id='lv{i}' value='{i % 3}.5'/></slot></packagedElement>\n"
+        for i in range(60))
+    run = ("<packagedElement xmi:type='uml:InstanceSpecification' xmi:id='inrun' name='run at 2026.01.01'>"
+           "<classifier xmi:idref='b1'/><slot xmi:type='uml:Slot' xmi:id='slrun'><definingFeature xmi:idref='a1'/>"
+           "<value xmi:type='uml:InstanceValue' xmi:id='ivrun' instance='in0'/></slot></packagedElement>\n")
+    return MODEL.replace("<uml:Model xmi:type='uml:Model' xmi:id='m1' name='Model'>",
+                         "<uml:Model xmi:type='uml:Model' xmi:id='m1' name='Model'>\n"
+                         f"<packagedElement xmi:type='uml:Package' xmi:id='resp' name='Results'>{run}{instances}"
+                         "</packagedElement>")
+
+
+def test_instance_packages_summarized_from_a_digest(tmp_path, fake_openai):
+    """A large package made mostly of instance specifications is summarized in one request,
+    from a digest of its instances, not in parts (FU-022)."""
+    import sqlite3
+
+    src = tmp_path / "drone.mdzip"
+    src.write_bytes(make_mdzip(instances_model()))
+    out = tmp_path / "out"
+    assert main([str(src), "-o", str(out), "--text-model", "m", "--no-preflight", "--no-render"]) == 0
+    check_invariants(out)
+    page = (project_dir(out) / "packages/Model__Results.md").read_text()
+    assert "- **Classifier:** [Battery]" in page and "## Parts, summarized" not in page
+    db = sqlite3.connect(out / ".cache/llm.sqlite")
+    rows = db.execute("SELECT template, prompt FROM requests WHERE item LIKE '%resp%'").fetchall()
+    assert [r[0] for r in rows] == ["instances-summary@v1"]
+    prompt = rows[0][1]
+    assert "61 instance specifications of 2 classifiers." in prompt
+    # The run's slot refers to cell 0 only, so the other cells are top-level too.
+    assert "Top-level instances: run at 2026.01.01; run.battery pack.cell1; " in prompt
+    assert "- Battery: 60 instances, such as run.battery pack.cell0" in prompt
+    assert "slot battery, set 60 times: 0.5, 1.5, 2.5" in prompt
+    assert "slot battery, set 1 time: an instance of Battery" in prompt
+
+
 def test_templates_and_request_log(tmp_path, fake_openai):
     """Prompts are named, versioned templates with described slots (plan LQ-01), and every
     request is logged with what it asked (LQ-02)."""

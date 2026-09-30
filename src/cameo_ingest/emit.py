@@ -249,6 +249,9 @@ class ProjectWriter:
         t = sem.type_label(ix, el)
         if t:
             lines.append(f"- **Type:** {self.link(sem.refs(el, 'type')[0], from_file)}")
+        classifiers = sem.refs(el, "classifier")  # what an instance specification is an instance of (FU-022)
+        if classifiers:
+            lines.append("- **Classifier:** " + ", ".join(self.link(c, from_file) for c in classifiers))
         gens = [r for r in self.rels_by_end.get(el.id, []) if r.metaclass == "Generalization" and r.source == el.id]
         if gens:
             lines.append("- **Specializes:** " + ", ".join(self.link(g.target, from_file) for g in gens))

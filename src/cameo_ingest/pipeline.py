@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -21,7 +22,7 @@ from .model import Element, ModelIndex
 from .progress import QUIET, Progress
 from .prompts import CURRENT, Template
 from .provenance import ContentInfo, Derivation, Trace
-from .text import front_matter, plural
+from .text import front_matter, one_line, plural
 from .xmi import finalize, parse_into
 
 log = logging.getLogger(__name__)
@@ -32,6 +33,8 @@ SUMMARY_INPUT_CHARS = 12000  # package text sent for a summary; larger packages 
 PART_CHARS = (3000, 12000)  # a large package's parts: the smallest worth its own request, and the limit
 OWN_CHARS = 6000  # a large package's own section, sent with its parts' summaries
 MAX_SUMMARIES = 30  # summaries per synthesis request; more are summarized in runs first
+INSTANCE_SHARE = 0.8  # a large package with this share of instance specifications is summarized from a digest
+DIGEST_CHARS = (8000, 4000)  # the digest of its instances, and the text of its other elements
 DIAGRAM_CONTEXT_ITEMS = 150  # shapes, and connections, listed with a diagram image
 
 @dataclass
@@ -171,6 +174,60 @@ def _answer(requests: list[_Request], progress: Progress, label: str, concurrenc
             return [f.result() for f in futures]  # re-raises e.g. a replay miss
         finally:  # on Ctrl-C, queued requests are dropped rather than waited for
             pool.shutdown(wait=False, cancel_futures=True)
+
+
+def digest_values(ix: ModelIndex, package: str, own: str, sections: list[Element],
+                  texts: list[str]) -> dict[str, str]:
+    """The text slots of an instances-summary request: a package made mostly of instance
+    specifications, described by a digest of them rather than in full (FU-022)."""
+    instances = [e for e in sections if e.kind == "InstanceSpecification"]
+
+    def classifier(el_id: str) -> str:
+        el = ix.elements.get(el_id)
+        return ", ".join(ix.label(c) for c in sem.refs(el, "classifier")) if el else ""
+
+    def name(el_id: str) -> str:
+        """Generated names run long ("Scenario.aPS Mission Logical.aps operational blackbox.peas…"):
+        their ends tell them apart."""
+        label = one_line(ix.label(el_id))
+        return label if len(label) <= 80 else "…" + label[-79:]
+
+    slots: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))  # classifier -> feature -> values
+    by_classifier: dict[str, list[Element]] = defaultdict(list)
+    referred: set[str] = set()
+    for e in instances:
+        cls = classifier(e.id) or "(no classifier)"
+        by_classifier[cls].append(e)
+        for slot in sem.children(ix, e):
+            if slot.kind != "Slot":
+                continue
+            feature = next((ix.label(f) for f in sem.refs(slot, "definingFeature")), "(unnamed)")
+            for v in sem.children(ix, slot):
+                targets = sem.refs(v, "instance")
+                referred.update(targets)
+                target = ix.elements.get(targets[0]) if targets else None
+                if target is not None and target.kind == "InstanceSpecification" and classifier(target.id):
+                    value = f"an instance of {classifier(target.id)}"  # say what it is, not its long name
+                elif targets:  # an enumeration literal, say
+                    value = name(targets[0])
+                else:
+                    value = one_line(sem.value_text(ix, v) or v.kind)[:60]
+                slots[cls][feature].append(value)
+    top = [e for e in instances if e.id not in referred]
+    lines = [f"{len(instances):,} instance specifications of {plural(len(by_classifier), 'classifier')}.",
+             "Top-level instances: " + "; ".join(name(e.id) for e in top[:10]) + ("; ..." if len(top) > 10 else "")]
+    for cls, members in sorted(by_classifier.items(), key=lambda kv: -len(kv[1]))[:40]:
+        names = "; ".join(name(e.id) for e in members[:3])
+        lines.append(f"- {cls}: {plural(len(members), 'instance')}, such as {names}")
+        for feature, values in sorted(slots[cls].items(), key=lambda kv: -len(kv[1]))[:8]:
+            shown = ", ".join(dict.fromkeys(values))[:200]
+            lines.append(f"  - slot {feature}, set {plural(len(values), 'time')}: {shown}")
+    digest = "\n".join(lines)
+    if len(digest) > DIGEST_CHARS[0]:
+        digest = digest[:DIGEST_CHARS[0]] + "\n(The digest was cut here.)"
+    others = "\n".join(text for e, text in zip(sections, texts, strict=True) if e.kind != "InstanceSpecification")
+    return {"PACKAGE": package, "PACKAGE_TEXT": own[:OWN_CHARS], "DIGEST": digest,
+            "OTHERS": others[:DIGEST_CHARS[1]] or "(none)"}
 
 
 def part_values(package: str, k: int, n: int, body: str) -> tuple[dict[str, str], dict[str, Any]]:
@@ -374,6 +431,14 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
             if len(text) <= SUMMARY_INPUT_CHARS:
                 call = partial(llm.ask, CURRENT["package-summary"], {"CUT_NOTE": "", "PACKAGE_TEXT": text},
                                project=content.token, inputs=(tr.locator(),))
+                requests.append(_Request("summary", pkg_id, tr, call))
+                continue
+            instances = sum(e.kind == "InstanceSpecification" for e in sections)
+            if instances >= INSTANCE_SHARE * len(sections):  # analysis results, say: one request (FU-022)
+                call = partial(llm.ask, CURRENT["instances-summary"],
+                               digest_values(ix, ix.qualified_name(pkg_id), own, sections, texts),
+                               project=content.token, inputs=(tr.locator(),),
+                               notes={"digest": {"instances": instances, "elements": len(sections)}})
                 requests.append(_Request("summary", pkg_id, tr, call))
                 continue
             parts = [[sections[i] for i in g] for g in package_parts(writer, sections, texts)]

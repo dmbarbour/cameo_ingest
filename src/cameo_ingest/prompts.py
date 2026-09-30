@@ -485,13 +485,49 @@ PACKAGE_SUMMARY_V3 = Template(
     slots=PACKAGE_SUMMARY_V2.slots,
 )
 
+# Packages made mostly of instance specifications, such as the recorded results of an
+# analysis, summarized in one request from a digest rather than in parts (FU-022).
+INSTANCES_SUMMARY = Template(
+    id="instances-summary",
+    version=1,
+    purpose="A summary of a large package made mostly of instance specifications (at least 80% of its elements), "
+            "for a search index, from a digest of them; stored as the package's generated:summary chunk and shown "
+            "at the top of its page.",
+    text=(
+        "You are helping to index a systems engineering model (UML/SysML, authored in Cameo) for search. The "
+        "package below is made mostly of instance specifications, such as the recorded results of an analysis or "
+        "simulation, or a configuration of parts. Instead of every instance, you are given the package's own "
+        "section, a digest of its instances (how many there are of each classifier, which features their slots "
+        "set, with some values, and some of their names), and its other elements. Summarize what the package "
+        "records: what its instances are instances of, what their slots describe, and which analysis, scenario "
+        "or configuration they belong to, as far as the names and values show. Use only the information given, "
+        f"and do not speculate. {_STYLE} At most 150 words.\n\nPackage: {{{{PACKAGE}}}}\n---\n"
+        "{{PACKAGE_TEXT}}\n---\nInstances:\n{{DIGEST}}\n---\nOther elements:\n{{OTHERS}}"
+    ),
+    slots=(
+        Slot("PACKAGE", "text", "the package's qualified name."),
+        Slot("PACKAGE_TEXT", "text",
+             "the package's own section as on its page, without its trace line, cut at 6,000 characters: kind, "
+             "qualified name, documentation, tagged values, then the start of its member list."),
+        Slot("DIGEST", "text",
+             "'<n> instance specifications of <m> classifiers.'; the top-level instances (those no other "
+             "instance's slot refers to), up to 10; then per classifier, most instances first, up to 40: '- "
+             "<classifier> (<kind>): <count> instances, such as <up to 3 names>', and its slots' features with "
+             "how many instances set them and up to 3 values. At most 8,000 characters."),
+        Slot("OTHERS", "text",
+             "the sections of the package's other elements as on its page, cut at 4,000 characters in all, or "
+             "'(none)'."),
+    ),
+)
+
 # The versions in use. Their keys are part of a run's options, so that a project written
 # with other versions is written again (FU-014).
 CURRENT = {t.id: t for t in (DIAGRAM_DESCRIPTION_V4, MODULE_DESCRIPTION_V2, DIAGRAM_SYNTHESIS_V2,
-                             IMAGE_DESCRIPTION_V2, PACKAGE_SUMMARY_V2, MODULE_SUMMARY, PACKAGE_SYNTHESIS)}
+                             IMAGE_DESCRIPTION_V2, PACKAGE_SUMMARY_V2, MODULE_SUMMARY, PACKAGE_SYNTHESIS,
+                             INSTANCES_SUMMARY)}
 
 TEMPLATES = {t.key: t for t in (DIAGRAM_DESCRIPTION, IMAGE_DESCRIPTION, PACKAGE_SUMMARY, DIAGRAM_DESCRIPTION_V2,
                                 PACKAGE_SUMMARY_V2, DIAGRAM_DESCRIPTION_V3, DIAGRAM_DESCRIPTION_V4,
                                 IMAGE_DESCRIPTION_V2, MODULE_DESCRIPTION, DIAGRAM_SYNTHESIS, MODULE_DESCRIPTION_V2,
                                 DIAGRAM_SYNTHESIS_V2, MODULE_SUMMARY, PACKAGE_SYNTHESIS, MODULE_SUMMARY_V2,
-                                PACKAGE_SYNTHESIS_V2, PACKAGE_SUMMARY_V3)}
+                                PACKAGE_SYNTHESIS_V2, PACKAGE_SUMMARY_V3, INSTANCES_SUMMARY)}

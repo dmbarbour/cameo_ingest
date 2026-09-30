@@ -124,7 +124,9 @@ thresholds; it is there for tuning, and the default should serve.
 
 A package whose text is over 12,000 characters is summarized in parts of 3,000 to 12,000
 characters, grouped by nesting, relationships and order. The package is then summarized from
-its parts' summaries, through runs of at most 30 of them when there are more. Short parts
+its parts' summaries, through runs of at most 30 of them when there are more. A package
+made mostly of instance specifications (at least 80%, such as analysis results) is summarized
+instead in one request, from a digest of its instances by classifier and slot. Short parts
 keep each request well within what the model reads evenly; one long request loses the middle
 of a large package (`docs/research/sandwiching-2026-09-30.md`).
 

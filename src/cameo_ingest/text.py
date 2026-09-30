@@ -26,6 +26,11 @@ def shown_value(value: str, limit: int = VALUE_CHARS) -> str:
     return value
 
 
+def one_line(text: str) -> str:
+    """Names, notes and values may span lines; a legend, sketch or digest gives each on one."""
+    return " ".join(text.split())
+
+
 def plural(n: int, noun: str) -> str:
     return f"{n:,} {noun}{'' if n == 1 else 's'}"
 
