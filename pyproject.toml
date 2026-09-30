@@ -38,5 +38,6 @@ ignore = ["BLE001"]
 [tool.pytest.ini_options]
 markers = [
     "slow: runs on large sample models (minutes); run with `pytest -m slow`",
+    "llm: uses a real LLM endpoint from the environment or .env; run with `pytest -m llm`",
 ]
-addopts = "-m 'not slow'"
+addopts = "-m 'not slow and not llm'"

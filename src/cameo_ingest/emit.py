@@ -201,9 +201,10 @@ class ProjectWriter:
         return self.out
 
     # -- element sections ------------------------------------------------------
-    def section(self, el: Element, from_file: str, level: int, generated: bool = True) -> str:
+    def section(self, el: Element, from_file: str, level: int, generated: bool = True, trace: bool = True) -> str:
         """Markdown for one element. `generated=False` omits LLM-derived annotations, so
-        chunks of extracted text keep a pure `extracted` provenance."""
+        chunks of extracted text keep a pure `extracted` provenance. `trace=False` omits the
+        trace line, whose locator depends on where the source was found, not on what it says."""
         ix = self.ix
         st = ix.stereotype_names(el.id)
         st_txt = " ".join(f"«{s}»" for s in st)
@@ -264,7 +265,8 @@ class ProjectWriter:
         for a in self.ann.get(el.id, []):
             if generated or a.trace.derivation.method != "llm":
                 lines += self.annotation_md(a, from_file)
-        lines += [f"<sub>trace: `{self.trace(el).locator()}`</sub>", ""]
+        if trace:
+            lines += [f"<sub>trace: `{self.trace(el).locator()}`</sub>", ""]
         return "\n".join(lines)
 
     def generated_chunks(self, el: Element, file: str) -> None:

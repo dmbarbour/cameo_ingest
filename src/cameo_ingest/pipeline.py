@@ -215,7 +215,10 @@ def ingest_project(run: RunInfo, project: Project, root: Path, llm: LLM, render:
             sections = writer._section_elements_in(pkg)
             if len(sections) < MIN_SECTIONS_FOR_SUMMARY:
                 continue
-            text = writer.section(pkg, rel, 1) + "\n".join(writer.section(e, rel, 2) for e in sections)
+            # Without trace lines: the prompt, and so the cached answer, then depends only on
+            # the model's content, not on which file or bundle it was found in.
+            text = writer.section(pkg, rel, 1, trace=False) + "\n".join(
+                writer.section(e, rel, 2, trace=False) for e in sections)
             tr = writer.trace(pkg)
             if len(text) > SUMMARY_INPUT_CHARS:
                 truncated += 1

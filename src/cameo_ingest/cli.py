@@ -69,7 +69,7 @@ def setup_logging(verbose: int, log_file: Path | None) -> None:
     ours = logging.DEBUG if log_file is not None else console_level
     logging.getLogger("cameo_ingest").setLevel(ours)
     logging.getLogger(PROGRESS_LOGGER).setLevel(min(ours, logging.INFO))
-    root.setLevel(min(ours, logging.WARNING) if verbose < 2 else logging.DEBUG)
+    root.setLevel(logging.WARNING if verbose < 2 else logging.DEBUG)  # what other libraries log
 
 
 def load_env(path: Path) -> None:

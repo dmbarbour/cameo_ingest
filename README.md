@@ -208,7 +208,13 @@ archive.discover ─► xmi.parse_into / finalize ─► layout.parse_layout ─
 python3 scripts/fetch_samples.py [--small] [--strict]   # restore public sample models (~105 MB; --small ~11 MB)
 uv run pytest            # synthetic fixtures, plus the samples under 5 MB (about 10 s)
 uv run pytest -m slow    # the large samples: TMT, TMT-2024x, SAF_FFDS, SAF_Plugin (about 1 min)
+uv run pytest -m llm     # a real LLM endpoint, from the environment or .env (about 1 min, ~20 requests)
+uv run python scripts/record_llm_fixture.py --env .env   # re-record the LLM replay fixture
 ```
+
+The regular tests replay real model answers from `tests/fixtures/llm-replay.sqlite`, offline.
+When a prompt, the fixture model (`tests/fixture_model.py`) or the page text changes, the
+replay test fails with a `ReplayMiss`; record the fixture again with the script above.
 
 The sample models in `samples/` are public third-party files and are gitignored; see
 `samples/SOURCES.md` for their origins and licenses. `fetch_samples.py` pins each file's
