@@ -189,7 +189,7 @@ class Runner:
         try:
             result = ingest_project(content, project, work, self.llm, render=self.options["render"],
                                     progress=self.progress, concurrency=self.concurrency,
-                                    image_size=self.options["image_size"])
+                                    image_pixels=self.options["image_pixels"])
         except Exception as e:  # one bad project must not stop the others (BASE-004)
             log.error("project %s (sha256:%s) failed: %s: %s", content.name, sha[:16], type(e).__name__, e)
             log.debug("traceback for %s", content.name, exc_info=True)

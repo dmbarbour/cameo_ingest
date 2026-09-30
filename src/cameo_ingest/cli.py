@@ -22,6 +22,7 @@ from typing import Any
 from . import __version__
 from . import runner as tree
 from .archive import ZIP_MAGIC, sniff_xmi
+from .diagrams import IMAGE_PIXELS
 from .llm import LLM, LLMConfig
 from .progress import Progress
 from .prompts import CURRENT
@@ -41,7 +42,7 @@ An output tree remembers these choices, so later runs need no flags."""
 
 # Run settings an output tree remembers (never secrets: --env names a file).
 SETTINGS = ("env", "text_model", "vision_model", "llm_timeout", "llm_retries", "llm_max_calls",
-            "llm_concurrency", "cache_dir", "image_size")
+            "llm_concurrency", "cache_dir", "image_pixels")
 
 PROGRESS_LOGGER = "cameo_ingest.progress"
 _handlers: list[logging.Handler] = []  # ours, replaced when main() runs again (as in tests)
@@ -137,9 +138,9 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--render", dest="render", action="store_const", const=True, default=None,
                    help="render diagram sketches (the default)")
     g.add_argument("--no-render", dest="render", action="store_const", const=False, help="do not render sketches")
-    g.add_argument("--image-size", type=int, metavar="PX",
-                   help="longest side of diagram sketches and of images sent to the vision model (default 768, "
-                        "what gemma-4 on DeepInfra sees)")
+    g.add_argument("--image-pixels", type=int, metavar="N",
+                   help="pixel budget of diagram sketches and of images sent to the vision model (default 645120: "
+                        "gemma-4's 280 soft tokens of 48 x 48 px, all that DeepInfra gives it)")
     g.add_argument("--llm-timeout", type=float, metavar="SECONDS", help="per-request timeout (default 120)")
     g.add_argument("--llm-retries", type=int, metavar="N", help="retries per request (default 2)")
     g.add_argument("--llm-max-calls", type=int, metavar="N", help="stop calling the LLM after N requests in a run "
@@ -271,7 +272,7 @@ def run_tree(args: argparse.Namespace, argv: list[str]) -> int:
         state.save_settings(settings)
         options = {"render": settings.get("render", True), "text_model": cfg.text_model,
                    "vision_model": cfg.vision_model, "max_calls": cfg.max_calls,
-                   "image_size": settings.get("image_size") or 768,
+                   "image_pixels": settings.get("image_pixels") or IMAGE_PIXELS,
                    "templates": sorted(t.key for t in CURRENT.values()) if cfg.enabled else []}
         runner = Runner(state, out, llm, options, Progress(heartbeat=args.heartbeat),
                         concurrency=settings.get("llm_concurrency") or 1)

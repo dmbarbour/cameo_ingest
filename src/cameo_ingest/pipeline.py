@@ -105,34 +105,36 @@ class _Request:
 
 
 def _ask_with_image(llm: LLM, template: Template, values: dict[str, str], root: Path, rel: str, mime: str,
-                    image_size: int = 0, notes: dict | None = None, **kw: Any) -> Any:
+                    image_pixels: int = 0, notes: dict | None = None, **kw: Any) -> Any:
     # The image is read back from disk only when the request runs, so queued requests
     # don't hold every diagram in memory.
     data = (root / rel).read_bytes()
     notes = dict(notes or {})
-    if image_size:  # the model sees at most image_size px anyway: send no more (FU-012R3)
-        data, mime, scaled = _fit_image(data, mime, image_size)
+    if image_pixels:  # the model sees at most image_pixels anyway: send no more (FU-012R3, FU-015)
+        data, mime, scaled = _fit_image(data, mime, image_pixels)
         if scaled:
             notes["scaled"] = scaled
     return llm.ask(template, values, image=data, mime=mime, image_path=rel, notes=notes, **kw)
 
 
-def _fit_image(data: bytes, mime: str, size: int) -> tuple[bytes, str, dict | None]:
-    """The image scaled down to at most `size` px on its longer side, as PNG; unchanged if it
-    already fits or can't be read."""
+def _fit_image(data: bytes, mime: str, pixels: int) -> tuple[bytes, str, dict | None]:
+    """The image scaled down to at most `pixels`, sides in multiples of 48, as PNG; unchanged
+    if it already fits or can't be read."""
     import io
 
     from PIL import Image
 
     try:
         with Image.open(io.BytesIO(data)) as img:
-            if max(img.size) <= size:
+            w, h = img.size
+            if w * h <= pixels:
                 return data, mime, None
-            original = img.size
-            img.thumbnail((size, size))
+            f = (pixels / (w * h)) ** 0.5
+            size = (max(dg.PATCH_PX, int(w * f) // dg.PATCH_PX * dg.PATCH_PX),
+                    max(dg.PATCH_PX, int(h * f) // dg.PATCH_PX * dg.PATCH_PX))
             buf = io.BytesIO()
-            img.save(buf, "PNG")
-            return buf.getvalue(), "image/png", {"from": list(original), "to": list(img.size)}
+            img.convert("RGB").resize(size, Image.LANCZOS).save(buf, "PNG")
+            return buf.getvalue(), "image/png", {"from": [w, h], "to": list(size)}
     except Exception as e:  # a damaged or unusual image is sent as it is
         log.debug("cannot scale an image: %s", e)
         return data, mime, None
@@ -161,7 +163,8 @@ def _answer(requests: list[_Request], progress: Progress, label: str, concurrenc
 
 
 def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM, render: bool = True,
-                   progress: Progress = QUIET, concurrency: int = 1, image_size: int = dg.IMAGE_SIZE) -> ProjectResult:
+                   progress: Progress = QUIET, concurrency: int = 1,
+                   image_pixels: int = dg.IMAGE_PIXELS) -> ProjectResult:
     ix = parse_project(project, progress)
     annotations: dict[str, list[Annotation]] = {}
     base = Trace(content_sha256=content.sha256)
@@ -184,7 +187,7 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
                     reused += 1
                 else:
                     png = dg.render_png(ix, graph, f"{d.diagram_type or 'Diagram'}: {ix.qualified_name(dia_id)}",
-                                        size=image_size)
+                                        pixels=image_pixels)
                     if png is None:
                         continue
                     path.parent.mkdir(parents=True, exist_ok=True)
@@ -239,7 +242,7 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
         tr = base.with_(entry=entry)
         image_notes.append((entry, rel, tr))
         if llm.cfg.vision_model:
-            call = partial(_ask_with_image, llm, CURRENT["image-description"], {}, writer.root, rel, mime, image_size=image_size,
+            call = partial(_ask_with_image, llm, CURRENT["image-description"], {}, writer.root, rel, mime, image_pixels=image_pixels,
                            project=content.token, inputs=(tr.locator(),))
             requests.append(_Request("image", entry, tr, call))
 

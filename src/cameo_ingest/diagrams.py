@@ -24,7 +24,11 @@ from .model import ModelIndex
 from .semantics import ItemFlow, Relationship
 from .text import md_inline
 
-IMAGE_SIZE = 768  # longest side of a sketch; the vision model on the current endpoint sees 768 x 768
+# gemma-4 fills a budget of 280 soft tokens of 48 x 48 px (645,120 px) at the image's own aspect
+# ratio, with sides in multiples of 48 (docs/research/gemma4-images-2026-09-30.md, FU-015).
+IMAGE_PIXELS = 280 * 48 * 48
+PATCH_PX = 48
+MAX_ZOOM = 2.0  # small diagrams are not blown up further than this
 FONT_PX = 12
 MARGIN = 8
 TITLE_PX = 18
@@ -216,9 +220,21 @@ def describe(ix: ModelIndex, g: DiagramGraph, link) -> tuple[list[str], list[str
 
 
 # -- the sketch ---------------------------------------------------------------------------------
-def render_png(ix: ModelIndex, g: DiagramGraph, title: str, size: int = IMAGE_SIZE) -> bytes | None:
-    """A sketch whose longest side is `size` px: shapes tagged with their legend numbers,
-    connections with arrowheads at the target, pins as dots (FU-007, FU-008, FU-012)."""
+def canvas(w: float, h: float, pixels: int = IMAGE_PIXELS) -> tuple[int, int, float]:
+    """(width, height, scale) for drawing w x h diagram units, with margins and a title
+    line, within `pixels` at the diagram's own aspect ratio, sides in multiples of 48."""
+    # Solve (w s + 2m)(h s + 2m + t) = pixels for the scale s.
+    m, t = MARGIN, TITLE_PX
+    a, b, c = w * h, w * (2 * m + t) + h * 2 * m, 2 * m * (2 * m + t) - pixels
+    s = min((-b + math.sqrt(b * b - 4 * a * c)) / (2 * a), MAX_ZOOM)
+    W = max(PATCH_PX, int((w * s + 2 * m) // PATCH_PX) * PATCH_PX)
+    H = max(PATCH_PX, int((h * s + 2 * m + t) // PATCH_PX) * PATCH_PX)
+    return W, H, max(0.01, min((W - 2 * m) / w, (H - 2 * m - t) / h))
+
+
+def render_png(ix: ModelIndex, g: DiagramGraph, title: str, pixels: int = IMAGE_PIXELS) -> bytes | None:
+    """A sketch that fills the model's pixel budget (FU-015): shapes tagged with their legend
+    numbers, connections with arrowheads at the target, pins as dots (FU-007, FU-008)."""
     xs: list[float] = []
     ys: list[float] = []
     for n in g.nodes:
@@ -234,8 +250,8 @@ def render_png(ix: ModelIndex, g: DiagramGraph, title: str, size: int = IMAGE_SI
         return None
     x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
     w, h = max(1.0, x1 - x0), max(1.0, y1 - y0)
-    scale = min((size - 2 * MARGIN) / w, (size - 2 * MARGIN - TITLE_PX) / h, 2.0)
-    img = Image.new("L", (int(w * scale) + 2 * MARGIN, int(h * scale) + 2 * MARGIN + TITLE_PX), "white")
+    W, H, scale = canvas(w, h, pixels)
+    img = Image.new("L", (W, H), "white")
     d = ImageDraw.Draw(img)
     font = ImageFont.load_default(size=FONT_PX)
     d.text((MARGIN, 2), _fit(d, title, font, img.width - 2 * MARGIN), fill="black", font=font)

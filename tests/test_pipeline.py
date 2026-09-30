@@ -174,7 +174,8 @@ def test_diagram_directions_item_flows_and_labels(tmp_path):
     assert refine.index("Drone") < refine.index("→[Abstraction: «Refine»; refines]→") < refine.index("Endurance"), refine
     assert "numbered as in the sketch" in page and "- [1] Class: «Block» [Drone]" in page
     with Image.open(project_dir(out) / "diagrams/Drone_BDD.png") as img:
-        assert max(img.size) <= 768
+        w, h = img.size  # the model's pixel budget, sides in multiples of 48 (FU-015)
+        assert w * h <= 645_120 and w % 48 == 0 and h % 48 == 0
 
     out = run(tmp_path / "ibd", "drone.mdzip", make_mdzip(MODEL_IBD, LAYOUT_IBD))
     page = (project_dir(out) / "diagrams/Drone_BDD.md").read_text()
@@ -557,17 +558,20 @@ def test_templates_and_request_log(tmp_path, fake_openai):
     db = sqlite3.connect(out / ".cache/llm.sqlite")
     rows = db.execute("SELECT template, project, item, image_path, prompt, notes FROM requests ORDER BY template, "
                       "image_path").fetchall()
-    assert [(r[0], r[3]) for r in rows] == [("diagram-description@v3", "diagrams/Drone_BDD.png"),
-                                           ("image-description@v1", "images/BINARY-img1.png"),
-                                           ("image-description@v1", "images/BINARY-img2.png"),
+    assert [(r[0], r[3]) for r in rows] == [("diagram-description@v4", "diagrams/Drone_BDD.png"),
+                                           ("image-description@v2", "images/BINARY-img1.png"),
+                                           ("image-description@v2", "images/BINARY-img2.png"),
                                            ("package-summary@v2", None)]
     assert all(r[1] == token and r[2].startswith(token[:23]) for r in rows)
-    assert rows[0][4].startswith(TEMPLATES["diagram-description@v3"].text.split("{{")[0])
+    assert rows[0][4].startswith(TEMPLATES["diagram-description@v4"].text.split("{{")[0])
     assert "Diagram: Drone BDD (SysML Block Definition Diagram)" in rows[0][4]
     chunks = [json.loads(line) for line in (out / "chunks.jsonl").open()]
     templates = {c["metadata"]["provenance"]["derivation"].get("template") for c in chunks
                  if c["metadata"]["kind"].startswith("generated:")}
-    assert templates == {"diagram-description@v3", "image-description@v1", "package-summary@v2"}
+    assert templates == {"diagram-description@v4", "image-description@v2", "package-summary@v2"}
+    # The image goes before the text (FU-015).
+    request = json.loads(json.dumps(fake_openai[0].enrichment()[0][1]))
+    assert [part["type"] for part in request[0]["content"]] == ["image_url", "text"]
 
 
 def test_quality_sample(tmp_path, fake_openai, capsys):

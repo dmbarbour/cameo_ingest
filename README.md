@@ -105,9 +105,12 @@ accept more. It matters for large models: at about 11 s per diagram description,
 1,413 requests take about 4 hours one at a time. Rendering is the costliest step without an
 LLM: about 50 s for TMT's 1,241 sketches (`--no-render` skips them).
 
-`--image-size PX` (default 768) sets the longest side of sketches, and of the images sent to the
-vision model: `google/gemma-4-31B-it` on DeepInfra squeezes every image into 768 × 768 px, so
-larger sketches only lose legibility.
+`--image-pixels N` (default 645,120) is the pixel budget of sketches and of the images sent to the
+vision model. `google/gemma-4-31B-it` on DeepInfra sees every image through 280 soft tokens of
+48 × 48 px, scaled to fill that area at the image's own aspect ratio, so sketches are drawn to fill
+it exactly, with sides in multiples of 48, and larger images are scaled down to it. Images go
+before the text in each request, as Google advises (see
+`docs/research/gemma4-images-2026-09-30.md`).
 
 ## Output
 
@@ -132,7 +135,7 @@ out/
                          nesting), connections from source to target, with the items they carry
                          and, for dependencies, how they read ("is derived from", "satisfies"),
                          and the table/matrix configuration
-    diagrams/<name>.png  a sketch redrawn from the layout data at --image-size (768 px): shapes
+    diagrams/<name>.png  a sketch redrawn from the layout data to the model's pixel budget: shapes
                          tagged with their legend numbers, arrows at the target; not a Cameo
                          rendering
     images/, images.md   embedded raster images (attachment streams)

@@ -330,10 +330,10 @@ class LLM:
         else:
             assert image is not None, f"{template.key} needs an image"
             url = f"data:{mime};base64,{base64.b64encode(image).decode()}"
-            messages = [{"role": "user", "content": [
-                {"type": "text", "text": text},
-                {"type": "image_url", "image_url": {"url": url}},
-            ]}]
+            parts = [{"type": "text", "text": text}, {"type": "image_url", "image_url": {"url": url}}]
+            if template.image_first:  # as Google advises for gemma (FU-015)
+                parts.reverse()
+            messages = [{"role": "user", "content": parts}]
         key = request_key(messages)
         item = inputs[0] if inputs else ""
         try:  # the log serves quality review; a failure to write it must not cost the answer

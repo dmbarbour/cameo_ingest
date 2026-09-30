@@ -32,6 +32,7 @@ class Template:
     purpose: str  # what the answer is for, and where it goes
     text: str
     slots: tuple[Slot, ...]
+    image_first: bool = False  # the image goes before the text in the request (FU-015)
 
     @property
     def key(self) -> str:
@@ -51,7 +52,11 @@ class Template:
         stand-in that says what will fill it."""
         text = _SLOT.sub(lambda m: f"⟦{m.group(1)}: {self._slot(m.group(1)).description}⟧", self.text)
         image = self.image_slot
-        return text + (f"\n\n⟦IMAGE {image.name}, attached after the text: {image.description}⟧" if image else "")
+        if image is None:
+            return text
+        if self.image_first:
+            return f"⟦IMAGE {image.name}, sent before the text: {image.description}⟧\n\n{text}"
+        return f"{text}\n\n⟦IMAGE {image.name}, attached after the text: {image.description}⟧"
 
     def _slot(self, name: str) -> Slot:
         return next(s for s in self.slots if s.name == name)
@@ -225,9 +230,60 @@ DIAGRAM_DESCRIPTION_V3 = Template(
     slots=DIAGRAM_DESCRIPTION_V2.slots,
 )
 
-TEMPLATES = {t.key: t for t in (DIAGRAM_DESCRIPTION, IMAGE_DESCRIPTION, PACKAGE_SUMMARY,
-                                DIAGRAM_DESCRIPTION_V2, PACKAGE_SUMMARY_V2, DIAGRAM_DESCRIPTION_V3)}
+
+
+# Version 4 of diagrams and 2 of images (2026-09-30): the image comes first, as Google advises,
+# drawn to fill gemma-4's pixel budget (FU-015).
+_SKETCH_V4 = Slot(
+    "SKETCH", "image",
+    "a PNG sketch redrawn from the layout data, filling the vision model's pixel budget (--image-pixels, "
+    "645,120 by default: 280 soft tokens of 48 x 48 px) at the diagram's own aspect ratio, sides in multiples "
+    "of 48: shapes tagged with their legend numbers and, where it fits on one line, their name; pins and "
+    "ports as dots; arrowheads at the target; small mid-line arrows for item flows; the title gives the "
+    "diagram type and qualified name.")
+
+DIAGRAM_DESCRIPTION_V4 = Template(
+    id="diagram-description",
+    version=4,
+    purpose=DIAGRAM_DESCRIPTION.purpose,
+    text=(
+        "You are helping to index a systems engineering model (UML/SysML, authored in Cameo) for search. "
+        "The image above is a sketch redrawn from one diagram's layout; below is the diagram's content as "
+        f"text. {_NOTATION} {_DEPENDENCIES}\n\n"
+        "Explain what this diagram tells a reader about the system: what it is for, what it shows the "
+        "system or its parts doing or being made of, and what its main flows or dependencies achieve. "
+        "Do not restate the legend or list every connection: they are already recorded exactly. Group or "
+        "order elements only as the diagram itself does (nesting, frames, partitions, the order of flows). "
+        "Base every statement on the text and the sketch; when the diagram shows little, say little. "
+        f"{_STYLE} At most 150 words.\n\n"
+        "Diagram: {{DIAGRAM}}\nLegend:\n{{LEGEND}}\nConnections:\n{{CONNECTIONS}}{{CUT_NOTE}}"
+    ),
+    slots=(*DIAGRAM_DESCRIPTION_V2.slots[:4], _SKETCH_V4),
+    image_first=True,
+)
+
+IMAGE_DESCRIPTION_V2 = Template(
+    id="image-description",
+    version=2,
+    purpose=IMAGE_DESCRIPTION.purpose,
+    text=(
+        "The image above was embedded in a systems engineering model (Cameo/SysML). Describe its content "
+        "factually for a search index: what kind of image it is, any visible text, labels, components and "
+        f"connections. Do not speculate beyond what is visible. {_STYLE} At most 200 words."
+    ),
+    slots=(
+        Slot("IMAGE", "image",
+             "the embedded image as stored in the model (PNG, JPEG or GIF), scaled down to the vision model's "
+             "pixel budget if larger, sides in multiples of 48. Nothing says which element owns it or where it "
+             "appears."),
+    ),
+    image_first=True,
+)
 
 # The versions in use. Their keys are part of a run's options, so that a project written
 # with other versions is written again (FU-014).
-CURRENT = {t.id: t for t in (DIAGRAM_DESCRIPTION_V3, IMAGE_DESCRIPTION, PACKAGE_SUMMARY_V2)}
+CURRENT = {t.id: t for t in (DIAGRAM_DESCRIPTION_V4, IMAGE_DESCRIPTION_V2, PACKAGE_SUMMARY_V2)}
+
+TEMPLATES = {t.key: t for t in (DIAGRAM_DESCRIPTION, IMAGE_DESCRIPTION, PACKAGE_SUMMARY, DIAGRAM_DESCRIPTION_V2,
+                                PACKAGE_SUMMARY_V2, DIAGRAM_DESCRIPTION_V3, DIAGRAM_DESCRIPTION_V4,
+                                IMAGE_DESCRIPTION_V2)}
