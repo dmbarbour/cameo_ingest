@@ -1,6 +1,8 @@
 # Plan: measuring LLM enrichment quality, 2026-09-30
 
-- **Status:** Accepted on 2026-09-30, with the proposals in the open questions taken as
+- **Status:** On 2026-09-30, the maintainer deferred the judge panel (LQ-04 to LQ-06) until
+  the obvious deficiencies found by spot checks (FU-001 to FU-012) are fixed; spot-check sets
+  (LQ-01 to LQ-03) stay in use for before and after comparisons. Accepted on 2026-09-30, with the proposals in the open questions taken as
   answered (say if any should change). Template rating (goal 5) was added at the maintainer's
   request. In progress.
 - **Step prefix:** `LQ`, so steps are `LQ-01`, `LQ-02` and so on
@@ -123,9 +125,9 @@ first.
 | LQ-01 | Template registry (`prompts.py`): named, versioned templates with described slots and stand-in renderings. Version 1 gives byte-identical requests. Requests and derivations record the template key. | Done: request hashes checked identical before and after |
 | LQ-02 | Request log in `llm.sqlite`; the fixture recorder drops it; tests. | Done |
 | LQ-03 | `quality sample`: stratified sampling, `items.jsonl`, `templates.jsonl`, the `index.html` spot-check page, rating sheets; tests with the fixture model. | Done |
-| LQ-04 | Ratings: import CSV ratings of items and templates into `quality.sqlite`, and validate them against the rubrics. | Not started |
-| LQ-05 | `quality judge`: judge configuration, preflight, rubric prompts and JSON schemas for items and templates, storage, concurrency; tests with a fake client. | Not started |
-| LQ-06 | `quality report`: per kind, per rater, agreement, errors by fault, template ratings, before and after. | Not started |
+| LQ-04 | Ratings: import CSV ratings of items and templates into `quality.sqlite`, and validate them against the rubrics. | Deferred (maintainer, 2026-09-30): until ratings need collecting at scale |
+| LQ-05 | `quality judge`: judge configuration, preflight, rubric prompts and JSON schemas for items and templates, storage, concurrency; tests with a fake client. | Deferred (maintainer, 2026-09-30): until the obvious deficiencies are fixed and quality is less certain |
+| LQ-06 | `quality report`: per kind, per rater, agreement, errors by fault, template ratings, before and after. | Deferred with LQ-04 and LQ-05 |
 | LQ-07 | First round on public samples (the drone, a slice of TMT, SAF_FFDS for images): Claude rates, the panel judges, then the maintainer rates when convenient. Findings go into the follow-up review. | Not started |
 | LQ-08 | Docs: README (quality commands, rubrics), and the review's status. | Not started |
 

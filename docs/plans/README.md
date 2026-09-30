@@ -9,7 +9,8 @@ here.
 | Plan | Status | Addresses |
 |---|---|---|
 | [Resumable, content-addressed ingest](resumable-ingest-2026-09-29.md) | Completed 2026-09-29 | BASE-008R1, BASE-016R2, BASE-017R1, BASE-021R1 |
-| [Measuring LLM enrichment quality](llm-quality-2026-09-30.md) | Accepted; in progress (LQ-01 to LQ-03 done) | FU-006R1 (and measures fixes for FU-001, FU-002, FU-004, FU-005) |
+| [Measuring LLM enrichment quality](llm-quality-2026-09-30.md) | LQ-01 to LQ-03 done; judge panel (LQ-04 to LQ-06) deferred | FU-006R1 (and measures fixes for FU-001, FU-002, FU-004, FU-005) |
+| [Diagram views for large diagrams](diagram-views-2026-09-30.md) | Draft; open questions for the maintainer | FU-011R1 |
 
 ## Tentative
 
