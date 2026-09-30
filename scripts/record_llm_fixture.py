@@ -61,6 +61,7 @@ def main() -> int:
         db = sqlite3.connect(tmp / "store" / "llm.sqlite")
         with db:
             db.execute("UPDATE responses SET endpoint = ''")
+            db.execute("DROP TABLE IF EXISTS requests")  # prompts carry third-party model content
         FIXTURE.parent.mkdir(exist_ok=True)
         FIXTURE.unlink(missing_ok=True)
         db.execute("VACUUM INTO ?", (str(FIXTURE),))

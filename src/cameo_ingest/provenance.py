@@ -57,6 +57,7 @@ class Derivation:
     tool: str = TOOL
     model: str | None = None
     prompt_sha256: str | None = None
+    template: str | None = None  # the prompt template and version, e.g. "package-summary@v1"
     inputs: tuple[str, ...] = ()  # locators of the inputs an LLM saw
 
 

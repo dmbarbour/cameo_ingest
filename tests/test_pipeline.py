@@ -442,6 +442,39 @@ def test_llm_enrichment_is_labelled(tmp_path, fake_openai):
     assert not any("gemma-4" in c["text"] for c in extracted)
 
 
+def test_templates_and_request_log(tmp_path, fake_openai):
+    """Prompts are named, versioned templates with described slots (plan LQ-01), and every
+    request is logged with what it asked (LQ-02)."""
+    import sqlite3
+
+    from cameo_ingest.prompts import TEMPLATES
+
+    for key, tpl in TEMPLATES.items():
+        text_slots = [s.name for s in tpl.slots if s.kind == "text"]
+        assert "{{" not in tpl.render({s: "x" for s in text_slots}), key
+        shown = tpl.stand_in()
+        assert all(f"⟦{s.name}" in shown or f"⟦IMAGE {s.name}" in shown for s in tpl.slots), key
+    src = tmp_path / "drone.mdzip"
+    src.write_bytes(make_mdzip())
+    out = tmp_path / "out"
+    assert main([str(src), "-o", str(out), "--text-model", "m", "--no-preflight"]) == 0
+    token = f"sha256:{project_dir(out).name}"
+    db = sqlite3.connect(out / ".cache/llm.sqlite")
+    rows = db.execute("SELECT template, project, item, image_path, prompt, notes FROM requests ORDER BY template, "
+                      "image_path").fetchall()
+    assert [(r[0], r[3]) for r in rows] == [("diagram-description@v1", "diagrams/Drone_BDD.png"),
+                                           ("image-description@v1", "images/BINARY-img1.png"),
+                                           ("image-description@v1", "images/BINARY-img2.png"),
+                                           ("package-summary@v1", None)]
+    assert all(r[1] == token and r[2].startswith(token[:23]) for r in rows)
+    assert rows[0][4].startswith(TEMPLATES["diagram-description@v1"].text.split("{{")[0])
+    assert "Diagram: Drone BDD (SysML Block Definition Diagram)" in rows[0][4]
+    chunks = [json.loads(line) for line in (out / "chunks.jsonl").open()]
+    templates = {c["metadata"]["provenance"]["derivation"].get("template") for c in chunks
+                 if c["metadata"]["kind"].startswith("generated:")}
+    assert templates == {"diagram-description@v1", "image-description@v1", "package-summary@v1"}
+
+
 def test_llm_call_budget(tmp_path, fake_openai):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())

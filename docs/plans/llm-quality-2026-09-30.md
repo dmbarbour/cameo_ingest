@@ -120,8 +120,8 @@ first.
 
 | Step | Work | Status |
 |---|---|---|
-| LQ-01 | Template registry (`prompts.py`): named, versioned templates with described slots and stand-in renderings. Version 1 gives byte-identical requests. Requests and derivations record the template key. | Not started |
-| LQ-02 | Request log in `llm.sqlite`; the fixture recorder drops it; tests. | Not started |
+| LQ-01 | Template registry (`prompts.py`): named, versioned templates with described slots and stand-in renderings. Version 1 gives byte-identical requests. Requests and derivations record the template key. | Done: request hashes checked identical before and after |
+| LQ-02 | Request log in `llm.sqlite`; the fixture recorder drops it; tests. | Done |
 | LQ-03 | `quality sample`: stratified sampling, `items.jsonl`, `templates.jsonl`, the `index.html` spot-check page, rating sheets; tests with the fixture model. | Not started |
 | LQ-04 | Ratings: import CSV ratings of items and templates into `quality.sqlite`, and validate them against the rubrics. | Not started |
 | LQ-05 | `quality judge`: judge configuration, preflight, rubric prompts and JSON schemas for items and templates, storage, concurrency; tests with a fake client. | Not started |

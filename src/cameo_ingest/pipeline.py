@@ -18,6 +18,7 @@ from .layout import Layout, parse_layout
 from .llm import LLM
 from .model import ModelIndex
 from .progress import QUIET, Progress
+from .prompts import DIAGRAM_DESCRIPTION, IMAGE_DESCRIPTION, PACKAGE_SUMMARY, Template
 from .provenance import ContentInfo, Derivation, Trace
 from .text import front_matter
 from .xmi import finalize, parse_into
@@ -28,26 +29,6 @@ IMAGE_MAGIC = {b"\x89PNG": "image/png", b"\xff\xd8\xff": "image/jpeg", b"GIF8": 
 MIN_SECTIONS_FOR_SUMMARY = 5
 SUMMARY_INPUT_CHARS = 12000  # package text sent for a summary
 DIAGRAM_CONTEXT_ITEMS = 150  # shapes, and connections, listed with a diagram image
-
-PACKAGE_SUMMARY_PROMPT = (
-    "You are documenting a systems engineering model (UML/SysML, authored in Cameo). Below is an "
-    "extract of one package. Write a concise factual summary (at most 150 words) of what this package "
-    "models: its purpose, the main elements and how they relate. Use only the information given; do "
-    "not speculate. Plain prose, no headings."
-)
-DIAGRAM_PROMPT = (
-    "This is a simplified re-drawing of a Cameo (UML/SysML) diagram: boxes, labels and connector lines "
-    "only, generated from layout data. The authoritative list of shapes and connections follows the "
-    "instructions. Describe what the diagram communicates for a search index: its subject, the main "
-    "elements, how they are arranged or grouped, and the key flows or relationships. Be factual, use "
-    "the element names, and do not invent elements that are not listed. At most 200 words."
-)
-IMAGE_PROMPT = (
-    "This image was embedded in a systems engineering model (Cameo/SysML). Describe its content "
-    "factually for a search index: what kind of image it is, any visible text, labels, components and "
-    "connections. Do not speculate beyond what is visible. At most 200 words."
-)
-
 
 @dataclass
 class ProjectResult:
@@ -123,10 +104,11 @@ class _Request:
     call: Callable[[], Any]
 
 
-def _describe_file(llm: LLM, prompt: str, path: Path, mime: str, inputs: tuple[str, ...]) -> Any:
+def _ask_with_image(llm: LLM, template: Template, values: dict[str, str], root: Path, rel: str, mime: str,
+                    **kw: Any) -> Any:
     # The image is read back from disk only when the request runs, so queued requests
     # don't hold every diagram in memory.
-    return llm.describe_image(prompt, path.read_bytes(), mime, inputs=inputs)
+    return llm.ask(template, values, image=(root / rel).read_bytes(), mime=mime, image_path=rel, **kw)
 
 
 def _answer(requests: list[_Request], progress: Progress, label: str, concurrency: int) -> list[Any]:
@@ -187,15 +169,19 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
                     Annotation("Diagram sketch (re-drawn from layout data, not a Cameo rendering)", "", tr, image=rel))
                 if llm.cfg.vision_model:
                     nodes, edges = dg.describe(ix, layout, lambda e: ix.label(e))
+                    notes = {}
                     if max(len(nodes), len(edges)) > DIAGRAM_CONTEXT_ITEMS:
                         truncated += 1
                         llm.truncated(writer.trace(el).locator(), f"{len(nodes)} shapes, {len(edges)} connections; "
                                                                   f"the first {DIAGRAM_CONTEXT_ITEMS} of each sent")
+                        notes = {"truncated": {"shapes": len(nodes), "connections": len(edges),
+                                               "limit": DIAGRAM_CONTEXT_ITEMS}}
                     context = "\n".join([f"Diagram: {d.name} ({d.diagram_type})", "Shapes:"]
                                         + nodes[:DIAGRAM_CONTEXT_ITEMS] + ["Connections:"]
                                         + edges[:DIAGRAM_CONTEXT_ITEMS])
-                    call = partial(_describe_file, llm, DIAGRAM_PROMPT + "\n\n" + context, root / rel, "image/png",
-                                   (writer.trace(el).locator(), tr.locator()))
+                    call = partial(_ask_with_image, llm, DIAGRAM_DESCRIPTION, {"CONTEXT": context}, root, rel,
+                                   "image/png", project=content.token,
+                                   inputs=(writer.trace(el).locator(), tr.locator()), notes=notes)
                     requests.append(_Request("diagram", dia_id, tr, call))
 
     if reused:
@@ -218,7 +204,8 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
         tr = base.with_(entry=entry)
         image_notes.append((entry, rel, tr))
         if llm.cfg.vision_model:
-            call = partial(_describe_file, llm, IMAGE_PROMPT, writer.root / rel, mime, (tr.locator(),))
+            call = partial(_ask_with_image, llm, IMAGE_DESCRIPTION, {}, writer.root, rel, mime, project=content.token,
+                           inputs=(tr.locator(),))
             requests.append(_Request("image", entry, tr, call))
 
     # Package summaries from the deterministic text, so the LLM only rephrases what is there.
@@ -233,10 +220,13 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
             text = writer.section(pkg, rel, 1, trace=False) + "\n".join(
                 writer.section(e, rel, 2, trace=False) for e in sections)
             tr = writer.trace(pkg)
+            notes = {}
             if len(text) > SUMMARY_INPUT_CHARS:
                 truncated += 1
                 llm.truncated(tr.locator(), f"{len(text):,} characters; the first {SUMMARY_INPUT_CHARS:,} sent")
-            call = partial(llm.summarize, PACKAGE_SUMMARY_PROMPT, text[:SUMMARY_INPUT_CHARS], inputs=(tr.locator(),))
+                notes = {"truncated": {"characters": len(text), "limit": SUMMARY_INPUT_CHARS}}
+            call = partial(llm.ask, PACKAGE_SUMMARY, {"PACKAGE_TEXT": text[:SUMMARY_INPUT_CHARS]},
+                           project=content.token, inputs=(tr.locator(),), notes=notes)
             requests.append(_Request("summary", pkg_id, tr, call))
 
     if truncated:

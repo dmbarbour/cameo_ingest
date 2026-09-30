@@ -31,7 +31,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .provenance import Derivation, sha256_text, utc_now
+from .prompts import Template
+from .provenance import Derivation, sha256_bytes, sha256_text, utc_now
 
 log = logging.getLogger(__name__)
 
@@ -99,6 +100,21 @@ class LLMStore:
             PRIMARY KEY (endpoint, model, request_sha256)
         );
         CREATE INDEX IF NOT EXISTS responses_by_request ON responses (model, request_sha256);
+        -- What each request asked, for quality review (plan LQ-02). Local only: it holds model
+        -- content, so scripts/record_llm_fixture.py drops it from the committed fixture.
+        CREATE TABLE IF NOT EXISTS requests (
+            model TEXT NOT NULL,
+            request_sha256 TEXT NOT NULL,
+            template TEXT NOT NULL,            -- e.g. diagram-description@v1 (see prompts.py)
+            project TEXT NOT NULL,             -- content token of the project, sha256:<hex>
+            item TEXT NOT NULL,                -- locator of what the request is about
+            slots TEXT NOT NULL,               -- JSON: the text of each text slot
+            prompt TEXT NOT NULL,              -- the rendered request text
+            image_sha256 TEXT, image_path TEXT,  -- the attached image; path relative to the project
+            notes TEXT NOT NULL DEFAULT '{}',  -- JSON, e.g. what was cut to fit
+            seen TEXT NOT NULL,
+            PRIMARY KEY (model, request_sha256)
+        );
     """
 
     def __init__(self, path: Path, readonly: bool = False):
@@ -139,6 +155,20 @@ class LLMStore:
                     "SELECT text FROM responses WHERE endpoint = ? AND model = ? AND request_sha256 = ?",
                     (endpoint, model, key)).fetchone()
         return row[0] if row else None
+
+    def log_request(self, model: str, key: str, template: str, project: str, item: str, slots: dict[str, str],
+                    prompt: str, image_sha256: str | None, image_path: str | None, notes: dict[str, Any]) -> None:
+        with self._lock, self._db:
+            self._db.execute("INSERT OR REPLACE INTO requests VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                             (model, key, template, project, item, json.dumps(slots, ensure_ascii=False), prompt,
+                              image_sha256, image_path, json.dumps(notes, ensure_ascii=False), utc_now()))
+
+    def request(self, model: str, key: str) -> dict[str, Any] | None:
+        """What a request asked, from the request log."""
+        with self._lock:
+            cur = self._db.execute("SELECT * FROM requests WHERE model = ? AND request_sha256 = ?", (model, key))
+            row = cur.fetchone()
+            return dict(zip([c[0] for c in cur.description], row, strict=True)) if row else None
 
     def put(self, endpoint: str, model: str, key: str, text: str) -> None:
         with self._lock, self._db:  # one transaction per response: a killed run never leaves half an entry
@@ -280,27 +310,34 @@ class LLM:
         self.store.put(endpoint, model, key, text)
         return text, key
 
-    def summarize(self, instruction: str, content: str, inputs: tuple[str, ...] = ()) -> tuple[str, Derivation] | None:
-        if not self.cfg.text_model:
+    def ask(self, template: Template, values: dict[str, str], *, image: bytes | None = None,
+            mime: str = "image/png", image_path: str | None = None, project: str = "",
+            inputs: tuple[str, ...] = (), notes: dict[str, Any] | None = None) -> tuple[str, Derivation] | None:
+        """Send one request built from `template`; `inputs` are the locators of what it is
+        about (the first one names the item). Returns the answer with its derivation, or
+        None when the item gets no generated text."""
+        model = self.cfg.vision_model if template.image_slot else self.cfg.text_model
+        if not model:
             return None
-        prompt = f"{instruction}\n\n---\n{content}"
-        res = self._complete(self.cfg.text_model, [{"role": "user", "content": prompt}], inputs[0] if inputs else "")
+        text = template.render(values)
+        if template.image_slot is None:
+            messages: list[dict] = [{"role": "user", "content": text}]
+        else:
+            assert image is not None, f"{template.key} needs an image"
+            url = f"data:{mime};base64,{base64.b64encode(image).decode()}"
+            messages = [{"role": "user", "content": [
+                {"type": "text", "text": text},
+                {"type": "image_url", "image_url": {"url": url}},
+            ]}]
+        key = request_key(messages)
+        item = inputs[0] if inputs else ""
+        try:  # the log serves quality review; a failure to write it must not cost the answer
+            self.store.log_request(model, key, template.key, project, item, values, text,
+                                   sha256_bytes(image) if image is not None else None, image_path, notes or {})
+        except sqlite3.DatabaseError as e:
+            log.warning("cannot log LLM request: %s", e)
+        res = self._complete(model, messages, item)
         if res is None:
             return None
-        text, key = res
-        return text, Derivation(method="llm", model=self.cfg.text_model, prompt_sha256=key, inputs=inputs)
-
-    def describe_image(self, instruction: str, image: bytes, mime: str,
-                       inputs: tuple[str, ...] = ()) -> tuple[str, Derivation] | None:
-        if not self.cfg.vision_model:
-            return None
-        url = f"data:{mime};base64,{base64.b64encode(image).decode()}"
-        messages = [{"role": "user", "content": [
-            {"type": "text", "text": instruction},
-            {"type": "image_url", "image_url": {"url": url}},
-        ]}]
-        res = self._complete(self.cfg.vision_model, messages, inputs[0] if inputs else "")
-        if res is None:
-            return None
-        text, key = res
-        return text, Derivation(method="llm", model=self.cfg.vision_model, prompt_sha256=key, inputs=inputs)
+        answer, key = res
+        return answer, Derivation(method="llm", model=model, prompt_sha256=key, template=template.key, inputs=inputs)
