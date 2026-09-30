@@ -388,12 +388,74 @@ DIAGRAM_SYNTHESIS_V2 = Template(
     image_first=True,
 )
 
+# Large packages (plan DV-05, 2026-09-30): each part is summarized on its own, then the package
+# from those summaries, a level at a time when there are many (FU-005).
+_PARTS = ("The package is too large to summarize at once, so its elements have been split into parts of "
+          "related elements, by nesting, relationships and their order in the package.")
+
+MODULE_SUMMARY = Template(
+    id="module-summary",
+    version=1,
+    purpose="A summary of one part of a large package, for a search index, stored as a generated:module_summary "
+            "chunk (with the elements it covers) and shown in the package page's list of parts. The "
+            "package-synthesis request builds on these.",
+    text=(
+        "You are helping to index a systems engineering model (UML/SysML, authored in Cameo) for search. "
+        f"{_PARTS} Below is the extracted text of one part's elements, in Markdown. {{{{CUT_NOTE}}}}"
+        "Summarize what this part models: its purpose, its main elements and how they relate, to each other "
+        "and to elements elsewhere. Use only the information given, and do not speculate. "
+        f"{_STYLE} At most 120 words.\n\nPackage: {{{{PACKAGE}}}}\nPart: {{{{PART}}}}\n---\n{{{{SECTIONS}}}}"
+    ),
+    slots=(
+        Slot("CUT_NOTE", "text",
+             "empty, or a sentence saying that a section longer than the part's limit (12,000 characters) was "
+             "cut, and where."),
+        Slot("PACKAGE", "text", "the package's qualified name."),
+        Slot("PART", "text", "'<k> of <n>': the part's number, in the package's order, and the count."),
+        Slot("SECTIONS", "text",
+             "the part's element sections as on the package page, without trace lines: each with its kind, "
+             "qualified name, stereotypes, requirement text, documentation, tagged values (long ones cut, "
+             "FU-020), members, relationships and diagrams. 3,000 to 12,000 characters where the sections "
+             "allow; one section longer than that is cut."),
+    ),
+)
+
+PACKAGE_SYNTHESIS = Template(
+    id="package-synthesis",
+    version=1,
+    purpose="A summary of a large package, or of a run of its parts when there are many, built from the parts' "
+            "summaries; stored as the package's generated:summary chunk (or a generated:module_summary chunk "
+            "for a run of parts) and shown on the package page.",
+    text=(
+        "You are helping to index a systems engineering model (UML/SysML, authored in Cameo) for search. "
+        f"{_PARTS} Each part has been summarized on its own. Below are the package's own section (its "
+        "description and members) and the summaries of {{SCOPE}}, in the package's order. {{CUT_NOTE}}"
+        "Summarize what {{SCOPE}} models: its purpose, its main elements, and how the parts relate. Do not "
+        "repeat the part summaries; relate them, and refer to parts by what they cover rather than by "
+        f"number. Use only the information given, and do not speculate. {_STYLE} At most 200 words."
+        "\n\nPackage: {{PACKAGE}}\n---\n{{PACKAGE_TEXT}}\n---\nSummaries:\n{{SUMMARIES}}"
+    ),
+    slots=(
+        Slot("SCOPE", "text", "'the whole package', or 'parts <a> to <b> of <n>' for a run of parts."),
+        Slot("CUT_NOTE", "text",
+             "empty, or a sentence saying that the package's own section was cut at 6,000 of its N characters."),
+        Slot("PACKAGE", "text", "the package's qualified name."),
+        Slot("PACKAGE_TEXT", "text",
+             "the package's own section as on its page, without its trace line: kind, qualified name, "
+             "documentation, tagged values and members. At most 6,000 characters."),
+        Slot("SUMMARIES", "text",
+             "one paragraph per part, 'Part <k> (<m> elements): ' and its module-summary answer, or per run of "
+             "parts, 'Parts <a> to <b>: ' and the answer of this template for them; '(not summarized)' when a "
+             "request got no answer. At most 30 paragraphs: more parts are summarized in runs first."),
+    ),
+)
+
 # The versions in use. Their keys are part of a run's options, so that a project written
 # with other versions is written again (FU-014).
 CURRENT = {t.id: t for t in (DIAGRAM_DESCRIPTION_V4, MODULE_DESCRIPTION_V2, DIAGRAM_SYNTHESIS_V2,
-                             IMAGE_DESCRIPTION_V2, PACKAGE_SUMMARY_V2)}
+                             IMAGE_DESCRIPTION_V2, PACKAGE_SUMMARY_V2, MODULE_SUMMARY, PACKAGE_SYNTHESIS)}
 
 TEMPLATES = {t.key: t for t in (DIAGRAM_DESCRIPTION, IMAGE_DESCRIPTION, PACKAGE_SUMMARY, DIAGRAM_DESCRIPTION_V2,
                                 PACKAGE_SUMMARY_V2, DIAGRAM_DESCRIPTION_V3, DIAGRAM_DESCRIPTION_V4,
                                 IMAGE_DESCRIPTION_V2, MODULE_DESCRIPTION, DIAGRAM_SYNTHESIS, MODULE_DESCRIPTION_V2,
-                                DIAGRAM_SYNTHESIS_V2)}
+                                DIAGRAM_SYNTHESIS_V2, MODULE_SUMMARY, PACKAGE_SYNTHESIS)}

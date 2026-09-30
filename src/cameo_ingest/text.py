@@ -26,6 +26,10 @@ def shown_value(value: str, limit: int = VALUE_CHARS) -> str:
     return value
 
 
+def plural(n: int, noun: str) -> str:
+    return f"{n:,} {noun}{'' if n == 1 else 's'}"
+
+
 def slug(text: str, maxlen: int = 80) -> str:
     s = re.sub(r"[^A-Za-z0-9._-]+", "_", text).strip("._")
     return (s or "unnamed")[:maxlen]

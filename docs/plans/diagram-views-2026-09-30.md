@@ -87,6 +87,11 @@ but a module's crop is set by its other shapes, so it isn't widened to the conta
 
 ### Large packages
 
+Measured on the samples (DV-05): TMT has 119 packages over the old 12,000-character cut, 15 over
+200,000 and one of 3.8 million (2,718 requirements imported from DOORS, with no relationships
+between them). Many large packages have no internal relationships, so document order and
+nesting carry most of the structure.
+
 - **Candidate modules**, from what the model already records about the package:
   - nested classifiers and their members (a block with its parts, ports and operations);
   - relationship clusters (a requirement tree linked by «deriveReqt», blocks joined by
@@ -128,7 +133,7 @@ but a module's crop is set by its other shapes, so it isn't widened to the conta
 | DV-02 | Partitioning, compared: `networkx` communities against alternatives (connected components with the modeller's groups, label propagation, spatial clustering of the layout, and `igraph`'s Leiden if it earns its dependency). Measure module sizes, edges cut, geometric compactness and speed on the drone sample and TMT, then keep what works. Write the results up as a research note. | Done: `docs/research/diagram-partitioning-2026-09-30.md`; networkx Louvain with geometric weights, with spatial cuts as the fallback |
 | DV-03 | Diagram views: module crops with faded boundary nodes, and the overview with module outlines, all at the pixel budget. | Done: `modules.py` (`partition`, `module_png`, `overview_png`) and `diagrams.Frame`; review findings FU-016 to FU-019 fixed along the way |
 | DV-04 | Diagram requests and output: `module-description@v1` and a synthesis request; module chunks with their provenance; the page layout; thresholds as settings with built-in defaults. | Done: `module-description`, `diagram-synthesis` (asked once the modules are answered), both at v2 after the first live run, whose answers named modules by number ("sends it to M2"); a section and a `generated:module_description` chunk per module, whose `module` metadata gives its number and count, shapes, element ids, box, anchor and image; the overview replaces a large diagram's sketch; `--diagram-modules N:MIN:MAX` (default 25:6:25); version 0.3.0 |
-| DV-05 | Package modules: the element graph, partitioning by section size, `module-summary@v1`, a new `package-summary` built from modules, and chunks. | Not started |
+| DV-05 | Package modules: the element graph, partitioning by section size, `module-summary@v1`, a new `package-summary` built from modules, and chunks. | Done: a package over 12,000 characters is split into parts of 3,000 to 12,000 (`modules.sequence_partition`: Louvain on nesting, relationships and document order, then neighbouring parts packed); `module-summary@v1` per part, then `package-synthesis@v1` from the parts' summaries, through runs of at most 30; a "Parts, summarized" section and a `generated:module_summary` chunk per part or run, naming its elements; found FU-020 and FU-021 on the way; version 0.4.0 |
 | DV-06 | Sandwiching for long requests, compared with and without on the same items. | Not started |
 | DV-07 | Evaluation: spot-check sets before and after, on the drone's large activity diagram and packages, and a sample of large TMT diagrams and packages. | Not started |
 | DV-08 | Docs: README (modules on diagram and package pages, module chunks, settings) and the review's status. | Not started |

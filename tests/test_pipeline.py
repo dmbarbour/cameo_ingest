@@ -680,6 +680,51 @@ def test_large_diagram_modules(tmp_path, fake_openai):
     assert main(["run", "-o", str(out), "--diagram-modules", "25:6"]) == 2
 
 
+def large_package_model() -> str:
+    """The fixture model with a package of 40 documented classes: about 45,000 characters."""
+    words = "The unit shall report its state to the operator console within the stated interval. " * 8
+    classes = "".join(
+        f"<packagedElement xmi:type='uml:Class' xmi:id='big{i}' name='Unit {i}'>"
+        f"<ownedComment xmi:type='uml:Comment' xmi:id='bigc{i}' body='{words}'><annotatedElement xmi:idref='big{i}'/>"
+        "</ownedComment></packagedElement>\n" for i in range(40))
+    return MODEL.replace("<uml:Model xmi:type='uml:Model' xmi:id='m1' name='Model'>",
+                         "<uml:Model xmi:type='uml:Model' xmi:id='m1' name='Model'>\n"
+                         f"<packagedElement xmi:type='uml:Package' xmi:id='bigp' name='Big'>{classes}</packagedElement>")
+
+
+def test_large_package_parts(tmp_path, fake_openai, monkeypatch):
+    """A large package is summarized in parts, then from its parts' summaries, through runs of
+    them when there are many; each part's summary is a chunk naming its elements (FU-005,
+    plan DV-05)."""
+    import sqlite3
+
+    from cameo_ingest import pipeline
+
+    monkeypatch.setattr(pipeline, "MAX_SUMMARIES", 2)  # so that parts are summarized in runs first
+    src = tmp_path / "drone.mdzip"
+    src.write_bytes(make_mdzip(large_package_model()))
+    out = tmp_path / "out"
+    assert main([str(src), "-o", str(out), "--text-model", "m", "--no-preflight", "--no-render"]) == 0
+    check_invariants(out)
+    page = (project_dir(out) / "packages/Model__Big.md").read_text()
+    assert "## Parts, summarized" in page and '<a id="part-1"></a>' in page and re.search('<a id="parts-\\d+-\\d+">', page)
+    chunks = [json.loads(line) for line in (out / "chunks.jsonl").open()]
+    parts = [c["metadata"]["part"] for c in chunks if c["metadata"]["kind"] == "generated:module_summary"]
+    singles = [p for p in parts if p["number"] == p["last"]]
+    n = singles[0]["of"]
+    assert 3 <= n <= 15 and [p["number"] for p in singles] == list(range(1, n + 1))
+    assert all(p["last"] > p["number"] for p in parts if p not in singles)  # no run of a single part
+    assert sorted(e for p in singles for e in p["elements"]) == sorted(f"big{i}" for i in range(40))
+    assert singles[0]["anchor"] == "packages/Model__Big.md#part-1"
+    summary = [c for c in chunks if c["metadata"]["kind"] == "generated:summary" and c["metadata"]["element_id"] == "bigp"]
+    assert [c["metadata"]["provenance"]["derivation"]["template"] for c in summary] == ["package-synthesis@v1"]
+    db = sqlite3.connect(out / ".cache/llm.sqlite")
+    used = Counter(r[0] for r in db.execute("SELECT template FROM requests WHERE item LIKE '%bigp%'"))
+    assert used["module-summary@v1"] == n and used["package-synthesis@v1"] == len(parts) - n + 1
+    prompt = db.execute("SELECT prompt FROM requests WHERE template = 'package-synthesis@v1' ORDER BY rowid DESC").fetchone()[0]
+    assert "summaries of the whole package" in prompt and re.search(r"\nParts \d+ to \d+: ", prompt)
+
+
 def test_templates_and_request_log(tmp_path, fake_openai):
     """Prompts are named, versioned templates with described slots (plan LQ-01), and every
     request is logged with what it asked (LQ-02)."""

@@ -15,6 +15,7 @@ legend, so a module's shapes can be found in the diagram's sketch and text.
 from __future__ import annotations
 
 import colorsys
+import itertools
 import math
 import statistics
 from collections import defaultdict
@@ -85,9 +86,11 @@ class Partition:
 
 
 class _Graph:
-    """The diagram's shapes that have a rectangle, as an undirected weighted graph."""
+    """Things to group, as an undirected weighted graph: a diagram's shapes that have a
+    rectangle, each of size 1 and placed at its centre."""
 
     def __init__(self, g: DiagramGraph):
+        self.size: dict[int, float] = defaultdict(lambda: 1.0)
         self.nodes = [n.num for n in g.nodes if n.view.rect]
         keep = set(self.nodes)
         self.rect = {n.num: n.view.rect for n in g.nodes if n.num in keep}
@@ -102,6 +105,9 @@ class _Graph:
 
     def sub(self, members: set[int]) -> dict[tuple[int, int], float]:
         return {e: w for e, w in self.edges.items() if e[0] in members and e[1] in members}
+
+    def total(self, members: set[int]) -> float:
+        return sum(self.size[k] for k in members)
 
     def weights(self, members: set[int]) -> dict[tuple[int, int], float]:
         """Connections weighted up to 3 times for shapes close together; nesting, and each
@@ -130,48 +136,104 @@ class _Graph:
             H.add_edge(a, b, weight=v)
         return [set(c) for c in nx.community.louvain_communities(H, weight="weight", seed=1)]
 
-    def cut(self, members: set[int], size: int) -> list[set[int]]:
-        """Median cuts along the longer side until every part has at most `size` shapes."""
-        if len(members) <= size:
+    def cut(self, members: set[int], size: float) -> list[set[int]]:
+        """Cuts along the longer side, halving the size, until every part is at most `size`
+        (or a single node)."""
+        if self.total(members) <= size or len(members) < 2:
             return [members]
         xs = [self.center[k][0] for k in members]
         ys = [self.center[k][1] for k in members]
         axis = 0 if max(xs) - min(xs) >= max(ys) - min(ys) else 1
         ordered = sorted(members, key=lambda k: (self.center[k][axis], k))
-        half = len(ordered) // 2
+        whole, run, half = self.total(members), 0.0, len(ordered) - 1
+        for i, k in enumerate(ordered[:-1]):  # the first cut that passes the middle
+            run += self.size[k]
+            if 2 * (run + self.size[ordered[i + 1]]) > whole:
+                half = max(1, i + 1)
+                break
         return self.cut(set(ordered[:half]), size) + self.cut(set(ordered[half:]), size)
 
-    def bounded(self, lo: int, hi: int) -> list[set[int]]:
+    def bounded(self, lo: float, hi: float) -> list[set[int]]:
         todo: list[set[int]] = [set(self.nodes)]
         done: list[set[int]] = []
         first = True
         while todo:
             m = todo.pop()
-            if len(m) <= hi and not first:
+            if self.total(m) <= hi and not first:
                 done.append(m)
                 continue
             parts = self.communities(m)
             first = False
-            if len(parts) <= 1 and len(m) > hi:
+            if len(parts) <= 1 and self.total(m) > hi:
                 parts = self.cut(m, hi)
             if len(parts) <= 1:
                 done.append(m)
             else:
                 todo += sorted(parts, key=min)
         while len(done) > 1:
-            done.sort(key=len)
+            done.sort(key=self.total)
             small = done[0]
-            if len(small) >= lo:
+            if self.total(small) >= lo:
                 break
 
             def closeness(o: set[int], small: set[int] = small) -> tuple[float, float]:
                 link = sum(w for (a, b), w in self.edges.items() if (a in small and b in o) or (b in small and a in o))
                 return link, -min(math.dist(self.center[a], self.center[b]) for a in small for b in o)
 
-            others = [o for o in done[1:] if len(o) + len(small) <= hi] or done[1:]
+            others = [o for o in done[1:] if self.total(o) + self.total(small) <= hi] or done[1:]
             max(others, key=closeness).update(small)
             done = done[1:]
         return done
+
+
+class _Sequence(_Graph):
+    """A package's sections in document order, sized in characters: order plays the part of
+    a diagram's geometry, since modellers put related elements together."""
+
+    def __init__(self, sizes: list[float], parents: list[int | None], links: list[tuple[int, int]]):
+        n = len(sizes)
+        self.nodes = list(range(n))
+        self.size = dict(enumerate(sizes))
+        self.center = {k: (float(k), 0.0) for k in self.nodes}
+        self.parent = {k: p for k, p in enumerate(parents) if p is not None}
+        self.edges = defaultdict(float)
+        for a, b in links:
+            if a != b:
+                self.edges[(min(a, b), max(a, b))] += 1.0
+
+    def weights(self, members: set[int]) -> dict[tuple[int, int], float]:
+        """Relationships weighted up to 3 times for sections a few places apart; nesting, and
+        each section's neighbours in order, as weaker links. Linear in the sections, where
+        a diagram's all-pairs distances would not be."""
+        w: dict[tuple[int, int], float] = defaultdict(float)
+        for (a, b), v in self.sub(members).items():
+            w[(a, b)] += v * (1 + 2 * math.exp(-(b - a) / 5))
+        for c, p in self.parent.items():
+            if c in members and p in members:
+                w[(min(c, p), max(c, p))] += 1.0
+        ordered = sorted(members)
+        for a, b in itertools.pairwise(ordered):
+            w[(a, b)] += 0.3
+        return w
+
+
+def sequence_partition(sizes: list[float], parents: list[int | None], links: list[tuple[int, int]],
+                       lo: float, hi: float) -> list[list[int]]:
+    """Groups of items (indices in document order) of `lo` to `hi` in total size where they can
+    be: a package's sections, each sized by its text. Groups come in document order."""
+    if sum(sizes) <= hi:
+        return [list(range(len(sizes)))]
+    groups = sorted((sorted(g) for g in _Sequence(sizes, parents, links).bounded(lo, hi)), key=lambda g: g[0])
+    # Neighbouring groups that fit together are joined: communities of a list of unrelated
+    # sections (such as requirements imported from DOORS) are arbitrary runs of it, and
+    # fewer, fuller parts mean fewer requests and a shallower summary.
+    packed = [groups[0]]
+    for g in groups[1:]:
+        if sum(sizes[i] for i in packed[-1]) + sum(sizes[i] for i in g) <= hi:
+            packed[-1] = sorted(packed[-1] + g)
+        else:
+            packed.append(g)
+    return packed
 
 
 def partition(g: DiagramGraph, large: int = LARGE, lo: int = MIN_SHAPES, hi: int = MAX_SHAPES) -> Partition | None:

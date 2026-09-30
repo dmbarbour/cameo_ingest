@@ -17,18 +17,21 @@ from .archive import Project, first_tag
 from .emit import Annotation, Outputs, ProjectWriter, slug
 from .layout import Layout, parse_layout
 from .llm import LLM
-from .model import ModelIndex
+from .model import Element, ModelIndex
 from .progress import QUIET, Progress
 from .prompts import CURRENT, Template
 from .provenance import ContentInfo, Derivation, Trace
-from .text import front_matter
+from .text import front_matter, plural
 from .xmi import finalize, parse_into
 
 log = logging.getLogger(__name__)
 
 IMAGE_MAGIC = {b"\x89PNG": "image/png", b"\xff\xd8\xff": "image/jpeg", b"GIF8": "image/gif"}
 MIN_SECTIONS_FOR_SUMMARY = 5
-SUMMARY_INPUT_CHARS = 12000  # package text sent for a summary
+SUMMARY_INPUT_CHARS = 12000  # package text sent for a summary; larger packages are summarized in parts
+PART_CHARS = (3000, 12000)  # a large package's parts: the smallest worth its own request, and the limit
+OWN_CHARS = 6000  # a large package's own section, sent with its parts' summaries
+MAX_SUMMARIES = 30  # summaries per synthesis request; more are summarized in runs first
 DIAGRAM_CONTEXT_ITEMS = 150  # shapes, and connections, listed with a diagram image
 
 @dataclass
@@ -108,7 +111,8 @@ class _Request:
     key: str  # diagram id, image entry or package id
     trace: Trace
     call: Callable[[], Any]
-    module: int | None = None  # of a large diagram
+    module: int | None = None  # of a large diagram, or part of a large package
+    parts: tuple[int, int] | None = None  # a run of a large package's parts
 
 
 def _ask_with_image(llm: LLM, template: Template, values: dict[str, str], root: Path, rel: str, mime: str,
@@ -167,6 +171,57 @@ def _answer(requests: list[_Request], progress: Progress, label: str, concurrenc
             return [f.result() for f in futures]  # re-raises e.g. a replay miss
         finally:  # on Ctrl-C, queued requests are dropped rather than waited for
             pool.shutdown(wait=False, cancel_futures=True)
+
+
+def _package_parts(writer: ProjectWriter, sections: list[Element], texts: list[str]) -> list[list[int]]:
+    """A large package's sections (indices), in parts of related elements: by nesting,
+    relationships and order, each of PART_CHARS where the sections allow (plan DV-05)."""
+    index = {e.id: i for i, e in enumerate(sections)}
+
+    def section_of(el_id: str | None) -> int | None:
+        """The section an element is in: its own, or its nearest owner's."""
+        while el_id is not None and el_id not in index:
+            el = writer.ix.elements.get(el_id)
+            el_id = el.owner if el else None
+        return index.get(el_id) if el_id else None
+
+    parents = [section_of(e.owner) for e in sections]
+    links = [(a, b) for r in writer.rels
+             if (a := section_of(r.source)) is not None and (b := section_of(r.target)) is not None and a != b]
+    return mod.sequence_partition([len(t) + 1 for t in texts], parents, links, *PART_CHARS)
+
+
+Level = list[tuple[tuple[int, int], str | None]]  # (first part, last part), summary
+
+
+def _synthesis_requests(llm: LLM, content: ContentInfo, ix: ModelIndex, pkg_id: str, tr: Trace,
+                        parts: list[list[Element]], own: str, level: Level) -> list[tuple[Level, _Request | None]]:
+    """The next step in summarizing a large package from its parts' summaries: a request for
+    the whole package, or, when there are more than MAX_SUMMARIES, one per run of them. A run
+    of one summary is carried up as it is, without a request."""
+    n = -(-len(level) // MAX_SUMMARIES)
+    runs = [level[i * len(level) // n:(i + 1) * len(level) // n] for i in range(n)]
+    cut_note = (f"The package's own section was cut at {OWN_CHARS:,} of its {len(own):,} characters. "
+                if len(own) > OWN_CHARS else "")
+    out: list[tuple[Level, _Request | None]] = []
+    for run in runs:
+        a, b = run[0][0][0], run[-1][0][1]
+        whole = len(runs) == 1
+        if len(run) == 1 and not whole:
+            out.append((run, None))
+            continue
+        scope = "the whole package" if whole else f"parts {a} to {b} of {len(parts)}"
+        summaries = "\n\n".join(
+            (f"Part {x} ({plural(len(parts[x - 1]), 'element')}): " if x == y else f"Parts {x} to {y}: ")
+            + (text or "(not summarized)")
+            for (x, y), text in run)
+        values = {"SCOPE": scope, "CUT_NOTE": cut_note, "PACKAGE": ix.qualified_name(pkg_id),
+                  "PACKAGE_TEXT": own[:OWN_CHARS], "SUMMARIES": summaries}
+        call = partial(llm.ask, CURRENT["package-synthesis"], values, project=content.token, inputs=(tr.locator(),),
+                       notes={"parts": len(parts), "scope": scope})
+        out.append((run, _Request("summary", pkg_id, tr, call) if whole else
+                       _Request("run", pkg_id, tr, call, parts=(a, b))))
+    return out
 
 
 def _draw(path: Path, draw: Callable[[], bytes | None]) -> bool:
@@ -287,6 +342,8 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
             requests.append(_Request("image", entry, tr, call))
 
     # Package summaries from the deterministic text, so the LLM only rephrases what is there.
+    # A large package is summarized in parts, and then from its parts' summaries (FU-005).
+    large_packages: list[tuple[str, Trace, list[list[Element]], str]] = []
     if llm.cfg.text_model:
         for pkg_id, rel in writer.pkg_file.items():
             pkg = ix.elements[pkg_id]
@@ -295,45 +352,62 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
                 continue
             # Without trace lines: the prompt, and so the cached answer, then depends only on
             # the model's content, not on which file or bundle it was found in.
-            text = writer.section(pkg, rel, 1, trace=False) + "\n".join(
-                writer.section(e, rel, 2, trace=False) for e in sections)
+            own = writer.section(pkg, rel, 1, trace=False)
+            texts = [writer.section(e, rel, 2, trace=False) for e in sections]
             tr = writer.trace(pkg)
-            notes, cut_note = {}, ""
-            if len(text) > SUMMARY_INPUT_CHARS:
-                truncated += 1
-                llm.truncated(tr.locator(), f"{len(text):,} characters; the first {SUMMARY_INPUT_CHARS:,} sent")
-                notes = {"truncated": {"characters": len(text), "limit": SUMMARY_INPUT_CHARS}}
-                cut_note = (f"The text was cut at {SUMMARY_INPUT_CHARS:,} of its {len(text):,} characters, so the "
-                            "later elements are known by name only. ")
-            call = partial(llm.ask, CURRENT["package-summary"],
-                           {"CUT_NOTE": cut_note, "PACKAGE_TEXT": text[:SUMMARY_INPUT_CHARS]},
-                           project=content.token, inputs=(tr.locator(),), notes=notes)
-            requests.append(_Request("summary", pkg_id, tr, call))
+            text = own + "\n".join(texts)
+            if len(text) <= SUMMARY_INPUT_CHARS:
+                call = partial(llm.ask, CURRENT["package-summary"], {"CUT_NOTE": "", "PACKAGE_TEXT": text},
+                               project=content.token, inputs=(tr.locator(),))
+                requests.append(_Request("summary", pkg_id, tr, call))
+                continue
+            parts = [[sections[i] for i in g] for g in _package_parts(writer, sections, texts)]
+            writer.package_parts[pkg_id] = [[e.id for e in part] for part in parts]
+            large_packages.append((pkg_id, tr, parts, own))
+            qn = ix.qualified_name(pkg_id)
+            for k, part in enumerate(parts, 1):
+                body = "\n".join(texts[sections.index(e)] for e in part)
+                notes: dict[str, Any] = {"part": f"{k} of {len(parts)}"}
+                cut_note = ""
+                if len(body) > PART_CHARS[1]:  # a single section over the limit
+                    truncated += 1
+                    llm.truncated(tr.locator(), f"part {k}: {len(body):,} characters; the first {PART_CHARS[1]:,} sent")
+                    notes["truncated"] = {"characters": len(body), "limit": PART_CHARS[1]}
+                    cut_note = (f"The text was cut at {PART_CHARS[1]:,} of its {len(body):,} characters, so its "
+                                "end is missing. ")
+                values = {"CUT_NOTE": cut_note, "PACKAGE": qn, "PART": f"{k} of {len(parts)}",
+                          "SECTIONS": body[:PART_CHARS[1]]}
+                call = partial(llm.ask, CURRENT["module-summary"], values, project=content.token,
+                               inputs=(tr.locator(),), notes=notes)
+                requests.append(_Request("part", pkg_id, tr, call, module=k))
 
     if truncated:
-        log.warning("%s: %d LLM input(s) were cut short to fit the prompt (at most %s characters of package "
-                    "text, %d shapes and %d connections per diagram)", project.display_name, truncated,
-                    f"{SUMMARY_INPUT_CHARS:,}", DIAGRAM_CONTEXT_ITEMS, DIAGRAM_CONTEXT_ITEMS)
+        log.warning("%s: %d LLM input(s) were cut short to fit the prompt (element sections over %s characters, "
+                    "diagrams over %d shapes or connections)", project.display_name, truncated,
+                    f"{PART_CHARS[1]:,}", DIAGRAM_CONTEXT_ITEMS)
 
     image_desc: dict[str, tuple[str, Derivation]] = {}
-    described: dict[tuple[str, int], str] = {}  # modules of large diagrams
+    described: dict[tuple[str, int], str] = {}  # modules of large diagrams, parts of large packages
     for req, res in zip(requests, _answer(requests, progress, project.display_name, concurrency), strict=True):
         if res is None:
             continue
         text, deriv = res
         if req.kind == "diagram":
             annotations[req.key].append(Annotation("Diagram description", text, req.trace.with_(derivation=deriv)))
-        elif req.kind == "module":
+        elif req.kind in ("module", "part"):
             assert req.module is not None
-            annotations[req.key].append(Annotation("Module description", text, req.trace.with_(derivation=deriv),
-                                                   module=req.module))
+            label = "Module description" if req.kind == "module" else "Part summary"
+            annotations.setdefault(req.key, []).append(
+                Annotation(label, text, req.trace.with_(derivation=deriv), module=req.module))
             described[(req.key, req.module)] = text
         elif req.kind == "summary":
             annotations.setdefault(req.key, []).append(Annotation("Summary", text, req.trace.with_(derivation=deriv)))
         else:
             image_desc[req.key] = res
 
-    # Large diagrams as a whole, from their modules' descriptions (plan DV).
+    # Then, a round at a time: large diagrams as a whole from their modules' descriptions
+    # (plan DV-04), and large packages from their parts' summaries, through runs of at most
+    # MAX_SUMMARIES summaries while there are more (DV-05).
     wholes = []
     for dia_id, part, tr, rel in large:
         texts = [described.get((dia_id, m.num)) for m in part.modules]
@@ -346,11 +420,39 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
                        project=content.token, inputs=(writer.trace(el).locator(), tr.locator()),
                        notes={"modules": len(part.modules), **({"undescribed": missing} if missing else {})})
         wholes.append(_Request("diagram", dia_id, tr, call))
-    for req, res in zip(wholes, _answer(wholes, progress, f"{project.display_name} (large diagrams)", concurrency),
-                        strict=True):
-        if res is not None:
-            text, deriv = res
-            annotations[req.key].append(Annotation("Diagram description", text, req.trace.with_(derivation=deriv)))
+    # Each large package's current level: ((first part, last part), summary or None).
+    levels: dict[str, Level] = {pkg_id: [((k, k), described.get((pkg_id, k))) for k in range(1, len(parts) + 1)]
+                                for pkg_id, _, parts, _ in large_packages}
+    while True:
+        batch, wholes = wholes, []
+        steps: dict[str, list[tuple[Level, _Request | None]]] = {}
+        for pkg_id, tr, parts, own in large_packages:
+            if any(text for _, text in levels[pkg_id]):  # else done, or nothing to build on
+                steps[pkg_id] = _synthesis_requests(llm, content, ix, pkg_id, tr, parts, own, levels[pkg_id])
+                batch += [req for _, req in steps[pkg_id] if req is not None]
+        if not batch:
+            break
+        answers = dict(zip(map(id, batch), _answer(batch, progress, f"{project.display_name} (summaries of summaries)",
+                                                   concurrency), strict=True))
+        for req in batch:
+            if req.kind == "diagram" and answers[id(req)] is not None:  # a large diagram as a whole
+                text, deriv = answers[id(req)]
+                annotations[req.key].append(Annotation("Diagram description", text, req.trace.with_(derivation=deriv)))
+        for pkg_id, step in steps.items():
+            level: Level = []
+            for run, req in step:
+                if req is None:  # carried up as it is
+                    level += run
+                    continue
+                res = answers[id(req)]
+                if req.kind == "run":
+                    assert req.parts is not None
+                    level.append((req.parts, res[0] if res else None))
+                if res is not None:
+                    label = "Summary" if req.kind == "summary" else f"Summary of parts {req.parts[0]} to {req.parts[1]}"  # type: ignore[index]
+                    annotations[pkg_id].append(Annotation(label, res[0], req.trace.with_(derivation=res[1]),
+                                                          parts=req.parts))
+            levels[pkg_id] = level  # empty once the whole package is summarized
 
     if image_notes:
         lines = ["# Embedded images", ""]
