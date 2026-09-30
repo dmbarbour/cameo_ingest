@@ -136,7 +136,7 @@ has no settings.
 
 | Step | Work | Status |
 |---|---|---|
-| RI-01 | `state.py`: schema with a `schema_version`, views, the `flock` lock, and helpers for each table. Unit tests. | Not started |
+| RI-01 | `state.py`: schema with a `schema_version`, views, the `flock` lock, and helpers for each table. Unit tests. | Done |
 | RI-02 | Content identity: `discover` hashes each project's bytes, and `Project` carries the hash and its archive chain. Per-project outputs use the token: locators, chunk IDs, front matter and page text, with no source path, name or `--meta`. | Not started |
 | RI-03 | Command line: subcommands, the default `ingest`, output directory rules, settings; remove `--force` and the BASE-016R1 guard. | Not started |
 | RI-04 | The run loop: check inputs, discover, record contents and sightings, build projects in the work directory and publish them, handle failures and retries. | Not started |
@@ -148,5 +148,7 @@ has no settings.
 | RI-10 | Tests. Kill and resume must equal an uninterrupted run. Also: the same content under two paths gives one directory and two sightings; `add` then `run`; a changed tool version rewrites the project; `prune`; a foreign directory is refused; settings are reused. Slow test: the SAF_Plugin bundle plus the standalone SAF samples give one directory per content. | Not started |
 | RI-11 | Docs: README (layout, commands, state schema, RAG join), and closing BASE-008, BASE-016, BASE-017 and BASE-021 in the review. | Not started |
 
-The steps land in three commits: RI-01 and RI-02; then RI-03 to RI-05; then RI-06 to RI-09.
-RI-10 grows with each, and RI-11 closes the plan.
+The steps land in three commits: RI-01; then RI-02 to RI-05; then RI-06 to RI-09. RI-10 grows
+with each, and RI-11 closes the plan. RI-02 was moved in with RI-03 to RI-05 (it was first
+paired with RI-01), because content identity and the new layout change the same outputs and
+tests; landing them apart would have meant throwaway intermediate code.
