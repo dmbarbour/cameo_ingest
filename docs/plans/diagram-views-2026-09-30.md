@@ -1,10 +1,11 @@
-# Plan: diagram views for large diagrams, 2026-09-30
+# Plan: modular views of large diagrams and packages, 2026-09-30
 
-- **Status:** Draft, awaiting the maintainer's review of the open questions
+- **Status:** Accepted on 2026-09-30, with the maintainer's answers under Decisions, and widened
+  to large packages (FU-005). In progress.
 - **Step prefix:** `DV`, so steps are `DV-01`, `DV-02` and so on
-- **Addresses:** FU-011R1 in `docs/reviews/followup-2026-09-30.md`; builds on FU-007, FU-008 and
-  FU-012 (the legend, clearer marks, drawing at the model's image size), which are fixed
-  first, inside that review
+- **Addresses:** FU-011R1 and FU-005R1 in `docs/reviews/followup-2026-09-30.md`. It builds on
+  FU-007, FU-008, FU-012 and FU-015 (the legend, clearer marks, drawing at the model's pixel
+  budget), which are fixed first, inside that review.
 
 ## Goals
 
@@ -18,6 +19,25 @@
    modules outlined, and a description built from the module summaries.
 4. **Nothing silently dropped.** No shape or connection is cut to fit a limit: everything
    belongs to a module, and connections between modules are listed at the level above.
+
+5. **Large packages too.** A package too large for one good summary (FU-005: the drone
+   sample's 36,000 to 50,000-character packages were cut to 12,000) is split into modules of
+   related elements. Each is summarized on its own, and the package summary is built from
+   them.
+6. **Robust long prompts.** Gemma-4's context is large (about 262,000 tokens), but models
+   attend unevenly across a long context. Long requests are "sandwiched": the short headers
+   and the instructions are repeated after the long input, to focus the answer.
+
+## Decisions
+
+All decisions were made on 2026-09-30.
+
+| # | Question | Decision |
+|---|---|---|
+| 1 | Community detection library | Try `networkx` and contrast it with alternatives on the samples, then keep what works. |
+| 2 | Thresholds | Settings, if convenient, as levers for tuning and testing; users should never need them, so good defaults are built in. |
+| 3 | Module chunks | Yes: each module is a separate chunk, with enough provenance to locate it within its diagram. |
+| 4 | Large packages (FU-005) | Investigate the same kind of modular breakdown for very large packages, and sandwiching for long prompts. |
 
 ## Design
 
@@ -61,32 +81,54 @@ of the others.
   connections between modules. The request asks for the diagram's meaning as a whole.
 - **Small diagrams:** a single request with `diagram-description@v2` (FU-009R1).
 
+### Large packages
+
+- **Candidate modules**, from what the model already records about the package:
+  - nested classifiers and their members (a block with its parts, ports and operations);
+  - relationship clusters (a requirement tree linked by «deriveReqt», blocks joined by
+    associations and item flows, activities with their allocations);
+  - elements of one kind or stereotype, when nothing connects them.
+
+  The same partitioning code as for diagrams runs on the element graph (containment plus
+  relationships), with a size bound in characters of section text rather than in shapes.
+- **Requests:**
+  - **`module-summary@v1`:** a module's sections.
+  - **`package-summary` (a new version):** the module summaries, plus the package's own section
+    and member list, so the whole package reaches the model with nothing cut.
+- **Sandwiching:** long requests (package modules, and any request over a threshold) repeat
+  the package or diagram header and the instructions after the input.
+- **Chunks:** one `generated:module_summary` per package module, with the element ids it
+  covers.
+
 ### Output
 
 - **Diagram page:** the overview, then for each module its thumbnail, legend, connections and
   generated summary side by side, then the whole-diagram description.
-- **Chunks:** one `generated:module_description` chunk per module, whose metadata carries the
-  diagram and the module's shape numbers and element ids. One `generated:diagram_description`
-  for the whole. The extracted (non-generated) diagram chunk lists modules too, so a search
-  for an element finds its module.
+- **Chunks:** one `generated:module_description` chunk per module. Its provenance locates it in
+  the diagram:
+  - the diagram's locator;
+  - the module number and the diagram's module count;
+  - the module's shape numbers (as in the legend) and element ids;
+  - its bounding box in diagram coordinates;
+  - the file and anchor of its section on the diagram page.
+
+  There is one `generated:diagram_description` for the whole diagram. The extracted
+  (non-generated) diagram chunk lists the modules too, so a search for an element finds its
+  module.
 
 ## Steps
 
 | Step | Work | Status |
 |---|---|---|
 | DV-01 | The diagram graph: nodes with stable numbers and nesting, edges with model direction and item flows. The legend, text lists and sketch all built from it. Unit tests. | Done, with the review's FU-001, FU-002, FU-007 and FU-008 fixes |
-| DV-02 | Partitioning: the modeller's groups, components, communities with geometric weights and size bounds, and boundary nodes. Unit tests on small graphs; module statistics over TMT (how many modules per diagram, and their sizes). | Not started |
-| DV-03 | Views: module crops with faded boundary nodes, and the overview with module outlines, all at the model's image size. | Not started |
-| DV-04 | Requests and output: `module-description@v1` and `diagram-synthesis@v1`; module chunks; the page layout; the request log records module and view. | Not started |
-| DV-05 | Evaluation: spot-check sets before and after, on the drone's `Perform Delivery Operations` and a sample of large TMT diagrams. | Not started |
-| DV-06 | Docs: README (diagram pages, module chunks) and the review's status. | Not started |
+| DV-02 | Partitioning, compared: `networkx` communities against alternatives (connected components with the modeller's groups, label propagation, spatial clustering of the layout, and `igraph`'s Leiden if it earns its dependency). Measure module sizes, edges cut, geometric compactness and speed on the drone sample and TMT, then keep what works. Write the results up as a research note. | Not started |
+| DV-03 | Diagram views: module crops with faded boundary nodes, and the overview with module outlines, all at the pixel budget. | Not started |
+| DV-04 | Diagram requests and output: `module-description@v1` and a synthesis request; module chunks with their provenance; the page layout; thresholds as settings with built-in defaults. | Not started |
+| DV-05 | Package modules: the element graph, partitioning by section size, `module-summary@v1`, a new `package-summary` built from modules, and chunks. | Not started |
+| DV-06 | Sandwiching for long requests, compared with and without on the same items. | Not started |
+| DV-07 | Evaluation: spot-check sets before and after, on the drone's large activity diagram and packages, and a sample of large TMT diagrams and packages. | Not started |
+| DV-08 | Docs: README (modules on diagram and package pages, module chunks, settings) and the review's status. | Not started |
 
 ## Open questions for the maintainer
 
-1. **A dependency for community detection.** `networkx` (pure Python, widely used) gives
-   modularity-based communities out of the box. Is it acceptable, or should a small
-   implementation be written in-house?
-2. **Thresholds.** A diagram counts as large at about 25 shapes, and modules aim for 8 to 25
-   shapes. Should these be settings, or constants tuned on the samples?
-3. **Module chunks.** Should modules be separate chunks in the RAG output (proposed: yes, since
-   a question often concerns one part of a big diagram), or only sections of the diagram page?
+All answered on 2026-09-30: see Decisions.
