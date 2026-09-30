@@ -101,8 +101,10 @@ writes the debug detail to a file, whatever the console shows.
 
 `--llm-concurrency N` sends up to N LLM requests at once, with the same output as sending
 them one by one. The default is 1, which suits a local server; hosted endpoints usually
-accept more. It matters for large models: at about 11 s per diagram description, TMT's
-1,413 requests take about 4 hours one at a time. Rendering is the costliest step without an
+accept more. It matters for large models: TMT made 2,933 requests (version 0.4.0), which took
+1 h 17 min at `--llm-concurrency 8` against gemma-4 on DeepInfra, and would take several times
+that one at a time. Summarizing its 36 packages of analysis results from digests (FU-022) has
+since replaced 376 of those requests with 36. Rendering is the costliest step without an
 LLM: about 40 s for TMT's 1,241 sketches and the module views of its 44 large diagrams
 (`--no-render` skips them).
 
