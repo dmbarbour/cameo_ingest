@@ -11,18 +11,12 @@ here.
 | [Resumable, content-addressed ingest](resumable-ingest-2026-09-29.md) | Completed 2026-09-29 | BASE-008R1, BASE-016R2, BASE-017R1, BASE-021R1 |
 | [Measuring LLM enrichment quality](llm-quality-2026-09-30.md) | LQ-01 to LQ-03 done; judge panel (LQ-04 to LQ-06) deferred | FU-006R1 (and measures fixes for FU-001, FU-002, FU-004, FU-005) |
 | [Modular views of large diagrams and packages](diagram-views-2026-09-30.md) | Completed 2026-09-30 | FU-011R1, FU-005R1, FU-012R2 |
+| [Retrieval evaluation](retrieval-evaluation-2026-09-30.md) | Proposed; open questions for the maintainer | The README's RAG advice; chunk sizes |
 
 ## Tentative
 
-These plans are not yet written. The first comes from the LLM quality plan's open question
-4, the last from the maintainer; the others come from the roadmap in the top-level
-`README.md`.
-
-- **Retrieval evaluation.** A set of questions of the kinds the README's RAG advice targets
-  ("why does requirement R exist?", "list the activity diagrams", "which models came from
-  supplier X?"), each with the chunks that should answer it. Measure how often those chunks
-  come back from `chunks.jsonl` with plain vector search, and with keyword search alongside.
-  Then use the results to guide chunking, ledgers and metadata.
+These plans are not yet written. The last comes from the maintainer; the others come from the
+roadmap in the top-level `README.md`.
 
 - **Recompute tables and matrices.** Cameo computes table and matrix rows when it displays
   them, and the rows are not stored in the file. Rebuild the common cases (requirement
