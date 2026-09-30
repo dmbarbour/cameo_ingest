@@ -296,6 +296,9 @@ def describe(ix: ModelIndex, g: DiagramGraph, link, nodes: list[Node] | None = N
             linked = link(v.element)
             if linked.startswith("["):  # blocks, requirements...: a link, with the stereotype
                 st = _stereotypes(ix, v.element)
+                described = "" if ix.elements[v.element].name else _name(ix, v)
+                if described:  # an unnamed element: the link reads as the legend does (FU-024)
+                    linked = f"[{md_inline(described)}{linked[linked.rindex(']('):]}"
                 return (f"«{st[0]}» " if st else "") + linked
         return md_inline(n.label) or v.cls
 

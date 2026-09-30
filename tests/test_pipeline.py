@@ -248,6 +248,12 @@ def test_diagram_directions_item_flows_and_labels(tmp_path):
     assert element_label(ix, View("v", "OpaqueAction", el("OpaqueAction", attrs={"body": "j = 1\nk = 2"}))) == "j = 1 k = 2"
     assert element_label(ix, View("v", "Note", el("Comment", attrs={"body": "<p>Check <b>this</b></p>"}))) \
         == '"Check this"'
+    # An unnamed element with a page is linked by the same label as in the legend.
+    g = dg.DiagramGraph()
+    action = el("OpaqueAction", attrs={"body": "j = 1"})
+    g.nodes.append(dg.Node(1, View("v1", "OpaqueAction", action), "j = 1", 0))
+    legend, _ = dg.describe(ix, g, lambda e: f"[{ix.label(e)}](page.md#{e})")
+    assert legend == [f"- [1] OpaqueAction: [j = 1](page.md#{action})"], legend
 
 
 def test_provenance_everywhere(tmp_path):
