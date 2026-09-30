@@ -1,6 +1,7 @@
 # Plan: resumable, content-addressed ingest, 2026-09-29
 
-- **Status:** Accepted on 2026-09-29, with the maintainer's answers under Decisions; in progress
+- **Status:** Completed on 2026-09-29 (commits `1112346` to the README update). The maintainer's
+  answers are under Decisions.
 - **Step prefix:** `RI`, so steps are `RI-01`, `RI-02` and so on
 - **Addresses:** BASE-008R1, BASE-016R2, BASE-017R1 and BASE-021R1 in
   `docs/reviews/baseline-2026-09-29.md`
@@ -146,7 +147,7 @@ has no settings.
 | RI-08 | `prune` and `status`. | Done |
 | RI-09 | Progress across inputs ("input N of M") and a resume summary. | Done |
 | RI-10 | Tests. Kill and resume must equal an uninterrupted run. Also: the same content under two paths gives one directory and two sightings; `add` then `run`; a changed tool version rewrites the project; `prune`; a foreign directory is refused; settings are reused. Slow test: the SAF_Plugin bundle plus the standalone SAF samples give one directory per content. | Done |
-| RI-11 | Docs: README (layout, commands, state schema, RAG join), and closing BASE-008, BASE-016, BASE-017 and BASE-021 in the review. | Not started |
+| RI-11 | Docs: README (layout, commands, state schema, RAG join), and closing BASE-008, BASE-016, BASE-017 and BASE-021 in the review. | Done |
 
 The steps land in three commits: RI-01; then RI-02 to RI-05; then RI-06 to RI-09. RI-10 grows
 with each, and RI-11 closes the plan. RI-02 was moved in with RI-03 to RI-05 (it was first

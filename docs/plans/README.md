@@ -8,7 +8,7 @@ here.
 
 | Plan | Status | Addresses |
 |---|---|---|
-| [Resumable, content-addressed ingest](resumable-ingest-2026-09-29.md) | Accepted; in progress (RI-01 to RI-10 done; RI-11, docs, remains) | BASE-008R1, BASE-016R2, BASE-017R1, BASE-021R1 |
+| [Resumable, content-addressed ingest](resumable-ingest-2026-09-29.md) | Completed 2026-09-29 | BASE-008R1, BASE-016R2, BASE-017R1, BASE-021R1 |
 
 ## Tentative
 

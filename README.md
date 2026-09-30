@@ -7,9 +7,12 @@ MagicDraw 18.x through Cameo 2026x, and it has been checked against 14 public sa
 
 ```sh
 uv sync
-uv run cameo-ingest MODEL.mdzip -o out/ --meta program=XYZ --meta received=2026-09-01 \
-    (--no-llm | --env .env | --text-model MODEL) \
-    [--meta-file provenance.json] [--no-render] [--force] [-v]
+uv run cameo-ingest MODEL.mdzip -o out/ (--no-llm | --env .env | --text-model MODEL) \
+    [--meta program=XYZ] [--no-render] [-v]          # ingest one or more files or directories
+
+uv run cameo-ingest add -o out/ more/models/ --meta supplier=ACME   # add to the task list
+uv run cameo-ingest run -o out/                      # process it; continues a stopped run
+uv run cameo-ingest status -o out/                   # what the tree holds
 ```
 
 Supported inputs are recognized by their content, so the file extension doesn't matter:
@@ -17,16 +20,47 @@ Supported inputs are recognized by their content, so the file extension doesn't 
 | Input | Handling |
 |---|---|
 | `.mdzip` | ZIP. The model is read from `com.nomagic.magicdraw.uml_model.model`, plus any `…uml_model.shared_model` (library and profile projects keep their content there). Diagram layouts come from `BINARY-*` entries. |
-| `.rdzip` and bundles | Resource-manager ZIPs of ZIPs. Every nested project is found, up to 4 levels deep, and each gets its own output directory. |
+| `.rdzip` and bundles | Resource-manager ZIPs of ZIPs. Every nested project is found, up to 4 levels deep, and each is a project of its own. |
 | `.mdzipx` | Documented as an `.mdzip` plus one `.svg` per diagram. The nested `.mdzip` is ingested; the SVGs are not used yet (see Roadmap). No public sample exists to test against. |
 | `.mdxml`, `.xmi` | A bare XMI document. |
+
+## Working with an output tree
+
+An output directory is a workspace that keeps its state in `state.sqlite`: a task list of
+inputs, the Cameo projects found in them, where each was found, and what has been written.
+Each project is identified by the sha256 of its own bytes, so it is processed once, however
+many files, bundles or names it turns up under.
+
+| Command | Does |
+|---|---|
+| `cameo-ingest add -o OUT PATH... [--meta K=V] [--meta-file F]` | Adds files to the task list. A directory adds the ZIP archives and XMI documents under it. `--meta` values belong to these inputs. |
+| `cameo-ingest run -o OUT [options]` | Checks the inputs for changes, scans new or changed ones, builds every project without up-to-date output, and rebuilds the root files. |
+| `cameo-ingest ingest -o OUT PATH... [options]` | `add`, then `run`. It is the default command: `cameo-ingest FILE -o OUT`. |
+| `cameo-ingest status -o OUT [--json]` | Inputs and projects by status, failures, the latest run. Works while a run is going. |
+| `cameo-ingest prune -o OUT [--dry-run]` | Drops missing inputs, and the projects that no remaining input contains. |
+
+- **Output directories.** A missing or empty directory starts a tree. A directory with
+  `state.sqlite` is continued. Any other non-empty directory is refused.
+- **Stopping and continuing.** A run can be stopped at any time (Ctrl-C, SIGTERM, a crash, a
+  lost session). Work is committed as it finishes, and a project is published only when it
+  is complete. `cameo-ingest run -o OUT` continues, reusing the sketches and LLM answers the
+  stopped run already had.
+- **Remembered settings.** A run's model, rendering and LLM flags (and the `--env` file, never
+  its contents) become the tree's settings, so a later `run` needs no flags. A change of
+  options, or a new tool version, rewrites the projects it affects; stored LLM answers are
+  reused.
+- **Inputs that change or disappear.** A changed file is scanned again. A missing file is
+  flagged, and its projects are kept until `prune`.
+- **Exit status.** 0 success; 2 usage or configuration error; 3 an input had no readable
+  model; 4 some projects failed (the others are written); 5 the LLM endpoint check failed;
+  130 interrupted.
 
 ## Configuration
 
 LLM enrichment (package summaries, diagram and image descriptions) needs an explicit
 choice: either name a model or pass `--no-llm`. With neither, the tool stops at once and
 says how to configure one. When a model is named, one tiny request per model checks the
-endpoint before parsing starts, so a wrong key, URL or model name fails in seconds rather
+endpoint before any work starts, so a wrong key, URL or model name fails in seconds rather
 than hours later (`--no-preflight` skips the check).
 
 | Variable | Flag | Purpose |
@@ -36,7 +70,7 @@ than hours later (`--no-preflight` skips the check).
 | `CAMEO_INGEST_VISION_MODEL` | `--vision-model` | Model for diagram and image descriptions. Defaults to the text model. |
 | `CAMEO_INGEST_LLM_TIMEOUT` | `--llm-timeout` | Seconds per request (default 120). |
 | `CAMEO_INGEST_LLM_RETRIES` | `--llm-retries` | Retries per request (default 2). |
-| `CAMEO_INGEST_LLM_MAX_CALLS` | `--llm-max-calls` | Stop calling the LLM after N requests (default: no limit). |
+| `CAMEO_INGEST_LLM_MAX_CALLS` | `--llm-max-calls` | Stop calling the LLM after N requests in a run (default: no limit). |
 
 Flags take precedence over variables. `.env.example` lists the variables: copy it to `.env`,
 which is gitignored, and pass `--env .env`. Variables already set in the environment take
@@ -44,13 +78,12 @@ precedence over the file, and the log names the variables loaded but never their
 
 LLM responses are kept in an SQLite store, `OUT/.cache/llm.sqlite` (or `--cache-dir DIR`),
 keyed by endpoint, model and a hash of the request, so re-runs are cheap and repeatable; each
-response is committed on its own, so a stopped run keeps what it got. A failed request is
-logged and skipped, and never fails the ingest; after 3 consecutive failures, enrichment is
-switched off for the rest of the run. `run.json` reports the calls made and, for every item
-left without generated text, why (failed, budget, switched off, empty answer), plus how many
-inputs were cut short to fit the prompt. The API key is never written to the outputs.
-Generated text is only reproducible while the store is kept: a fresh store gets fresh
-answers from the model.
+response is committed on its own. A failed request is logged and skipped, and never fails the
+ingest; after 3 consecutive failures, enrichment is switched off for the rest of the run.
+`run.json` reports the calls made and, for every item left without generated text, why
+(failed, budget, switched off, empty answer), plus how many inputs were cut short to fit the
+prompt. The API key is never written to the outputs. Generated text is only reproducible
+while the store is kept: a fresh store gets fresh answers from the model.
 
 `--llm-replay FILE` answers every request from a recorded `llm.sqlite` and never uses the
 network; a request with no recorded answer fails its project. The store holds request
@@ -59,37 +92,40 @@ fixture.
 
 ### Progress, logs and speed
 
-On a terminal, each phase of each project (parsing, layouts, rendering, LLM requests,
-writing) shows a progress bar. Otherwise (a batch job, or output redirected), a heartbeat
-line is logged every 30 s (`--heartbeat SECONDS`; 0 turns it off), with the phase, how far it
-got and an estimate of the time left. `-v` adds a line per phase and project; `-vv` adds
-debug detail, including the HTTP requests. `--log-file FILE` writes the debug detail to a
-file, whatever the console shows.
+On a terminal, each phase (scanning inputs, building projects, and per project: parsing,
+layouts, rendering, LLM requests, writing) shows a progress bar. Otherwise (a batch job, or
+output redirected), a heartbeat line is logged every 30 s (`--heartbeat SECONDS`; 0 turns it
+off), with the phase, how far it got and an estimate of the time left. `-v` adds a line per
+phase and project; `-vv` adds debug detail, including the HTTP requests. `--log-file FILE`
+writes the debug detail to a file, whatever the console shows.
 
 `--llm-concurrency N` sends up to N LLM requests at once, with the same output as sending
 them one by one. The default is 1, which suits a local server; hosted endpoints usually
 accept more. It matters for large models: at about 11 s per diagram description, TMT's
-1,413 requests take about 4 hours one at a time.
+1,413 requests take about 4 hours one at a time. Rendering is the costliest step without an
+LLM: about 50 s for TMT's 1,241 sketches (`--no-render` skips them).
 
 ## Output
 
 ```
 out/
-  manifest.json          source (file name, sha256, --meta), tool version, options, per-project
-                         summary, failed projects, and every output file with its sha256
-  run.json               this run only: id, start and finish times, source path, command line,
-                         LLM calls and outcomes (which items got no generated text, and why)
-  chunks.jsonl           all chunks from all projects: {id, title, text, metadata}
-  LEDGER.md              the projects found in the source file, with counts
-  <project>/
+  state.sqlite           task list and state: the authority for everything else (see below)
+  INDEX.md               every project: name, token, counts, where it was found; failures
+  manifest.json          every written project: token, directory, summary, files with sha256
+  provenance.jsonl       one record per token: every input path, archive chain and --meta
+                         value it was found with
+  chunks.jsonl           all projects' chunks, with --meta values joined in
+  run.json               the latest run: times, command, options, LLM calls and outcomes
+  .cache/llm.sqlite      LLM answers
+  by-sha256/<sha256>/    one project, named by the sha256 of its own bytes:
     README.md            overview: exporter version, counts, packages, diagrams, stereotypes
     LEDGER.md            compact listing, one line per item: packages, diagrams, requirements
                          (ID, text, satisfy/verify/derive links) and elements, grouped by package
     packages/<qn>.md     one file per package, one section per element (blocks, requirements,
                          activities, use cases…), with members, tagged values, relationships
                          in both directions, and "shown in diagrams"
-    diagrams/<name>.md   diagram type and context, shapes (by nesting), connections, and the
-                         table/matrix configuration
+    diagrams/<name>.md   diagram type, author and dates, shapes (by nesting), connections, and
+                         the table/matrix configuration
     diagrams/<name>.png  a sketch redrawn from the layout data (boxes, labels, paths), not a
                          Cameo rendering
     images/, images.md   embedded raster images (attachment streams)
@@ -100,44 +136,54 @@ out/
 
 ### Provenance
 
-Every artifact carries a trace:
+A project's content has a stable token, `sha256:<hex>`, which names its directory. Every
+artifact carries a trace that starts from it:
 
 - Markdown files have JSON-valued YAML front matter with a `provenance` block.
 - Every element section ends with a visible `trace:` locator.
 - Every CSV row has a `trace` column.
-- Every chunk has `metadata.provenance`.
-
-The same input, options and tool version give byte-identical output, apart from `run.json`,
-wherever the input file is stored. Outputs name the source by file name and sha256; its local
-path is recorded only in `run.json`.
+- Every chunk has `metadata.content` (the token) and `metadata.provenance`.
 
 A locator looks like this:
 
 ```
-sha256:9ffd7a2c3b7f3fca!bundle.rdzip!resource.zip!TMT.mdzip!com.nomagic.magicdraw.uml_model.model#<xmi:id>@L796
+sha256:9ffd7a2c3b7f3fca!com.nomagic.magicdraw.uml_model.model#<xmi:id>@L796
 ```
 
-It reads as: source file hash → archive chain → entry → `xmi:id` → line number. The
-`derivation` field records how the text was produced:
+It reads as: content hash → archive entry → `xmi:id` → line number. The `derivation` field
+records how the text was produced:
 
 - `extracted`: deterministic parsing.
 - `rendered`: the PNG sketches.
 - `llm`: generated text, with the model name, a prompt hash and the locators of the inputs.
+
+Where a content was found is not part of its output: it is looked up by the token, in
+`INDEX.md` (by file name and archive chain), `provenance.jsonl` (with full paths and `--meta`
+values) and `state.sqlite`. A project directory therefore depends only on its content, the
+options and the tool version: it is byte-identical whichever file or tree it came from, and
+it isn't rewritten when the content turns up somewhere else. Of the root files, only
+`provenance.jsonl`, `run.json` and `state.sqlite` name local paths or times.
 
 LLM-generated text is labelled "(generated by <model>; not part of the source model)". It is
 emitted as separate `generated:*` chunks, so chunks of extracted text never mix sources.
 
 ## Using the output for RAG
 
-Load `chunks.jsonl` into your vector store: embed `text`, and keep `metadata` as filterable
-fields. Each chunk is self-contained, with its project, package path and source file in the
+Load the root `chunks.jsonl` into your vector store: embed `text`, and keep `metadata` as
+filterable fields. Each chunk is self-contained, with its project and package path in the
 text. `metadata.kind` says what the chunk is:
 
 | `kind` | Contents | Good for |
 |---|---|---|
 | `element`, `requirement`, `package`, `diagram`, `project` | Full description of one item, with its trace | "What does X do?", "Why does requirement R exist?" |
-| `ledger:requirements`, `ledger:diagrams`, `ledger:elements`, `ledger:packages`, `ledger:projects` | One line per item for one package (split into parts of about 60 lines); `metadata.element_ids` lists the ids row by row | "Which requirements cover thermal control?", "List the activity diagrams", "Where does REQ-2-APS-0086 come from?" |
+| `ledger:requirements`, `ledger:diagrams`, `ledger:elements`, `ledger:packages` | One line per item for one package (split into parts of about 60 lines); `metadata.element_ids` lists the ids row by row | "Which requirements cover thermal control?", "List the activity diagrams", "Where does REQ-2-APS-0086 come from?" |
+| `ledger:projects` | One line per project in the tree, with where it was found; `metadata.tokens` row by row | "Which models came from supplier X?" |
 | `generated:*` | LLM summaries and descriptions (`provenance.derivation.method = "llm"`) | Extra recall; weight or filter them separately |
+
+In the root `chunks.jsonl`, `metadata.source_metadata` holds the `--meta` values of every
+input the content was found in, as lists (`{"program": ["XYZ"]}`), ready for filtering. The
+per-project `index/chunks.jsonl` files leave them out, so they stay independent of inputs;
+join them with `provenance.jsonl` on `metadata.content` when loading those instead.
 
 Suggestions, roughly in order of value:
 
@@ -145,20 +191,46 @@ Suggestions, roughly in order of value:
    handle identifiers such as `REQ-2-APS-0086`, or part and block names, poorly; keyword
    search handles them exactly. Most vector stores support hybrid search.
 2. **Filter on metadata.** Restrict to `kind` (for example `ledger:*` for "list…" questions,
-   or `requirement` for "why…" questions), `project`, `stereotypes`, or `source_metadata`
-   fields such as the program or supplier.
+   or `requirement` for "why…" questions), `project`, `content`, `stereotypes`, or
+   `source_metadata` fields such as the program or supplier.
 3. **Route counting and exhaustive questions to the tables.** Top-k retrieval can't reliably
    answer "how many requirements are unverified?". A tool that runs SQL over `tables/*.csv`
    (e.g. DuckDB) can. The ledgers cover the cases in between.
-4. **Cite with the trace.** Every chunk's `metadata.provenance.locator` names the source
-   file, archive path, `xmi:id` and line. Ask the LLM to quote it so answers can be checked.
+4. **Cite with the trace.** Every chunk's `metadata.provenance.locator` names the content,
+   entry, `xmi:id` and line, and `provenance.jsonl` maps its token to the files it came from.
+   Ask the LLM to quote the locator so answers can be checked.
+
+## State database
+
+`state.sqlite` is plain SQLite, committed as work finishes, and meant to be queried:
+
+| Table | Holds |
+|---|---|
+| `inputs` | The task list: path, status (`pending`, `done`, `failed`, `missing`), `--meta` values (JSON), size, mtime and sha256 as last processed, times, error. |
+| `contents` | Each project's content: sha256, name (first seen), kind, size. |
+| `sightings` | Where each content was found: input, input version (sha256), archive chain (JSON). |
+| `projects` | Output state per content: status (`pending`, `working`, `written`, `failed`), tool version, options hash, summary, error. |
+| `files` | Each written project's files with their sha256. |
+| `runs` | Each run: times, command, outcome (`finished`, `interrupted`, `failed`), LLM report (JSON). |
+| `settings` | The tree's remembered run settings. |
+
+Views: `current_sightings` (sightings in the current version of each input, with its path,
+status and metadata) and `project_status` (every content, its output status and how often it
+is currently seen). For example:
+
+```sql
+SELECT path, status, error FROM inputs WHERE status != 'done';            -- still to do, or failed
+SELECT name, status, sightings FROM project_status ORDER BY name;         -- every project
+SELECT path, chain, metadata FROM current_sightings WHERE name = 'TMT.mdzip';  -- where it came from
+SELECT started, outcome, json_extract(llm, '$.calls') FROM runs ORDER BY started;
+```
 
 ## Design
 
 ```
-archive.discover ─► xmi.parse_into / finalize ─► layout.parse_layout ─► diagrams.render_png ─► llm (optional) ─► emit.ProjectWriter
-(find projects)     (streaming, schema-agnostic    (BINARY-* <mdOwnedViews>)   (sketch)           (describe/summarize)   (md / csv / jsonl)
-                     XMI → ModelIndex)
+runner: inputs ─► archive.discover ─► state (contents, sightings) ─► per project, in by-sha256/.work/:
+                  (find projects,      xmi.parse_into / finalize ─► layout ─► diagrams.render_png ─►
+                   hash each)          llm (optional, concurrent) ─► emit.ProjectWriter ─► publish ─► exports
 ```
 
 - **Schema-agnostic XMI reading** (`xmi.py`). The parser relies only on XMI conventions:
@@ -169,7 +241,7 @@ archive.discover ─► xmi.parse_into / finalize ─► layout.parse_layout ─
   Attributes whose values are known ids become references in a second pass. As a result,
   metamodel changes between Cameo versions and custom profiles (such as TMT_Requirement,
   ReqIF or UAF) need no code changes. The parse is streaming (`iterparse`), so memory stays
-  bounded: TMT (27 MB zipped, 80k elements) peaks at about 400 MB RSS and takes about 20 s.
+  bounded: TMT (27 MB zipped, 71k elements) peaks at about 400 MB RSS and parses in about 3 s.
 - **UML/SysML interpretation** (`semantics.py`) is a best-effort layer on top: documentation
   comments, multiplicities, value specifications, relationship ends, and requirement
   detection by stereotype name or `Id`/`Text` tags.
@@ -179,9 +251,13 @@ archive.discover ─► xmi.parse_into / finalize ─► layout.parse_layout ─
   `geometry` and link ends. They produce a deterministic node and edge list, which is the
   authoritative description. They also produce a PNG sketch that a vision model describes,
   with the node and edge list as context, so a weak model has less room to hallucinate.
-- **Security.** Nothing is extracted to disk from archives. Zip-bomb limits apply. XML
-  parsing has entity resolution and network access disabled. Encrypted ZIPs are rejected
-  with an error.
+- **State and publishing** (`state.py`, `runner.py`, `exports.py`). A project is built in a
+  work directory and published by one rename plus one database transaction, so a project
+  directory is always complete, and files a new version no longer produces disappear with
+  the old directory. The root files are rebuilt from the database after every run.
+- **Security.** Nothing is extracted to disk from archives. A zip-bomb budget applies (10 GB
+  decompressed per input, and a 1000:1 ratio for large members). XML parsing has entity
+  resolution and network access disabled. Encrypted ZIPs are rejected with an error.
 
 ## Known limitations and roadmap
 
@@ -206,7 +282,7 @@ archive.discover ─► xmi.parse_into / finalize ─► layout.parse_layout ─
 
 ```sh
 python3 scripts/fetch_samples.py [--small] [--strict]   # restore public sample models (~105 MB; --small ~11 MB)
-uv run pytest            # synthetic fixtures, plus the samples under 5 MB (about 10 s)
+uv run pytest            # synthetic fixtures, plus the samples under 5 MB (about 15 s)
 uv run pytest -m slow    # the large samples: TMT, TMT-2024x, SAF_FFDS, SAF_Plugin (about 1 min)
 uv run pytest -m llm     # a real LLM endpoint, from the environment or .env (about 1 min, ~20 requests)
 uv run python scripts/record_llm_fixture.py --env .env   # re-record the LLM replay fixture
@@ -220,5 +296,5 @@ The sample models in `samples/` are public third-party files and are gitignored;
 `samples/SOURCES.md` for their origins and licenses. `fetch_samples.py` pins each file's
 sha256 and reports when upstream content has changed. Without samples, the sample tests
 are simply not collected. Every sample run is checked for the same output invariants
-(unique chunk ids and anchors, provenance on every file and row, LLM text only in labelled
-chunks), and a few samples have pinned counts.
+(unique chunk ids and anchors, provenance on every file and row, traces that start from the
+content, LLM text only in labelled chunks), and a few samples have pinned counts.
