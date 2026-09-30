@@ -9,10 +9,18 @@ here.
 | Plan | Status | Addresses |
 |---|---|---|
 | [Resumable, content-addressed ingest](resumable-ingest-2026-09-29.md) | Completed 2026-09-29 | BASE-008R1, BASE-016R2, BASE-017R1, BASE-021R1 |
+| [Measuring LLM enrichment quality](llm-quality-2026-09-30.md) | Draft; open questions for the maintainer | FU-006R1 (and measures fixes for FU-001, FU-002, FU-004, FU-005) |
 
 ## Tentative
 
-These plans are not yet written. They come from the roadmap in the top-level `README.md`.
+These plans are not yet written. The first comes from the LLM quality plan's open question
+4; the others come from the roadmap in the top-level `README.md`.
+
+- **Retrieval evaluation.** A set of questions of the kinds the README's RAG advice targets
+  ("why does requirement R exist?", "list the activity diagrams", "which models came from
+  supplier X?"), each with the chunks that should answer it. Measure how often those chunks
+  come back from `chunks.jsonl` with plain vector search, and with keyword search alongside.
+  Then use the results to guide chunking, ledgers and metadata.
 
 - **Recompute tables and matrices.** Cameo computes table and matrix rows when it displays
   them, and the rows are not stored in the file. Rebuild the common cases (requirement
