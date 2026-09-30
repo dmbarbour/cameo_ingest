@@ -35,6 +35,7 @@ All answered by the maintainer on 2026-09-30.
 | 4 | The judge | High-quality models: Claude, and a few strong models on DeepInfra, within a modest budget. |
 | 5 | The corpora | Several sample projects, ideally all of them. |
 | 6 | A second text field for embedding | Not pursued: the stack embeds whatever text it is given, and we can't change which field it reads. If plainer text helps, `text` itself becomes plainer. |
+| 7 | Which models (added later that day) | Production probably doesn't use MiniLM. The in-house list has `llmrails/ember-v1` (512 tokens) beside the two e5 models, and one reranker, `BAAI/bge-reranker-v2-m3` (8,192 tokens). |
 
 ### What these mean for the design
 
@@ -50,7 +51,20 @@ All answered by the maintainer on 2026-09-30.
     prefixes.
 - **Keyword search is secondary.** BM25 and hybrid search are measured, to show what they would
   add once they can be integrated. The recommendations assume dense retrieval alone.
-- **No rerankers.**
+- **The models (decision 7):**
+  - **The main three:** e5-small, e5-large and ember-v1.
+  - **MPNet** is kept from the first list.
+  - **MiniLM** stays only as a cheap point of reference.
+  - **The reranker:** `bge-reranker-v2-m3` is tried as a second stage over each model's top 50,
+    since it is on the in-house list.
+- **This machine:** 8 cores, 15 GB of memory and no GPU.
+  - **Speed:** e5-small embeds about 6 chunks a second in a local container, and ember-v1 (three
+    times its size) and the reranker will be slower still. DeepInfra serves e5-large, MPNet and
+    MiniLM, but not e5-small, ember-v1 or the reranker.
+  - **Memory:** local containers run one at a time, and are stopped when done.
+  - **Size of the index:** if the local models can't embed every project in reasonable time, the
+    whole index shrinks for every model alike, since results are only comparable on the same
+    index.
 
 ## What we know already
 
@@ -64,9 +78,13 @@ Measured on 2026-09-30.
 | `sentence-transformers/all-mpnet-base-v2` | 768 | 384 | none | DeepInfra |
 | `intfloat/multilingual-e5-small` | 384 | 512 | `query: `, `passage: ` | Not on DeepInfra (404); runs in the same TEI image |
 | `intfloat/multilingual-e5-large` | 1024 | 512 | `query: `, `passage: ` | DeepInfra |
+| `llmrails/ember-v1` | 1024 | 512 | none | Not on DeepInfra; a local TEI container (English only) |
+| `BAAI/bge-reranker-v2-m3` (reranker) | | 8,192 | | Not on DeepInfra; a local TEI container |
 
-The local container truncates longer inputs silently (`auto_truncate`), as the in-house
-deployment probably does too.
+Both kinds of endpoint cut longer inputs silently, at each model's standard limit (DeepInfra
+reports 260, 388 and 516 tokens for an input of 2,000), as the in-house deployment probably
+does too. MiniLM gives the same vectors locally and on DeepInfra (cosine similarity 1.000000 on
+300 TMT chunks), so either can stand in for the other.
 
 ### Chunk lengths against those limits
 
