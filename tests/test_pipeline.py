@@ -162,6 +162,45 @@ LAYOUT_IBD = LAYOUT.replace("</mdOwnedViews>", """ <mdElement elementClass='Part
 </mdOwnedViews>""")
 
 
+# A flow drawn as two segments that end at a pair of connector circles (FU-017), a note on
+# two lines (FU-016), and a shape naming its element through the project's own file (FU-019).
+LAYOUT_BROKEN = LAYOUT.replace("</mdOwnedViews>", """ <mdElement elementClass='Class' xmi:id='v4'><elementID xmi:idref='r1'/><geometry>200, 200, 100, 60</geometry></mdElement>
+ <mdElement elementClass='FlowConnector' xmi:id='fc1'><geometry>55, 100, 20, 20</geometry></mdElement>
+ <mdElement elementClass='FlowConnector' xmi:id='fc2'><geometry>240, 150, 20, 20</geometry></mdElement>
+ <mdElement elementClass='Abstraction' xmi:id='s1'><elementID xmi:idref='rf1'/><linkFirstEndID xmi:idref='fc1'/><linkSecondEndID xmi:idref='v1'/>
+  <geometry>65, 100; 60, 70; </geometry></mdElement>
+ <mdElement elementClass='Abstraction' xmi:id='s2'><elementID xmi:idref='rf1'/><linkFirstEndID xmi:idref='v4'/><linkSecondEndID xmi:idref='fc2'/>
+  <geometry>250, 200; 250, 170; </geometry></mdElement>
+ <mdElement elementClass='Note' xmi:id='n1'><text>first line
+second line</text><geometry>400, 10, 100, 60</geometry></mdElement>
+ <mdElement elementClass='Class' xmi:id='v10'><elementID href='drone.mdzip#long1'/><geometry>400, 200, 100, 60</geometry></mdElement>
+</mdOwnedViews>""")
+
+
+def test_diagram_broken_flows_notes_and_file_references(tmp_path):
+    """A flow broken by connector circles is one connection between the shapes at its far
+    ends (FU-017); a note's line breaks neither stop the sketch nor split its legend line
+    (FU-016); and a shape that names its element through the project's file shows that
+    element (FU-019)."""
+    out = run(tmp_path, "drone.mdzip", make_mdzip(layout=LAYOUT_BROKEN))
+    page = (project_dir(out) / "diagrams/Drone_BDD.md").read_text()
+    assert (project_dir(out) / "diagrams/Drone_BDD.png").exists()
+    refine = [line for line in page.splitlines() if "«Refine»" in line]
+    assert len(refine) == 1 and "(not shown)" not in page, page
+    assert refine[0].index("Drone") < refine[0].index("→[Abstraction: «Refine»; refines]→") < refine[0].index("Endurance")
+    assert '- [4] Note: "first line second line"' in page, page
+    assert "drone.mdzip#long1" not in page and "- [5] Class: [Gravity calibration" in page, page
+
+    # A flow whose element is in another project: Cameo's convention (a path's first end is
+    # its target) gives the direction.
+    out = run(tmp_path / "ext", "drone.mdzip", make_mdzip(layout=LAYOUT_BROKEN.replace(
+        "<elementID xmi:idref='rf1'/>", "<elementID href='other.mdzip#flow9'/>")))
+    page = (project_dir(out) / "diagrams/Drone_BDD.md").read_text()
+    assert "→[Abstraction: depends on]→" in page and "(not shown)" not in page, page
+    line = next(line for line in page.splitlines() if "→[Abstraction: depends on]→" in line)
+    assert line.index("Drone") < line.index("→[Abstraction: depends on]→") < line.index("Endurance"), line
+
+
 def test_diagram_directions_item_flows_and_labels(tmp_path):
     """Directed edges run from source to target (FU-001), connectors show the items they
     carry and which way (FU-002), labels read cleanly (FU-003), and the sketch is drawn at
@@ -183,6 +222,7 @@ def test_diagram_directions_item_flows_and_labels(tmp_path):
     assert "- [3] battery : Battery —[Connector: carries Energy →]— [4] motor : Motor" in page, page
     assert "ConnectorEnd" not in page  # a decoration, not a shape
 
+    from cameo_ingest import diagrams as dg
     from cameo_ingest.archive import discover
     from cameo_ingest.diagrams import element_label
     from cameo_ingest.layout import View
@@ -192,6 +232,7 @@ def test_diagram_directions_item_flows_and_labels(tmp_path):
     ix.elements["a1"].name = None  # an unnamed part reads as its type, not ": Battery"
     assert element_label(ix, View("v", "Part", "a1")) == "Battery"
     assert element_label(ix, View("v", "Diagram", "d1")) == "Drone BDD"  # «DiagramInfo» is not shown
+    assert dg._shown_name(ix, View("v", "Part", "a1")) == "Battery"  # drawn in the sketch too (FU-018)
 
 
 def test_provenance_everywhere(tmp_path):
@@ -424,6 +465,7 @@ def test_samples(tmp_path, sample):
         assert sum("**Table / matrix configuration**" in p for p in pages) == expected["table_configs"]
         assert sum("**Shapes (" in p for p in pages) == expected["diagrams_with_shapes"]
         check_edge_directions(sample)
+        check_sketches(sample)
 
 
 def check_edge_directions(sample: Path) -> None:
@@ -449,6 +491,33 @@ def check_edge_directions(sample: Path) -> None:
                 assert ends == (rel.source, rel.target), (rel.metaclass, lk.view.view_id)
                 checked += 1
     assert checked
+
+
+def check_sketches(sample: Path) -> None:
+    """Every diagram can be drawn (FU-016), and every large one split into modules that each
+    can be drawn, covering all its shapes once (plan DV)."""
+    from cameo_ingest import diagrams as dg
+    from cameo_ingest import modules as mod
+    from cameo_ingest import semantics as sem
+    from cameo_ingest.archive import discover
+    from cameo_ingest.pipeline import load_layouts, parse_project
+
+    proj = next(discover(sample.read_bytes(), sample.name))
+    ix = parse_project(proj)
+    rels = {r.id: r for r in sem.relationships(ix)}
+    flows = sem.item_flows(ix)
+    split = 0
+    for dia_id, layout in load_layouts(proj, ix).items():
+        g = dg.build(ix, layout, rels, flows)
+        dg.render_png(ix, g, dia_id)
+        part = mod.partition(g)
+        if part is None:
+            continue
+        split += 1
+        assert sorted(k for m in part.modules for k in m.shapes) == [n.num for n in g.nodes], dia_id
+        assert mod.overview_png(ix, g, part, dia_id)
+        assert all(mod.module_png(ix, g, part, m.num, dia_id) for m in part.modules)
+    assert split
 
 
 SAF = [SAMPLES_DIR / "resource_bundles/SAF_Plugin_2026-09-16.zip",

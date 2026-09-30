@@ -80,6 +80,11 @@ def load_layouts(project: Project, ix: ModelIndex, progress: Progress = QUIET) -
                         layout.views += parse_layout(f).views
                 except Exception as e:  # malformed stream: keep going
                     log.warning("diagram %s: cannot parse layout %s: %s", d.id, s, e)
+            for v in layout.views:
+                if v.element and v.element not in ix.elements and "#" in v.element:
+                    own = v.element.rpartition("#")[2]
+                    if own in ix.elements:  # the project's own element, named through its file (FU-019)
+                        v.element = own
             if layout.views:
                 out[d.id] = layout
                 d.shown = list(dict.fromkeys(d.shown + [e for e in layout.elements() if e in ix.elements]))

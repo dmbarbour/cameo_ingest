@@ -56,18 +56,22 @@ are not nodes; their text goes to the element they label.
 A diagram is **large** when its shapes can't be drawn legibly at the model's image size. As a
 rule of thumb, that means more than about 25 shapes, or a bounding box whose scale factor
 would bring text below about 11 px. Small diagrams keep a single view. Large ones are split
-in this order:
-1. **The modeller's groups:** shapes nested in a shape (a part's internal parts, a use-case
-   subject, a package or frame on the diagram) and activity partitions (swimlanes).
-2. **Connected components** of what remains.
-3. **Communities** within a component that is still too large: modularity-based community
-   detection, with edge weights raised for shapes that sit close together. Modellers place
-   related shapes near each other, and control and object flows are chained. Communities are
-   merged or split until each fits.
+as DV-02 found best (`docs/research/diagram-partitioning-2026-09-30.md`):
+1. **Communities:** Louvain community detection (`networkx`) on the connections, weighted up
+   to 3 times for shapes that sit close together. Modellers place related shapes near each
+   other, so modules are regions that can be cropped. Nesting and each shape's two nearest
+   neighbours are weaker links, so a nested shape tends to stay with its container, and shapes
+   with no connections join what they sit next to.
+2. **Bounds:** a module over 25 shapes is split again, by communities or else by median cuts
+   of the layout. One under 6 joins the module it is most connected to, or else the nearest.
+3. **Later refinements**, found in DV-02:
+   - **Sequence diagrams:** split into bands along the time axis.
+   - **Swimlanes:** activity partitions as module boundaries, from the model's `inPartition`.
 
 Every node belongs to exactly one module. Hubs connected to many modules (a central part or
 block) stay in the module with most of their connections, and are listed as a boundary node
-of the others.
+of the others. A container whose shapes fall in several modules belongs to one of them,
+but a module's crop is set by its other shapes, so it isn't widened to the container's size.
 
 ### Views and requests
 
@@ -122,7 +126,7 @@ of the others.
 |---|---|---|
 | DV-01 | The diagram graph: nodes with stable numbers and nesting, edges with model direction and item flows. The legend, text lists and sketch all built from it. Unit tests. | Done, with the review's FU-001, FU-002, FU-007 and FU-008 fixes |
 | DV-02 | Partitioning, compared: `networkx` communities against alternatives (connected components with the modeller's groups, label propagation, spatial clustering of the layout, and `igraph`'s Leiden if it earns its dependency). Measure module sizes, edges cut, geometric compactness and speed on the drone sample and TMT, then keep what works. Write the results up as a research note. | Done: `docs/research/diagram-partitioning-2026-09-30.md`; networkx Louvain with geometric weights, with spatial cuts as the fallback |
-| DV-03 | Diagram views: module crops with faded boundary nodes, and the overview with module outlines, all at the pixel budget. | Not started |
+| DV-03 | Diagram views: module crops with faded boundary nodes, and the overview with module outlines, all at the pixel budget. | Done: `modules.py` (`partition`, `module_png`, `overview_png`) and `diagrams.Frame`; review findings FU-016 to FU-019 fixed along the way |
 | DV-04 | Diagram requests and output: `module-description@v1` and a synthesis request; module chunks with their provenance; the page layout; thresholds as settings with built-in defaults. | Not started |
 | DV-05 | Package modules: the element graph, partitioning by section size, `module-summary@v1`, a new `package-summary` built from modules, and chunks. | Not started |
 | DV-06 | Sandwiching for long requests, compared with and without on the same items. | Not started |
