@@ -171,6 +171,12 @@ class LLM:
                 max_retries=cfg.retries,
             )
 
+    def close(self) -> None:
+        """Close the connection pool, so that requests still in flight fail at once
+        (used when a run is interrupted)."""
+        if self._client is not None:
+            self._client.close()
+
     @property
     def store(self) -> LLMStore:
         with self._lock:

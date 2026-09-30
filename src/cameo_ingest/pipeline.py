@@ -141,11 +141,14 @@ def _answer(requests: list[_Request], progress: Progress, label: str, concurrenc
                 results.append(r.call())
                 ph.advance()
             return results
-        with ThreadPoolExecutor(max_workers=concurrency, thread_name_prefix="llm") as pool:
+        pool = ThreadPoolExecutor(max_workers=concurrency, thread_name_prefix="llm")
+        try:
             futures = [pool.submit(r.call) for r in requests]
             for _ in as_completed(futures):
                 ph.advance()
             return [f.result() for f in futures]  # re-raises e.g. a replay miss
+        finally:  # on Ctrl-C, queued requests are dropped rather than waited for
+            pool.shutdown(wait=False, cancel_futures=True)
 
 
 def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM, render: bool = True,
@@ -158,19 +161,26 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
     requests: list[_Request] = []
     truncated = 0  # LLM inputs cut short to fit the prompt
 
+    reused = 0  # sketches drawn by an interrupted attempt with the same tool and options
     if render and layouts:
         with progress.phase(f"{project.display_name}: rendering", len(layouts), "diagram") as ph:
             for dia_id, layout in layouts.items():
                 ph.advance()
                 d = ix.diagrams[dia_id]
                 el = ix.elements[dia_id]
-                png = dg.render_png(ix, layout, f"{d.diagram_type or 'Diagram'}: {ix.qualified_name(dia_id)}")
-                if png is None:
-                    continue
                 rel = writer.dia_file[dia_id].removesuffix(".md") + ".png"
-                (root / rel).parent.mkdir(parents=True, exist_ok=True)
-                (root / rel).write_bytes(png)
-                writer.out.files.append(root / rel)
+                path = root / rel
+                if path.exists():
+                    reused += 1
+                else:
+                    png = dg.render_png(ix, layout, f"{d.diagram_type or 'Diagram'}: {ix.qualified_name(dia_id)}")
+                    if png is None:
+                        continue
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    tmp = path.with_name(path.name + ".tmp")  # a sketch on disk is always complete
+                    tmp.write_bytes(png)
+                    tmp.replace(path)
+                writer.out.files.append(path)
                 tr = writer.trace(el).with_(entry=d.streams[0] if d.streams else el.entry, line=None,
                                             derivation=Derivation(method="rendered", inputs=tuple(d.streams)))
                 annotations.setdefault(dia_id, []).append(
@@ -187,6 +197,9 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
                     call = partial(_describe_file, llm, DIAGRAM_PROMPT + "\n\n" + context, root / rel, "image/png",
                                    (writer.trace(el).locator(), tr.locator()))
                     requests.append(_Request("diagram", dia_id, tr, call))
+
+    if reused:
+        log.info("%s: reused %d sketch(es) drawn by an interrupted run", project.display_name, reused)
 
     # Embedded images (attachments, image shapes...). Linking them to elements depends on
     # version-specific storage, so they are listed at project level for now.

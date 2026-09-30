@@ -138,14 +138,14 @@ has no settings.
 |---|---|---|
 | RI-01 | `state.py`: schema with a `schema_version`, views, the `flock` lock, and helpers for each table. Unit tests. | Done |
 | RI-02 | Content identity: `discover` hashes each project's bytes, and `Project` carries the hash and its archive chain. Per-project outputs use the token: locators, chunk IDs, front matter and page text, with no source path, name or `--meta`. | Done |
-| RI-03 | Command line: subcommands, the default `ingest`, output directory rules, settings; remove `--force` and the BASE-016R1 guard. | Done, except `status` and `prune` (RI-08) |
+| RI-03 | Command line: subcommands, the default `ingest`, output directory rules, settings; remove `--force` and the BASE-016R1 guard. | Done |
 | RI-04 | The run loop: check inputs, discover, record contents and sightings, build projects in the work directory and publish them, handle failures and retries. | Done |
 | RI-05 | Root files from `state.sqlite`: `INDEX.md`, `manifest.json`, `provenance.jsonl`, `chunks.jsonl` (with joined `--meta`), `run.json`, and the `ledger:projects` chunk. | Done |
 | RI-06 | Invalidation when the tool version or options change. | Done (landed with RI-04: one condition in the work query) |
-| RI-07 | Interruption and resume: reuse work-directory sketches, exit 130. | Not started |
-| RI-08 | `prune` and `status`. | Not started |
-| RI-09 | Progress across inputs ("input N of M") and a resume summary. | Not started |
-| RI-10 | Tests. Kill and resume must equal an uninterrupted run. Also: the same content under two paths gives one directory and two sightings; `add` then `run`; a changed tool version rewrites the project; `prune`; a foreign directory is refused; settings are reused. Slow test: the SAF_Plugin bundle plus the standalone SAF samples give one directory per content. | Not started |
+| RI-07 | Interruption and resume: reuse work-directory sketches, exit 130. | Done |
+| RI-08 | `prune` and `status`. | Done |
+| RI-09 | Progress across inputs ("input N of M") and a resume summary. | Done |
+| RI-10 | Tests. Kill and resume must equal an uninterrupted run. Also: the same content under two paths gives one directory and two sightings; `add` then `run`; a changed tool version rewrites the project; `prune`; a foreign directory is refused; settings are reused. Slow test: the SAF_Plugin bundle plus the standalone SAF samples give one directory per content. | Done |
 | RI-11 | Docs: README (layout, commands, state schema, RAG join), and closing BASE-008, BASE-016, BASE-017 and BASE-021 in the review. | Not started |
 
 The steps land in three commits: RI-01; then RI-02 to RI-05; then RI-06 to RI-09. RI-10 grows

@@ -323,6 +323,7 @@ def test_omg_namespace_prefixes():
 SAMPLES_DIR = Path(__file__).parent.parent / "samples"
 SAMPLES = sorted(SAMPLES_DIR.glob("*.mdzip")) + sorted(SAMPLES_DIR.glob("resource_bundles/*.zip"))
 SMALL = 5_000_000  # larger samples only run with `pytest -m slow`
+SAF_CONTENTS = 8  # the .mdzip files in the SAF_Plugin bundle; the standalone copies add none
 # Counts that changed when BASE-001, BASE-003 and BASE-013 were fixed; a change is a regression
 # or a deliberate improvement, to be checked either way (BASE-007R2).
 PINNED = {
@@ -354,10 +355,30 @@ def test_samples(tmp_path, sample):
         assert sum("**Shapes (" in p for p in pages) == expected["diagrams_with_shapes"]
 
 
+SAF = [SAMPLES_DIR / "resource_bundles/SAF_Plugin_2026-09-16.zip",
+       *(SAMPLES_DIR / n for n in ("SAF_FFDS.mdzip", "SAF_Blank.mdzip", "SAF_Profile.mdzip"))]
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(not all(p.exists() for p in SAF), reason="samples not fetched (scripts/fetch_samples.py)")
+def test_bundle_and_standalone_copies_share_projects(tmp_path):
+    """BASE-017's evidence: three standalone samples are byte-identical to members of the
+    SAF_Plugin bundle. Each is one project, seen twice."""
+    out = tmp_path / "out"
+    assert main([*map(str, SAF), "-o", str(out), "--no-llm", "--no-render"]) == 0
+    check_invariants(out)
+    records = provenance(out)
+    for f in SAF[1:]:
+        paths = [s["path"] for s in records[f"sha256:{hashlib.sha256(f.read_bytes()).hexdigest()}"]["sightings"]]
+        assert sorted(Path(p).name for p in paths) == sorted([f.name, SAF[0].name])
+    assert len(records) == len(list((out / "by-sha256").glob("[0-9a-f]*"))) == SAF_CONTENTS
+
+
 class FakeOpenAI:
     """Stands in for openai.OpenAI: records requests and returns a fixed reply."""
 
     fail = False  # set on the class to make every request raise
+    interrupt_at: int | None = None  # raise KeyboardInterrupt on this enrichment request (Ctrl-C)
     delay = 0.0  # seconds per request
     inflight = max_inflight = 0
     _lock = threading.Lock()
@@ -369,6 +390,8 @@ class FakeOpenAI:
 
     def _create(self, model, messages, **kw):
         self.requests.append((model, messages))
+        if self.interrupt_at is not None and len(self.enrichment()) == self.interrupt_at:
+            raise KeyboardInterrupt
         if self.fail:
             raise RuntimeError("endpoint down")
         with FakeOpenAI._lock:
@@ -379,6 +402,9 @@ class FakeOpenAI:
             FakeOpenAI.inflight -= 1
         reply = "A block definition diagram showing Drone composed of Battery."
         return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=reply))])
+
+    def close(self):
+        pass
 
     def enrichment(self) -> list[tuple[str, list]]:
         """Requests other than the preflight check."""
@@ -565,6 +591,53 @@ def test_llm_concurrency(tmp_path, fake_openai, monkeypatch):
         trees.append(tree(out))
     assert FakeOpenAI.max_inflight >= 2  # requests overlapped (BASE-019R4)...
     assert trees[0] == trees[1]  # ...and the output is the same as a sequential run
+
+
+def test_interrupt_and_resume(tmp_path, fake_openai, monkeypatch, capsys):
+    """A run stopped part-way continues where it stopped, and ends with the same output as a
+    run that was never interrupted (plan RI-07)."""
+    src = tmp_path / "drone.mdzip"
+    src.write_bytes(make_mdzip())
+    ref = tmp_path / "ref"
+    assert main([str(src), "-o", str(ref), "--vision-model", "m", "--no-preflight"]) == 0
+    monkeypatch.setattr(FakeOpenAI, "interrupt_at", 2)  # Ctrl-C during the second LLM request
+    out = tmp_path / "out"
+    assert main([str(src), "-o", str(out), "--vision-model", "m", "--no-preflight"]) == 130
+    assert "Continue with: cameo-ingest run -o" in capsys.readouterr().err
+    assert json.loads((out / "run.json").read_text())["outcome"] == "interrupted"
+    assert json.loads((out / "manifest.json").read_text())["projects"] == []  # nothing half-published
+    [work] = (out / "by-sha256/.work").iterdir()
+    sketch = (work / "diagrams/Drone_BDD.png").stat().st_mtime_ns  # drawn before the interruption
+    monkeypatch.setattr(FakeOpenAI, "interrupt_at", None)
+    assert main(["run", "-o", str(out), "--no-preflight"]) == 0  # the tree remembers the model
+    assert json.loads((out / "run.json").read_text())["llm"]["outcomes"] == {"answered": 2, "cached": 1}
+    assert (project_dir(out) / "diagrams/Drone_BDD.png").stat().st_mtime_ns == sketch  # reused, not redrawn
+    assert tree(out) == tree(ref)
+
+
+def test_status_and_prune(tmp_path, capsys):
+    a, b = tmp_path / "a.mdzip", tmp_path / "b.mdzip"
+    a.write_bytes(make_mdzip())
+    b.write_bytes(make_mdzip(MODEL.replace("name='Requirements'", "name='Needs'")))
+    out = tmp_path / "out"
+    assert main([str(a), str(b), "-o", str(out), "--no-llm", "--no-render"]) == 0
+    b.unlink()
+    assert main(["run", "-o", str(out)]) == 0
+    capsys.readouterr()
+    assert main(["status", "-o", str(out), "--json"]) == 0
+    s = json.loads(capsys.readouterr().out)
+    assert s["inputs"]["counts"] == {"done": 1, "missing": 1} and s["projects"]["counts"] == {"written": 2}
+    assert s["inputs"]["problems"] == [{"path": str(b), "status": "missing", "error": None}]
+    assert s["latest_run"]["outcome"] == "finished"
+    assert main(["prune", "-o", str(out), "--dry-run"]) == 0
+    assert "would remove 1 missing input(s) and 1 project(s)" in capsys.readouterr().out
+    assert len(list((out / "by-sha256").glob("[0-9a-f]*"))) == 2
+    assert main(["prune", "-o", str(out)]) == 0
+    assert [p["name"] for p in json.loads((out / "manifest.json").read_text())["projects"]] == ["a.mdzip"]
+    assert len(list((out / "by-sha256").glob("[0-9a-f]*"))) == 1
+    capsys.readouterr()
+    assert main(["status", "-o", str(out)]) == 0
+    assert "inputs: 1 done\nprojects: 1 written\n" in capsys.readouterr().out
 
 
 def test_ledger(tmp_path):

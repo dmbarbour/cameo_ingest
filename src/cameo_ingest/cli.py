@@ -3,6 +3,8 @@
     cameo-ingest add -o OUT PATH... [--meta K=V]   add inputs to the task list
     cameo-ingest run -o OUT [options]              process pending inputs and unfinished projects
     cameo-ingest ingest -o OUT PATH... [options]   add, then run (the default command)
+    cameo-ingest status -o OUT [--json]            what the tree holds, and the latest run
+    cameo-ingest prune -o OUT [--dry-run]          drop missing inputs and the projects only they held
 """
 
 from __future__ import annotations
@@ -11,11 +13,13 @@ import argparse
 import json
 import logging
 import os
+import signal
 import sys
 from pathlib import Path
 from typing import Any
 
 from . import __version__
+from . import runner as tree
 from .archive import ZIP_MAGIC, sniff_xmi
 from .llm import LLM, LLMConfig
 from .progress import Progress
@@ -24,7 +28,7 @@ from .state import State, StateError
 
 log = logging.getLogger("cameo_ingest")
 
-COMMANDS = ("add", "run", "ingest")
+COMMANDS = ("add", "run", "ingest", "status", "prune")
 
 NO_MODEL = """error: no LLM model is configured. Either
   - pass --no-llm to ingest without LLM summaries and descriptions, or
@@ -153,6 +157,11 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("add", parents=[common, inputs], help="add inputs to the task list")
     sub.add_parser("run", parents=[common, running], help="process pending inputs and unfinished projects")
     sub.add_parser("ingest", parents=[common, inputs, running], help="add inputs, then run (the default)")
+    st = sub.add_parser("status", parents=[common], help="what the tree holds, and the latest run")
+    st.add_argument("--json", action="store_true", help="print JSON")
+    pr = sub.add_parser("prune", parents=[common],
+                        help="drop missing inputs, and the projects that no remaining input contains")
+    pr.add_argument("--dry-run", action="store_true", help="only list what would be removed")
     return ap
 
 
@@ -252,7 +261,14 @@ def run_tree(args: argparse.Namespace, argv: list[str]) -> int:
                    "vision_model": cfg.vision_model, "max_calls": cfg.max_calls}
         runner = Runner(state, out, llm, options, Progress(heartbeat=args.heartbeat),
                         concurrency=settings.get("llm_concurrency") or 1)
-        code = runner.run(argv)
+        previous = signal.signal(signal.SIGTERM, _interrupt)
+        try:
+            code = runner.run(argv)
+        except KeyboardInterrupt:
+            print(f"interrupted; finished work is kept. Continue with: cameo-ingest run -o {out}", file=sys.stderr)
+            return 130
+        finally:
+            signal.signal(signal.SIGTERM, previous)
         counts = dict(state.db.execute("SELECT status, count(*) FROM project_status GROUP BY status").fetchall())
         print(f"{len(runner.written)} project(s) written in this run; in {out}: "
               + ", ".join(f"{n} {s}" for s, n in sorted(counts.items())))
@@ -264,6 +280,29 @@ def run_tree(args: argparse.Namespace, argv: list[str]) -> int:
         state.close()
 
 
+def _interrupt(signum: int, frame: Any) -> None:
+    raise KeyboardInterrupt  # SIGTERM stops a run the same way as Ctrl-C
+
+
+def print_status(state: State, as_json: bool) -> None:
+    s = tree.status(state)
+    if as_json:
+        print(json.dumps(s, ensure_ascii=False, indent=1))
+        return
+    def counts(c: dict[str, int]) -> str:
+        return ", ".join(f"{n} {k}" for k, n in sorted(c.items())) or "none"
+    print(f"inputs: {counts(s['inputs']['counts'])}")
+    for p in s["inputs"]["problems"]:
+        print(f"  {p['status']}: {p['path']}" + (f" ({p['error']})" if p["error"] else ""))
+    print(f"projects: {counts(s['projects']['counts'])}")
+    for p in s["projects"]["failed"]:
+        print(f"  failed: {p['name']} {p['token'][:23]} ({p['error']})")
+    run = s["latest_run"]
+    if run:
+        print(f"latest run: {run['outcome'] or 'running or stopped'}, started {run['started']}"
+              + (f", {run['llm_calls']} LLM calls" if run["llm_calls"] is not None else ""))
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] not in COMMANDS and not {"-h", "--help", "--version"} & set(argv):
@@ -272,7 +311,7 @@ def main(argv: list[str] | None = None) -> int:
     setup_logging(args.verbose, args.log_file)
     out: Path = args.out
     if not State.exists(out):
-        if args.command == "run":
+        if args.command in ("run", "status", "prune"):
             print(f"error: no output tree at {out}; start one with `add` or `ingest`", file=sys.stderr)
             return 2
         if out.exists() and any(p.name != ".cache" for p in out.iterdir()):
@@ -286,6 +325,28 @@ def main(argv: list[str] | None = None) -> int:
         finally:
             state.close()
         print(f"added {new} input(s) to the task list of {out} ({old} already listed); `run` processes them")
+        return 0
+    if args.command == "status":
+        state = State(out)
+        try:
+            print_status(state, args.json)
+        finally:
+            state.close()
+        return 0
+    if args.command == "prune":
+        state = State(out)
+        try:
+            state.lock()
+            removed = tree.prune(state, out, dry_run=args.dry_run)
+        except StateError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        finally:
+            state.close()
+        verb = "would remove" if args.dry_run else "removed"
+        print(f"{verb} {len(removed['inputs'])} missing input(s) and {len(removed['projects'])} project(s)")
+        for p in removed["projects"]:
+            print(f"  {p['name']} {p['token'][:23]}")
         return 0
     return run_tree(args, argv)
 
