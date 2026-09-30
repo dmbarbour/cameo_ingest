@@ -9,6 +9,7 @@ limits guard against zip bombs.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import logging
 import re
@@ -54,10 +55,25 @@ class Project:
     container: tuple[str, ...]  # archive members leading to this project, outermost first
     model_entries: list[str]
     entry_names: list[str]
+    sha256: str = ""  # of the project's own bytes: its identity (plan RI-02)
+    data_size: int = 0
     _zip: zipfile.ZipFile | None = None
     _bare: bytes | None = None
     _budget: _Budget | None = None
     notes: list[str] = field(default_factory=list)
+
+    @property
+    def chain(self) -> tuple[str, ...]:
+        """Archive members from the input file down to this project; () for the input itself."""
+        return (*self.container[1:], self.name) if self.container else ()
+
+    @property
+    def display_name(self) -> str:
+        return PurePosixPath(self.name).name
+
+    @property
+    def kind(self) -> str:
+        return "zip" if self._zip is not None else "xmi"
 
     @property
     def trace_container(self) -> tuple[str, ...]:
@@ -172,6 +188,8 @@ def discover(data: bytes, name: str, container: tuple[str, ...] = (), depth: int
                 container=container,
                 model_entries=models,
                 entry_names=[i.filename for i in zf.infolist() if not i.is_dir()],
+                sha256=hashlib.sha256(data).hexdigest(),
+                data_size=len(data),
                 _zip=zf,
                 _budget=budget,
             )
@@ -198,7 +216,8 @@ def discover(data: bytes, name: str, container: tuple[str, ...] = (), depth: int
                 log.warning("skipping nested member %s: %s", "!".join((*chain, info.filename)), e)
         return
     if sniff_xmi(data[:4096]):
-        yield Project(name=name, container=container, model_entries=[name], entry_names=[name], _bare=data)
+        yield Project(name=name, container=container, model_entries=[name], entry_names=[name],
+                      sha256=hashlib.sha256(data).hexdigest(), data_size=len(data), _bare=data)
         return
     if depth == 0:
         raise UnsupportedInput(f"{name}: neither a zip archive nor an XMI document (starts with {data[:16]!r})")

@@ -137,11 +137,11 @@ has no settings.
 | Step | Work | Status |
 |---|---|---|
 | RI-01 | `state.py`: schema with a `schema_version`, views, the `flock` lock, and helpers for each table. Unit tests. | Done |
-| RI-02 | Content identity: `discover` hashes each project's bytes, and `Project` carries the hash and its archive chain. Per-project outputs use the token: locators, chunk IDs, front matter and page text, with no source path, name or `--meta`. | Not started |
-| RI-03 | Command line: subcommands, the default `ingest`, output directory rules, settings; remove `--force` and the BASE-016R1 guard. | Not started |
-| RI-04 | The run loop: check inputs, discover, record contents and sightings, build projects in the work directory and publish them, handle failures and retries. | Not started |
-| RI-05 | Root files from `state.sqlite`: `INDEX.md`, `manifest.json`, `provenance.jsonl`, `chunks.jsonl` (with joined `--meta`), `run.json`, and the `ledger:projects` chunk. | Not started |
-| RI-06 | Invalidation when the tool version or options change. | Not started |
+| RI-02 | Content identity: `discover` hashes each project's bytes, and `Project` carries the hash and its archive chain. Per-project outputs use the token: locators, chunk IDs, front matter and page text, with no source path, name or `--meta`. | Done |
+| RI-03 | Command line: subcommands, the default `ingest`, output directory rules, settings; remove `--force` and the BASE-016R1 guard. | Done, except `status` and `prune` (RI-08) |
+| RI-04 | The run loop: check inputs, discover, record contents and sightings, build projects in the work directory and publish them, handle failures and retries. | Done |
+| RI-05 | Root files from `state.sqlite`: `INDEX.md`, `manifest.json`, `provenance.jsonl`, `chunks.jsonl` (with joined `--meta`), `run.json`, and the `ledger:projects` chunk. | Done |
+| RI-06 | Invalidation when the tool version or options change. | Done (landed with RI-04: one condition in the work query) |
 | RI-07 | Interruption and resume: reuse work-directory sketches, exit 130. | Not started |
 | RI-08 | `prune` and `status`. | Not started |
 | RI-09 | Progress across inputs ("input N of M") and a resume summary. | Not started |

@@ -18,7 +18,7 @@ from .layout import Layout, parse_layout
 from .llm import LLM
 from .model import ModelIndex
 from .progress import QUIET, Progress
-from .provenance import Derivation, RunInfo, Trace
+from .provenance import ContentInfo, Derivation, Trace
 from .text import front_matter
 from .xmi import finalize, parse_into
 
@@ -70,12 +70,12 @@ class _Counting:
 def parse_project(project: Project, progress: Progress = QUIET) -> ModelIndex:
     ix = ModelIndex()
     total = sum(project.size(e) for e in project.model_entries)
-    with progress.phase(f"{project.name}: parsing", total, "B") as ph:
+    with progress.phase(f"{project.display_name}: parsing", total, "B") as ph:
         for entry in project.model_entries:
             with project.open(entry) as f:
                 parse_into(ix, _Counting(f, ph.advance), entry)
         finalize(ix)
-    log.info("%s: %s elements, %s diagrams, %s stereotype applications", project.name,
+    log.info("%s: %s elements, %s diagrams, %s stereotype applications", project.display_name,
              f"{len(ix.elements):,}", f"{len(ix.diagrams):,}", f"{len(ix.stereotypes):,}")
     return ix
 
@@ -86,7 +86,7 @@ def load_layouts(project: Project, ix: ModelIndex, progress: Progress = QUIET) -
     todo = [(d, [s for s in d.streams if s in names]) for d in ix.diagrams.values()]
     todo = [(d, streams) for d, streams in todo if streams]
     out: dict[str, Layout] = {}
-    with progress.phase(f"{project.name}: layouts", len(todo), "diagram") as ph:
+    with progress.phase(f"{project.display_name}: layouts", len(todo), "diagram") as ph:
         for d, streams in todo:
             layout = Layout()
             for s in streams:
@@ -148,18 +148,18 @@ def _answer(requests: list[_Request], progress: Progress, label: str, concurrenc
             return [f.result() for f in futures]  # re-raises e.g. a replay miss
 
 
-def ingest_project(run: RunInfo, project: Project, root: Path, llm: LLM, render: bool = True,
+def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM, render: bool = True,
                    progress: Progress = QUIET, concurrency: int = 1) -> ProjectResult:
     ix = parse_project(project, progress)
     annotations: dict[str, list[Annotation]] = {}
-    base = Trace(source_sha256=run.source.sha256, container=project.trace_container)
+    base = Trace(content_sha256=content.sha256)
     layouts = load_layouts(project, ix, progress)
-    writer = ProjectWriter(run, project, ix, root, annotations, layouts)
+    writer = ProjectWriter(content, project, ix, root, annotations, layouts)
     requests: list[_Request] = []
     truncated = 0  # LLM inputs cut short to fit the prompt
 
     if render and layouts:
-        with progress.phase(f"{project.name}: rendering", len(layouts), "diagram") as ph:
+        with progress.phase(f"{project.display_name}: rendering", len(layouts), "diagram") as ph:
             for dia_id, layout in layouts.items():
                 ph.advance()
                 d = ix.diagrams[dia_id]
@@ -228,11 +228,11 @@ def ingest_project(run: RunInfo, project: Project, root: Path, llm: LLM, render:
 
     if truncated:
         log.warning("%s: %d LLM input(s) were cut short to fit the prompt (at most %s characters of package "
-                    "text, %d shapes and %d connections per diagram)", project.name, truncated,
+                    "text, %d shapes and %d connections per diagram)", project.display_name, truncated,
                     f"{SUMMARY_INPUT_CHARS:,}", DIAGRAM_CONTEXT_ITEMS, DIAGRAM_CONTEXT_ITEMS)
 
     image_desc: dict[str, tuple[str, Derivation]] = {}
-    for req, res in zip(requests, _answer(requests, progress, project.name, concurrency), strict=True):
+    for req, res in zip(requests, _answer(requests, progress, project.display_name, concurrency), strict=True):
         if res is None:
             continue
         text, deriv = res
@@ -256,16 +256,15 @@ def ingest_project(run: RunInfo, project: Project, root: Path, llm: LLM, render:
                 writer.chunk(kind="generated:image_description", title=f"Image description: {entry}",
                              text=labelled, file="images.md", el=None, trace=tr.with_(derivation=deriv), salt=entry)
             lines += [f"<sub>trace: `{tr.locator()}`</sub>", ""]
-        fm = front_matter({"title": f"Embedded images in {project.name}", "kind": "images",
+        fm = front_matter({"title": f"Embedded images in {content.name}", "kind": "images",
                            "provenance": writer.file_provenance(trace=base.to_dict())})
         writer.write_text("images.md", fm + "\n".join(lines))
 
-    with progress.phase(f"{project.name}: writing", writer.write_steps(), "step") as ph:
+    with progress.phase(f"{project.display_name}: writing", writer.write_steps(), "step") as ph:
         out = writer.write_all(tick=ph.advance)
 
     summary = {
-        "name": project.name,
-        "container": list(project.trace_container),
+        "name": content.name,
         "model_entries": project.model_entries,
         "exporter": ix.exporter,
         "elements": len(ix.elements),

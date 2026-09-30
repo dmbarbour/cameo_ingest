@@ -1,0 +1,195 @@
+"""Working through an output tree's task list (plan RI-04).
+
+A run checks every input for changes, scans the pending ones and records the Cameo
+projects (contents) found in them, then builds each content that has no up-to-date output:
+in `by-sha256/.work/<sha256>/`, published by one rename to `by-sha256/<sha256>/` and one
+transaction in state.sqlite. Finally the root files are rebuilt and run.json exported.
+Everything recorded is committed as it happens, so a stopped run loses at most the
+project it was building.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import shutil
+import uuid
+from collections import defaultdict
+from pathlib import Path
+from typing import Any
+
+from . import exports
+from .archive import UnsupportedInput, discover
+from .llm import LLM
+from .pipeline import ingest_project
+from .progress import Progress
+from .provenance import TOOL, ContentInfo, sha256_bytes, sha256_text, utc_now
+from .state import State
+
+log = logging.getLogger(__name__)
+
+WORK = ".work"
+
+
+def options_hash(options: dict[str, Any]) -> str:
+    """Of the options that change a project's output (rendering, models, call budget)."""
+    return sha256_text(json.dumps(options, sort_keys=True))[:16]
+
+
+class Runner:
+    def __init__(self, state: State, out: Path, llm: LLM, options: dict[str, Any], progress: Progress,
+                 concurrency: int = 1):
+        self.state, self.out, self.llm, self.progress = state, out, llm, progress
+        self.options = options
+        self.opt_hash = options_hash(options)
+        self.concurrency = concurrency
+        self.projects_dir = out / exports.PROJECTS
+        self.failed_inputs: list[str] = []
+        self.failed_projects: list[str] = []
+        self.written: list[str] = []
+
+    def run(self, command: list[str]) -> int:
+        run_id = uuid.uuid4().hex
+        self.state.start_run(run_id, command)
+        outcome = "failed"
+        try:
+            self.check_inputs()
+            self.scan()
+            self.build()
+            outcome = "finished"
+        except KeyboardInterrupt:
+            outcome = "interrupted"
+            raise
+        finally:
+            exports.rebuild(self.state, self.out)
+            self.state.finish_run(run_id, outcome, self.llm.report())
+            self.write_run_json(run_id)
+        if self.failed_projects:
+            return 4
+        return 3 if self.failed_inputs else 0
+
+    # -- inputs ------------------------------------------------------------------
+    def check_inputs(self) -> None:
+        """Missing inputs are flagged (their projects stay); changed or failed ones are
+        queued again."""
+        for row in self.state.inputs():
+            path = Path(row["path"])
+            if not path.is_file():
+                if row["status"] != "missing":
+                    log.warning("input %s is missing; its projects are kept (`prune` removes them)", path)
+                    self.state.update_input(row["id"], status="missing")
+                continue
+            st = path.stat()
+            changed = (st.st_size, st.st_mtime_ns) != (row["size"], row["mtime_ns"])
+            if row["status"] in ("missing", "failed") or (row["status"] == "done" and changed):
+                self.state.update_input(row["id"], status="pending")
+
+    def scan(self) -> None:
+        pending = self.state.inputs("pending")
+        for row in pending:
+            path = Path(row["path"])
+            try:
+                data = path.read_bytes()
+            except OSError as e:
+                self._input_failed(row, f"cannot read: {e}")
+                continue
+            sha = sha256_bytes(data)
+            st = path.stat()
+            known = self.state.db.execute("SELECT 1 FROM sightings WHERE input_id = ? AND input_sha256 = ? LIMIT 1",
+                                          (row["id"], sha)).fetchone()
+            if known is None:  # new or changed content: find the projects in it
+                try:
+                    projects = list(discover(data, path.name))
+                except UnsupportedInput as e:
+                    self._input_failed(row, str(e))
+                    continue
+                if not projects:
+                    self._input_failed(row, "no Cameo/XMI model found")
+                    continue
+                with self.state.tx():
+                    for p in projects:
+                        self.state.record_sighting(p.sha256, p.display_name, p.kind, p.data_size, row["id"], sha, p.chain)
+                log.info("found %d project(s) in %s", len(projects), path.name)
+            self.state.update_input(row["id"], status="done", size=st.st_size, mtime_ns=st.st_mtime_ns, sha256=sha,
+                                    processed=utc_now(), error=None)
+
+    def _input_failed(self, row: Any, error: str) -> None:
+        log.error("input %s: %s", row["path"], error)
+        self.state.update_input(row["id"], status="failed", processed=utc_now(), error=error)
+        self.failed_inputs.append(row["path"])
+
+    # -- projects --------------------------------------------------------------
+    def todo(self) -> dict[str, list[tuple[str, str]]]:
+        """Contents without up-to-date output, grouped by an input to read them from:
+        {input path: [(content sha256, input sha256)]}."""
+        rows = self.state.db.execute(
+            "SELECT c.sha256 FROM contents c LEFT JOIN projects p ON p.content_sha256 = c.sha256 "
+            "WHERE p.status IS NULL OR p.status != 'written' OR p.tool != ? OR p.options_hash != ? "
+            "ORDER BY c.name, c.sha256", (TOOL, self.opt_hash)).fetchall()
+        by_input: dict[str, list[tuple[str, str]]] = defaultdict(list)
+        for (sha,) in rows:
+            where = next((s for s in self.state.sightings(sha) if s["input_status"] == "done"), None)
+            if where is not None:  # otherwise only seen in missing or old inputs: nothing to read
+                by_input[where["path"]].append((sha, where["input_sha256"]))
+        return by_input
+
+    def build(self) -> None:
+        for path_str, items in self.todo().items():
+            path = Path(path_str)
+            data = path.read_bytes()
+            if sha256_bytes(data) != items[0][1]:  # changed since it was scanned: next run
+                log.warning("input %s changed during the run; it will be scanned again", path)
+                row = self.state.db.execute("SELECT id FROM inputs WHERE path = ?", (path_str,)).fetchone()
+                self.state.update_input(row["id"], status="pending")
+                continue
+            found = {p.sha256: p for p in discover(data, path.name)}
+            for sha, _ in items:
+                if sha in found:
+                    self.build_project(found[sha])
+                else:  # e.g. a nested member that could not be read this time
+                    self.state.set_project(sha, "failed", error=f"no longer found in {path.name}")
+                    self.failed_projects.append(sha)
+
+    def build_project(self, project: Any) -> None:
+        sha = project.sha256
+        content = ContentInfo(sha, self.state.content(sha)["name"])
+        work = self.projects_dir / WORK / sha
+        row = self.state.project(sha)
+        resumable = row is not None and row["status"] == "working" and (row["tool"], row["options_hash"]) == (
+            TOOL, self.opt_hash)
+        if work.exists() and not resumable:
+            shutil.rmtree(work)
+        self.state.set_project(sha, "working", tool=TOOL, options_hash=self.opt_hash, error=None)
+        try:
+            result = ingest_project(content, project, work, self.llm, render=self.options["render"],
+                                    progress=self.progress, concurrency=self.concurrency)
+        except Exception as e:  # one bad project must not stop the others (BASE-004)
+            log.error("project %s (sha256:%s) failed: %s: %s", content.name, sha[:16], type(e).__name__, e)
+            log.debug("traceback for %s", content.name, exc_info=True)
+            self.state.set_project(sha, "failed", error=f"{type(e).__name__}: {e}")
+            self.failed_projects.append(sha)
+            return
+        files = sorted((str(f.relative_to(work)), sha256_bytes(f.read_bytes())) for f in work.rglob("*") if f.is_file())
+        final = self.projects_dir / sha
+        old = work.with_name(f"{sha}.old")
+        if old.exists():
+            shutil.rmtree(old)
+        if final.exists():
+            final.rename(old)
+        work.rename(final)
+        self.state.publish(sha, TOOL, self.opt_hash, result.summary, files)
+        if old.exists():
+            shutil.rmtree(old)
+        self.written.append(sha)
+
+    # -- run record ------------------------------------------------------------
+    def write_run_json(self, run_id: str) -> None:
+        run = self.state.run(run_id)
+        record = {
+            "run_id": run_id, "started": run["started"], "finished": run["finished"], "outcome": run["outcome"],
+            "tool": TOOL, "command": json.loads(run["command"]), "options": self.options,
+            "projects": {"written": len(self.written), "failed": len(self.failed_projects)},
+            "failed_inputs": self.failed_inputs,
+            "llm": self.llm.report(),
+        }
+        (self.out / "run.json").write_text(json.dumps(record, ensure_ascii=False, indent=1), encoding="utf-8")

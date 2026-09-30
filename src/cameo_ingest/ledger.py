@@ -141,12 +141,11 @@ class LedgerWriter:
             parts[-1].append((eid, plain))
             size += len(plain)
         rows = items
-        src = self.w.run.source
-        chain = "!".join(self.w.project.trace_container) or self.w.project.name
+        content = self.w.content
         for i, part in enumerate(parts, 1):
             of = f" (part {i} of {len(parts)})" if len(parts) > 1 else ""
-            header = (f"{heading} ledger{of} — Cameo project {self.w.project.name}, {where}. "
-                      f"Source file `{src.name}` (archive path `{chain}`), {len(rows)} entries in this group.")
+            header = (f"{heading} ledger{of} — Cameo project {content.name}, {where}. "
+                      f"Content `sha256:{content.sha256[:16]}`, {len(rows)} entries in this group.")
             text = header + "\n\n" + "\n".join(r for _, r in part)
             tr = self.w.trace(pkg) if pkg is not None else self.w.trace()
             self.w.chunk(kind=f"ledger:{kind}", title=f"{heading} ledger: {where}{of}", text=text, file=FILE,
@@ -168,11 +167,10 @@ class LedgerWriter:
 
         n_req = sum(1 for els in by_pkg.values() for e in els if sem.is_requirement(ix, e))
         self.md += [
-            f"# Ledger: {w.project.name}", "",
+            f"# Ledger: {w.content.name}", "",
             ("Compact listing of everything in this project, grouped by package. Each entry links to its "
              "full description."), "",
-            f"- **Source:** `{w.run.source.name}` (sha256 `{w.run.source.sha256}`)",
-            f"- **Archive path:** `{'!'.join(w.project.trace_container) or w.project.name}`",
+            f"- **Content:** `{w.content.token}`",
             f"- **Packages:** {len(pkgs)}; **diagrams:** {len(ix.diagrams)}; **requirements:** {n_req}", "",
             "## Packages", "",
         ]
@@ -200,6 +198,6 @@ class LedgerWriter:
                         rows = [(e.id, self.element_row(e)) for e in els]
                 self.emit_group(kind, heading, pkg, rows)
 
-        fm = front_matter({"title": f"Ledger {w.project.name}", "kind": "ledger",
+        fm = front_matter({"title": f"Ledger {w.content.name}", "kind": "ledger",
                            "provenance": w.file_provenance(trace=w.trace().to_dict())})
         w.write_text(FILE, fm + "\n".join(self.md))

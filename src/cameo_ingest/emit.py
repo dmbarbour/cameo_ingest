@@ -32,7 +32,7 @@ from .archive import Project
 from .layout import Layout
 from .ledger import LedgerWriter
 from .model import Element, ModelIndex
-from .provenance import RunInfo, Trace, sha256_text
+from .provenance import TOOL, ContentInfo, Trace, sha256_text
 from .text import front_matter, md_escape, md_inline, slug
 
 DIAGRAM_INFO = "DiagramInfo"  # MagicDraw_Profile stereotype holding a diagram's author and dates
@@ -59,11 +59,11 @@ class Outputs:
 
 
 class ProjectWriter:
-    def __init__(self, run: RunInfo, project: Project, ix: ModelIndex, root: Path,
+    def __init__(self, content: ContentInfo, project: Project, ix: ModelIndex, root: Path,
                  annotations: dict[str, list[Annotation]] | None = None,
                  layouts: dict[str, Layout] | None = None):
         self.layouts = layouts or {}
-        self.run = run
+        self.content = content
         self.project = project
         self.ix = ix
         self.root = root
@@ -84,21 +84,21 @@ class ProjectWriter:
 
     # -- provenance ------------------------------------------------------------
     def trace(self, el: Element | None = None, **kw: Any) -> Trace:
-        base = Trace(source_sha256=self.run.source.sha256, container=self.project.trace_container)
+        base = Trace(content_sha256=self.content.sha256)
         if el is not None:
             base = base.with_(entry=el.entry, xmi_id=el.id, line=el.line,
                               qualified_name=self.ix.qualified_name(el.id) or None)
         return base.with_(**kw) if kw else base
 
     def file_provenance(self, **extra: Any) -> dict[str, Any]:
+        # Only what the content itself determines: where it was found is looked up by
+        # the token (INDEX.md, provenance.jsonl, state.sqlite).
         return {
-            "source_name": self.run.source.name,
-            "source_sha256": self.run.source.sha256,
-            "source_metadata": self.run.source.metadata,
-            "container": list(self.project.trace_container),
+            "content": self.content.token,
+            "name": self.content.name,
             "model_entries": self.project.model_entries,
             "exporter": self.ix.exporter,
-            "tool": self.run.tool,
+            "tool": TOOL,
             **extra,
         }
 
@@ -162,8 +162,7 @@ class ProjectWriter:
 
     def chunk(self, *, kind: str, title: str, text: str, file: str, el: Element | None,
               trace: Trace, extra: dict[str, Any] | None = None, salt: str = "") -> None:
-        cid = sha256_text(f"{self.run.source.sha256}|{'!'.join(self.project.trace_container)}|{kind}|"
-                          f"{el.id if el else file}|{salt}")[:24]
+        cid = sha256_text(f"{self.content.sha256}|{kind}|{el.id if el else file}|{salt}")[:24]
         self.out.chunks.append({
             "id": cid,
             "title": title,
@@ -171,12 +170,12 @@ class ProjectWriter:
             "metadata": {
                 "kind": kind,
                 "file": file,
-                "project": self.project.name,
+                "project": self.content.name,
+                "content": self.content.token,
                 "element_id": el.id if el else None,
                 "element_type": el.type if el else None,
                 "qualified_name": self.ix.qualified_name(el.id) if el else None,
                 "stereotypes": self.ix.stereotype_names(el.id) if el else [],
-                "source_metadata": self.run.source.metadata,
                 "provenance": trace.to_dict(),
                 **(extra or {}),
             },
@@ -477,13 +476,10 @@ class ProjectWriter:
         st_counts: dict[str, int] = defaultdict(int)
         for a in ix.stereotypes.values():
             st_counts[a.name] += 1
-        lines = [f"# Cameo project: {md_inline(self.project.name)}", ""]
-        if self.run.source.metadata:
-            lines.append("**Source metadata:** " + ", ".join(f"{k}={v}" for k, v in self.run.source.metadata.items()))
-            lines.append("")
+        lines = [f"# Cameo project: {md_inline(self.content.name)}", ""]
         exp = ", ".join(f"{k}: {v}" for k, v in ix.exporter.items())
-        lines += [f"- **Source file:** `{self.run.source.name}` (sha256 `{self.run.source.sha256}`)",
-                  f"- **Archive path:** `{'!'.join(self.project.trace_container) or self.project.name}`",
+        lines += [(f"- **Content:** `{self.content.token}` (where this content was found is recorded under "
+                   "this token, in `INDEX.md` and `provenance.jsonl` at the root of the output tree)"),
                   f"- **Exporter:** {exp or 'unknown'}",
                   (f"- **Elements:** {len(ix.elements)}; **diagrams:** {len(ix.diagrams)}; "
                    f"**relationships:** {len(self.rels)}; **stereotype applications:** {len(ix.stereotypes)}"),
@@ -514,9 +510,9 @@ class ProjectWriter:
             lines.append("")
         text = "\n".join(lines)
         tr = self.trace()
-        self.chunk(kind="project", title=f"Cameo project {self.project.name}", text=text,
+        self.chunk(kind="project", title=f"Cameo project {self.content.name}", text=text,
                    file="README.md", el=None, trace=tr)
-        fm = front_matter({"title": f"Cameo project {self.project.name}", "kind": "project",
+        fm = front_matter({"title": f"Cameo project {self.content.name}", "kind": "project",
                            "provenance": self.file_provenance(trace=tr.to_dict())})
         self.write_text("README.md", fm + text)
 
@@ -628,7 +624,7 @@ class ProjectWriter:
             return node
 
         seen: set[str] = set()
-        h = {"project": self.project.name, "provenance": self.file_provenance(),
+        h = {"project": self.content.name, "provenance": self.file_provenance(),
              "roots": [t for r in ix.roots if (t := tree(r, seen))]}
         p = self.root / "index/hierarchy.json"
         p.write_text(json.dumps(h, ensure_ascii=False, indent=1), encoding="utf-8")

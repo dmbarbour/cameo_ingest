@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import io
 import json
 import logging
@@ -30,6 +31,27 @@ def isolated_env(monkeypatch):
     monkeypatch.setattr(os, "environ", {k: v for k, v in os.environ.items() if k not in LLM_ENV})
 
 
+# Root files that name local paths or times; everything else in a tree is reproducible.
+RUN_RECORDS = {"run.json", "provenance.jsonl", "state.sqlite", "state.sqlite-wal", "state.sqlite-shm", "state.lock"}
+
+
+def tree(out: Path) -> dict[str, bytes]:
+    return {str(f.relative_to(out)): f.read_bytes() for f in out.rglob("*")
+            if f.is_file() and f.name not in RUN_RECORDS and ".cache" not in f.parts}
+
+
+def project_dir(out: Path, name: str | None = None) -> Path:
+    """The directory of the only (or the named) written project in an output tree."""
+    projects = [p for p in json.loads((out / "manifest.json").read_text())["projects"]
+                if name is None or p["name"] == name]
+    assert len(projects) == 1, [p["name"] for p in projects]
+    return out / projects[0]["dir"]
+
+
+def provenance(out: Path) -> dict[str, dict]:
+    return {r["token"]: r for r in map(json.loads, (out / "provenance.jsonl").open())}
+
+
 def run(tmp_path: Path, name: str, data: bytes) -> Path:
     src = tmp_path / name
     src.write_bytes(data)
@@ -53,12 +75,15 @@ def check_invariants(out: Path) -> None:
     chunks = [json.loads(line) for line in (out / "chunks.jsonl").open(encoding="utf-8")]
     dup = [i for i, n in Counter(c["id"] for c in chunks).items() if n > 1]
     assert not dup, dup[:3]
-    for c in chunks:  # LLM text only in labelled generated:* chunks (BASE-025)
-        if c["metadata"]["provenance"]["derivation"]["method"] == "llm":
+    for c in chunks:
+        if "content" in c["metadata"]:  # traces start from the project's content (plan RI-02)
+            assert c["metadata"]["provenance"]["locator"].startswith(c["metadata"]["content"][:23]), c["id"]
+            assert "source_metadata" in c["metadata"], c["id"]  # joined in at the root
+        if c["metadata"]["provenance"]["derivation"]["method"] == "llm":  # labelled (BASE-025)
             assert c["metadata"]["kind"].startswith("generated:"), c["id"]
             assert "not part of the source model" in c["text"], c["id"]
     # A `base_*` attribute or reference means a stereotype application was read as an element.
-    for f in out.glob("*/index/elements.jsonl"):
+    for f in out.glob("by-sha256/*/index/elements.jsonl"):
         for line in f.open(encoding="utf-8"):
             rec = json.loads(line)
             assert not any(n.startswith("base_") for n in [*rec["attrs"], *(r for r, _ in rec["refs"])]), rec["id"]
@@ -67,7 +92,7 @@ def check_invariants(out: Path) -> None:
 def test_mdzip_end_to_end(tmp_path):
     out = run(tmp_path, "drone.mdzip", make_mdzip())
     check_invariants(out)
-    proj = out / "drone.mdzip"
+    proj = project_dir(out)
     reqs = list(csv.DictReader((proj / "tables/requirements.csv").open()))
     assert [(r["req_id"], r["text"]) for r in reqs] == [("R-1", "The drone shall fly 30 min.")]
     assert "Satisfy_in" in reqs[0]["relationships"]
@@ -110,18 +135,28 @@ def test_mdzip_end_to_end(tmp_path):
 
 def test_provenance_everywhere(tmp_path):
     out = run(tmp_path, "drone.mdzip", make_mdzip())
-    manifest = json.loads((out / "manifest.json").read_text())
-    assert manifest["source"]["metadata"] == {"program": "test"}
+    proj = project_dir(out)
+    token = f"sha256:{proj.name}"
+    # Where the content was found is looked up by its token (plan decision 2).
+    [record] = provenance(out).values()
+    assert record["token"] == token and record["name"] == "drone.mdzip"
+    assert record["sightings"] == [{"path": str((tmp_path / "drone.mdzip").resolve()), "input_sha256": proj.name,
+                                    "chain": [], "metadata": {"program": "test"}, "missing": False}]
     chunks = [json.loads(line) for line in (out / "chunks.jsonl").open()]
-    assert chunks
     for c in chunks:
-        p = c["metadata"]["provenance"]
-        assert p["source_sha256"] == manifest["source"]["sha256"]
-        assert p["locator"].startswith("sha256:")
+        if c["metadata"]["kind"] != "ledger:projects":
+            assert c["metadata"]["content"] == token
+            assert c["metadata"]["provenance"]["content_sha256"] == proj.name
+            assert c["metadata"]["source_metadata"] == {"program": ["test"]}
+    # The project's own files carry the token only: no paths, no --meta.
+    for f in proj.rglob("*"):
+        if f.is_file() and f.suffix in (".md", ".json", ".jsonl", ".csv"):
+            text = f.read_text(encoding="utf-8")
+            assert str(tmp_path) not in text and "program" not in text, f
     req = next(c for c in chunks if c["metadata"]["kind"] == "requirement")
     assert req["metadata"]["provenance"]["xmi_id"] == "r1"
     assert req["metadata"]["provenance"]["line"]
-    assert "provenance:" in (out / "drone.mdzip/images.md").read_text()  # BASE-024
+    assert "provenance:" in (proj / "images.md").read_text()  # BASE-024
 
 
 def test_nested_bundle(tmp_path):
@@ -132,13 +167,17 @@ def test_nested_bundle(tmp_path):
     with zipfile.ZipFile(outer, "w") as z:
         z.writestr("resource.zip", inner.getvalue())
     out = run(tmp_path, "bundle.rdzip", outer.getvalue())
-    chunks = [json.loads(line) for line in (out / "chunks.jsonl").open()]
-    assert chunks[0]["metadata"]["provenance"]["container"] == ["bundle.rdzip", "resource.zip", "samples/drone.mdzip"]
+    [record] = provenance(out).values()
+    assert record["name"] == "drone.mdzip"
+    [seen] = record["sightings"]
+    assert seen["path"].endswith("bundle.rdzip") and seen["chain"] == ["resource.zip", "samples/drone.mdzip"]
+    # The project inside the bundle is the same content as the file on its own.
+    assert project_dir(out).name == hashlib.sha256(make_mdzip()).hexdigest()
 
 
 def test_reproducible_output(tmp_path):
-    """Same input and options give byte-identical output, apart from the run record, even
-    from another directory (BASE-015)."""
+    """Same input and options give byte-identical output, apart from the files that name
+    paths and times, even from another directory (BASE-015)."""
     data = make_mdzip()
     trees = []
     for i, d in enumerate(["a", "a", "b"]):
@@ -147,12 +186,12 @@ def test_reproducible_output(tmp_path):
         src.write_bytes(data)
         out = tmp_path / f"out{i}"
         assert main([str(src), "-o", str(out), "--meta", "program=test", "--no-llm"]) == 0
-        trees.append({str(f.relative_to(out)): f.read_bytes() for f in out.rglob("*") if f.is_file()})
-    run_records = [json.loads(t.pop("run.json")) for t in trees]
+        trees.append(tree(out))
     assert trees[0] == trees[1] == trees[2]
-    assert run_records[0]["run_id"] != run_records[1]["run_id"]
-    assert run_records[2]["source_path"].endswith("b/drone.mdzip")
-    assert "drone.mdzip/diagrams/Drone_BDD.png" in trees[0]  # rendering is covered too
+    [record] = provenance(tmp_path / "out2").values()
+    assert record["sightings"][0]["path"].endswith("b/drone.mdzip")
+    sha = project_dir(tmp_path / "out0").name
+    assert f"by-sha256/{sha}/diagrams/Drone_BDD.png" in trees[0]  # rendering is covered too
 
 
 def test_rejects_non_model(tmp_path):
@@ -179,27 +218,75 @@ def test_failed_project_does_not_stop_others(tmp_path, caplog):
     out = tmp_path / "out"
     assert main([str(src), "-o", str(out), "--no-llm", "--no-render"]) == 4
     manifest = json.loads((out / "manifest.json").read_text())
-    assert [p["dir"] for p in manifest["projects"]] == ["good.mdzip"]
-    assert [f["dir"] for f in manifest["failed"]] == ["bad.mdzip"]
+    assert [p["name"] for p in manifest["projects"]] == ["good.mdzip"]
+    assert [f["name"] for f in manifest["failed"]] == ["bad.mdzip"]
     assert "XMLSyntaxError" in manifest["failed"][0]["error"]
     assert "skipping nested member bundle.rdzip!corrupt.mdzip" in caplog.text
     check_invariants(out)
 
 
-def test_same_name_other_content_is_not_mixed(tmp_path):
-    """Two inputs called drone.mdzip, from different directories and with different
-    content, never write into the same project directory (BASE-016R1)."""
+def test_contents_and_sightings(tmp_path):
+    """Output goes by content: two different files both called drone.mdzip get a project
+    each, and the same content under another path is one project seen twice (BASE-016,
+    BASE-017). Inputs can be added first and run later, and the tree remembers settings."""
     out = tmp_path / "out"
-    for d, model in (("a", MODEL), ("b", MODEL.replace("name='Requirements'", "name='Needs'"))):
-        (tmp_path / d).mkdir()
-        (tmp_path / d / "drone.mdzip").write_bytes(make_mdzip(model))
-    assert main([str(tmp_path / "a/drone.mdzip"), "-o", str(out), "--no-llm", "--no-render"]) == 0
-    assert main([str(tmp_path / "b/drone.mdzip"), "-o", str(out), "--no-llm", "--no-render", "--force"]) == 4
-    failed = json.loads((out / "manifest.json").read_text())["failed"]
-    assert "holds output from different content" in failed[0]["error"]
-    assert not (out / "drone.mdzip/packages/Model__Needs.md").exists()  # a's output is untouched
-    # The same content again is fine.
-    assert main([str(tmp_path / "a/drone.mdzip"), "-o", str(out), "--no-llm", "--no-render", "--force"]) == 0
+    a, b, copy = tmp_path / "a/drone.mdzip", tmp_path / "b/drone.mdzip", tmp_path / "c/copy.mdzip"
+    for f, model in ((a, MODEL), (b, MODEL.replace("name='Requirements'", "name='Needs'")), (copy, MODEL)):
+        f.parent.mkdir()
+        f.write_bytes(make_mdzip(model))
+    assert main(["add", "-o", str(out), str(a), str(b), "--meta", "program=X"]) == 0
+    assert not (out / "by-sha256").exists()  # added, not processed
+    assert main(["run", "-o", str(out), "--no-llm", "--no-render"]) == 0
+    projects = json.loads((out / "manifest.json").read_text())["projects"]
+    assert [p["name"] for p in projects] == ["drone.mdzip", "drone.mdzip"]
+    # No flags: the tree remembers --no-llm and --no-render.
+    assert main([str(tmp_path / "c"), "-o", str(out)]) == 0
+    assert len(json.loads((out / "manifest.json").read_text())["projects"]) == 2
+    assert json.loads((out / "run.json").read_text())["projects"]["written"] == 0
+    seen = {r["token"]: [s["path"] for s in r["sightings"]] for r in provenance(out).values()}
+    assert sorted(len(v) for v in seen.values()) == [1, 2]
+    assert any(str(copy) in v and str(a) in v for v in seen.values())
+    index = (out / "INDEX.md").read_text()
+    assert "`copy.mdzip`" in index and "(program=X)" in index
+
+
+def test_tree_rules_and_missing_inputs(tmp_path, capsys):
+    foreign = tmp_path / "foreign"
+    foreign.mkdir()
+    (foreign / "notes.txt").write_text("mine")
+    src = tmp_path / "drone.mdzip"
+    src.write_bytes(make_mdzip())
+    assert main([str(src), "-o", str(foreign), "--no-llm"]) == 2  # never write into an unrelated directory
+    assert main(["run", "-o", str(tmp_path / "nothing")]) == 2
+    assert "not a cameo-ingest output tree" in capsys.readouterr().err
+    out = tmp_path / "out"
+    assert main([str(src), "-o", str(out), "--no-llm", "--no-render"]) == 0
+    src.unlink()  # the input disappears: its project stays (plan decision 3)
+    assert main(["run", "-o", str(out)]) == 0
+    [record] = provenance(out).values()
+    assert record["status"] == "written" and record["sightings"][0]["missing"]
+    assert "(input missing)" in (out / "INDEX.md").read_text()
+
+
+def test_options_change_rewrites_projects(tmp_path, monkeypatch):
+    """Output made with other options or another tool version is written again, and files
+    the new version doesn't produce disappear with the old directory (plan RI-06)."""
+    src = tmp_path / "drone.mdzip"
+    src.write_bytes(make_mdzip())
+    out = tmp_path / "out"
+    assert main([str(src), "-o", str(out), "--no-llm"]) == 0
+    proj = project_dir(out)
+    assert (proj / "diagrams/Drone_BDD.png").exists()
+    assert main(["run", "-o", str(out)]) == 0
+    assert json.loads((out / "run.json").read_text())["projects"]["written"] == 0  # up to date
+    assert main(["run", "-o", str(out), "--no-render"]) == 0
+    assert json.loads((out / "run.json").read_text())["projects"]["written"] == 1
+    assert not (proj / "diagrams/Drone_BDD.png").exists() and (proj / "README.md").exists()
+    from cameo_ingest import runner
+
+    monkeypatch.setattr(runner, "TOOL", "cameo-ingest/99")
+    assert main(["run", "-o", str(out)]) == 0
+    assert json.loads((out / "run.json").read_text())["projects"]["written"] == 1
 
 
 def test_decompression_budget(tmp_path, monkeypatch):
@@ -260,9 +347,9 @@ def test_samples(tmp_path, sample):
     check_invariants(out)
     expected = PINNED.get(sample.name)
     if expected:
-        summary = json.loads((out / "manifest.json").read_text())["projects"][0]
+        summary = json.loads((out / "manifest.json").read_text())["projects"][0]["summary"]
         assert {k: summary[k] for k in expected["summary"]} == expected["summary"]
-        pages = [p.read_text(encoding="utf-8") for p in out.glob("*/diagrams/*.md")]
+        pages = [p.read_text(encoding="utf-8") for p in out.glob("by-sha256/*/diagrams/*.md")]
         assert sum("**Table / matrix configuration**" in p for p in pages) == expected["table_configs"]
         assert sum("**Shapes (" in p for p in pages) == expected["diagrams_with_shapes"]
 
@@ -316,12 +403,12 @@ def test_llm_enrichment_is_labelled(tmp_path, fake_openai):
     client = fake_openai[0]
     assert len(client.requests) == 4  # preflight, then the diagram and two images: no budget (BASE-019)
     assert [m for m, _ in client.enrichment()] == ["gemma-4"] * 3
-    dia = (out / "drone.mdzip/diagrams/Drone_BDD.md").read_text()
+    dia = (project_dir(out) / "diagrams/Drone_BDD.md").read_text()
     assert "generated by gemma-4; not part of the source model" in dia
     chunks = [json.loads(line) for line in (out / "chunks.jsonl").open()]
-    manifest = json.loads((out / "manifest.json").read_text())
-    assert manifest["options"]["llm"]["vision_model"] == "gemma-4"
-    assert "api_key" not in json.dumps(manifest).lower()
+    record = (out / "run.json").read_text()
+    assert json.loads(record)["options"]["vision_model"] == "gemma-4"
+    assert "api_key" not in (record + (out / "manifest.json").read_text()).lower()
     gen = [c for c in chunks if c["metadata"]["kind"].startswith("generated:")]
     assert gen and all(c["metadata"]["provenance"]["derivation"]["method"] == "llm" for c in gen)
     assert sum(c["metadata"]["kind"] == "generated:image_description" for c in chunks) == 2
@@ -349,17 +436,16 @@ def test_llm_store_and_replay(tmp_path, fake_openai, monkeypatch):
     for i in range(2):  # the second run is answered from the store (BASE-005)
         out = tmp_path / f"out{i}"
         assert main([*args, "-o", str(out)]) == 0
-        trees.append({str(f.relative_to(out)): f.read_bytes() for f in out.rglob("*") if f.is_file()})
-    report = json.loads(trees[1].pop("run.json"))["llm"]
+        trees.append(tree(out))
+    report = json.loads((out / "run.json").read_text())["llm"]
     assert report["calls"] == 0 and report["outcomes"] == {"cached": 3}
     # Replay never touches the network; it reproduces the recorded run exactly (BASE-022R5).
     monkeypatch.setattr(FakeOpenAI, "fail", True)
     out = tmp_path / "replayed"
     assert main([str(src), "--vision-model", "m", "--llm-replay", str(store / "llm.sqlite"),
                  "--meta", "program=test", "-o", str(out)]) == 0
-    replayed = {str(f.relative_to(out)): f.read_bytes() for f in out.rglob("*") if f.is_file()}
-    assert json.loads(replayed.pop("run.json"))["llm"]["outcomes"] == {"replayed": 3}
-    assert replayed == trees[1]
+    assert json.loads((out / "run.json").read_text())["llm"]["outcomes"] == {"replayed": 3}
+    assert tree(out) == trees[1]
     assert len(fake_openai) == 2  # no client at all in replay mode
     # A request the store has no answer for fails the project, loudly.
     out = tmp_path / "missed"
@@ -476,19 +562,19 @@ def test_llm_concurrency(tmp_path, fake_openai, monkeypatch):
         out = tmp_path / f"out{n}"
         assert main([str(src), "-o", str(out), "--vision-model", "m", "--cache-dir", str(tmp_path / f"store{n}"),
                      "--llm-concurrency", str(n)]) == 0
-        trees.append({str(f.relative_to(out)): f.read_bytes() for f in out.rglob("*") if f.is_file()
-                      and f.name != "run.json"})
+        trees.append(tree(out))
     assert FakeOpenAI.max_inflight >= 2  # requests overlapped (BASE-019R4)...
     assert trees[0] == trees[1]  # ...and the output is the same as a sequential run
 
 
 def test_ledger(tmp_path):
     out = run(tmp_path, "drone.mdzip", make_mdzip())
-    ledger = (out / "drone.mdzip/LEDGER.md").read_text()
+    proj = project_dir(out)
+    ledger = (proj / "LEDGER.md").read_text()
     assert "**R-1**" in ledger and "The drone shall fly 30 min." in ledger
     assert "satisfied by: Battery" in ledger and "refined by: Drone" in ledger
     assert "Drone BDD" in ledger and "SysML Block Definition Diagram" in ledger
-    assert "drone.mdzip/LEDGER.md" in (out / "LEDGER.md").read_text()
+    assert f"by-sha256/{proj.name}/LEDGER.md" in (out / "INDEX.md").read_text()
 
     chunks = [json.loads(line) for line in (out / "chunks.jsonl").open()]
     kinds = {c["metadata"]["kind"] for c in chunks}

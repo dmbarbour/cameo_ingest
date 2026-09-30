@@ -2,22 +2,22 @@
 
 A trace answers "where did this text come from?" down to the model element:
 
-    source file (path + sha256 + caller metadata)
-      -> container chain (e.g. outer.rdzip!inner.mdzip)
-        -> archive entry (e.g. com.nomagic.magicdraw.uml_model.model)
-          -> xmi:id + line number
-            -> derivation (deterministic extraction, or LLM model + prompt hash)
+    content (the sha256 of a Cameo project's own bytes: its token, `sha256:<hex>`)
+      -> archive entry (e.g. com.nomagic.magicdraw.uml_model.model)
+        -> xmi:id + line number
+          -> derivation (deterministic extraction, or LLM model + prompt hash)
 
-`Trace.locator()` flattens this into one string suitable for a CSV column.
+`Trace.locator()` flattens this into one string suitable for a CSV column. Where the
+content was found (input files, archive chains, --meta values) is not part of a trace:
+it is recorded per token in state.sqlite and exported to provenance.jsonl, so a
+project's output never changes because the content turned up somewhere else.
 """
 
 from __future__ import annotations
 
 import datetime as _dt
 import hashlib
-import uuid
-from dataclasses import asdict, dataclass, field
-from pathlib import PurePath
+from dataclasses import asdict, dataclass
 from typing import Any
 
 from . import __version__
@@ -38,20 +38,17 @@ def utc_now() -> str:
 
 
 @dataclass(frozen=True)
-class SourceInfo:
-    """The top-level file handed to the CLI."""
+class ContentInfo:
+    """What a project's output is about: the content's hash and the file name under
+    which it was first seen."""
 
-    path: str
     sha256: str
-    size: int
-    metadata: dict[str, Any] = field(default_factory=dict)
+    name: str
 
     @property
-    def name(self) -> str:
-        """File name only. Outputs name the source by file name and hash, never by local
-        path, so the same file ingested from another directory gives identical output;
-        the path is kept in the run record (run.json)."""
-        return PurePath(self.path).name
+    def token(self) -> str:
+        """The stable reference to this content's provenance."""
+        return f"sha256:{self.sha256}"
 
 
 @dataclass(frozen=True)
@@ -68,18 +65,15 @@ EXTRACTED = Derivation()
 
 @dataclass(frozen=True)
 class Trace:
-    source_sha256: str
-    container: tuple[str, ...] = ()  # archive members, outermost first
-    entry: str | None = None  # member inside the innermost archive
+    content_sha256: str
+    entry: str | None = None  # archive entry of the project
     xmi_id: str | None = None
     line: int | None = None
     qualified_name: str | None = None
     derivation: Derivation = EXTRACTED
 
     def locator(self) -> str:
-        loc = f"sha256:{self.source_sha256[:16]}"
-        for part in self.container:
-            loc += f"!{part}"
+        loc = f"sha256:{self.content_sha256[:16]}"
         if self.entry:
             loc += f"!{self.entry}"
         if self.xmi_id:
@@ -94,16 +88,6 @@ class Trace:
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
-        d["container"] = list(self.container)
         d["derivation"]["inputs"] = list(self.derivation.inputs)
         d["locator"] = self.locator()
         return {k: v for k, v in d.items() if v not in (None, [], ())}
-
-
-@dataclass
-class RunInfo:
-    source: SourceInfo
-    run_id: str = field(default_factory=lambda: uuid.uuid4().hex)
-    started: str = field(default_factory=utc_now)
-    tool: str = TOOL
-    llm: dict[str, Any] = field(default_factory=dict)
