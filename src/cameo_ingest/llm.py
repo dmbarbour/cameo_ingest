@@ -103,6 +103,7 @@ class LLMStore:
 
     def __init__(self, path: Path, readonly: bool = False):
         self.path = path
+        self._lock = threading.Lock()  # one connection, shared by the request threads
         if readonly:
             if not path.is_file():
                 raise FileNotFoundError(f"LLM replay store {path} not found")
@@ -129,16 +130,18 @@ class LLMStore:
 
     def get(self, endpoint: str | None, model: str, key: str) -> str | None:
         """The recorded answer; with endpoint None, from any endpoint (replay)."""
-        if endpoint is None:
-            row = self._db.execute("SELECT text FROM responses WHERE model = ? AND request_sha256 = ? LIMIT 1",
-                                   (model, key)).fetchone()
-        else:
-            row = self._db.execute("SELECT text FROM responses WHERE endpoint = ? AND model = ? AND request_sha256 = ?",
-                                   (endpoint, model, key)).fetchone()
+        with self._lock:
+            if endpoint is None:
+                row = self._db.execute("SELECT text FROM responses WHERE model = ? AND request_sha256 = ? LIMIT 1",
+                                       (model, key)).fetchone()
+            else:
+                row = self._db.execute(
+                    "SELECT text FROM responses WHERE endpoint = ? AND model = ? AND request_sha256 = ?",
+                    (endpoint, model, key)).fetchone()
         return row[0] if row else None
 
     def put(self, endpoint: str, model: str, key: str, text: str) -> None:
-        with self._db:  # one transaction per response: a killed run never leaves half an entry
+        with self._lock, self._db:  # one transaction per response: a killed run never leaves half an entry
             self._db.execute("INSERT OR REPLACE INTO responses VALUES (?, ?, ?, ?, ?)",
                              (endpoint, model, key, text, utc_now()))
 
@@ -170,8 +173,9 @@ class LLM:
 
     @property
     def store(self) -> LLMStore:
-        if self._store is None:  # opened on first use, so runs without an LLM create nothing
-            self._store = LLMStore(self.cache_dir / STORE_FILE)
+        with self._lock:
+            if self._store is None:  # opened on first use, so runs without an LLM create nothing
+                self._store = LLMStore(self.cache_dir / STORE_FILE)
         return self._store
 
     def preflight(self) -> str | None:
@@ -205,10 +209,12 @@ class LLM:
 
     def truncated(self, item: str, what: str) -> None:
         """Note that an item's input was cut short to fit the prompt (BASE-019)."""
-        self.outcomes["truncated_input"] += 1
+        with self._lock:
+            self.outcomes["truncated_input"] += 1
         log.debug("LLM input for %s truncated: %s", item, what)
 
     def _skip(self, item: str, outcome: str, detail: str = "") -> None:
+        """Record an item left without generated text. Call with the lock held."""
         self.outcomes[outcome] += 1
         self.incomplete.append({"item": item, "outcome": outcome, **({"detail": detail} if detail else {})})
 
@@ -219,7 +225,8 @@ class LLM:
             text = self._replay.get(None, model, key)
             if text is None:
                 raise ReplayMiss(f"no recorded {model} response for {item} (request {key[:16]})")
-            self.outcomes["replayed"] += 1
+            with self._lock:
+                self.outcomes["replayed"] += 1
             return text, key
         endpoint = self.cfg.base_url or ""
         try:
@@ -228,7 +235,8 @@ class LLM:
             log.warning("LLM store lookup failed (%s); asking the model", e)
             text = None
         if text is not None:
-            self.outcomes["cached"] += 1
+            with self._lock:
+                self.outcomes["cached"] += 1
             return text, key
         with self._lock:
             if self.disabled:
@@ -259,11 +267,11 @@ class LLM:
         log.debug("LLM %s answered for %s in %.1f s", model, item, time.monotonic() - started)
         with self._lock:
             self._failures = 0
-        if not text:
-            self._skip(item, "empty")  # not stored, so a re-run asks again
-            return None
+            if not text:
+                self._skip(item, "empty")  # not stored, so a re-run asks again
+                return None
+            self.outcomes["answered"] += 1
         self.store.put(endpoint, model, key, text)
-        self.outcomes["answered"] += 1
         return text, key
 
     def summarize(self, instruction: str, content: str, inputs: tuple[str, ...] = ()) -> tuple[str, Derivation] | None:

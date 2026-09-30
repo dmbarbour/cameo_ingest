@@ -57,6 +57,20 @@ network; a request with no recorded answer fails its project. The store holds re
 hashes, not prompts, so a store recorded on public samples can be committed as a test
 fixture.
 
+### Progress, logs and speed
+
+On a terminal, each phase of each project (parsing, layouts, rendering, LLM requests,
+writing) shows a progress bar. Otherwise (a batch job, or output redirected), a heartbeat
+line is logged every 30 s (`--heartbeat SECONDS`; 0 turns it off), with the phase, how far it
+got and an estimate of the time left. `-v` adds a line per phase and project; `-vv` adds
+debug detail, including the HTTP requests. `--log-file FILE` writes the debug detail to a
+file, whatever the console shows.
+
+`--llm-concurrency N` sends up to N LLM requests at once, with the same output as sending
+them one by one. The default is 1, which suits a local server; hosted endpoints usually
+accept more. It matters for large models: at about 11 s per diagram description, TMT's
+1,413 requests take about 4 hours one at a time.
+
 ## Output
 
 ```

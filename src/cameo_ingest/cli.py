@@ -7,12 +7,14 @@ import json
 import logging
 import os
 import sys
+import time
 from pathlib import Path
 
 from . import __version__
 from .archive import UnsupportedInput, discover
 from .llm import LLM, LLMConfig
 from .pipeline import ingest_project
+from .progress import Progress
 from .provenance import RunInfo, SourceInfo, Trace, sha256_bytes, sha256_text, utc_now
 from .text import front_matter, slug
 
@@ -36,6 +38,38 @@ NO_MODEL = """error: no LLM model is configured. Either
   - name a model with --text-model / --vision-model, or set CAMEO_INGEST_TEXT_MODEL
     (or OPENAI_MODEL) in the environment or in a file loaded with --env FILE.
 The endpoint comes from OPENAI_BASE_URL and OPENAI_API_KEY; see .env.example."""
+
+
+PROGRESS_LOGGER = "cameo_ingest.progress"
+_handlers: list[logging.Handler] = []  # ours, replaced when main() runs again (as in tests)
+
+
+def setup_logging(verbose: int, log_file: Path | None) -> None:
+    """Console at WARNING, INFO (-v) or DEBUG (-vv), plus progress lines at any level;
+    `log_file` gets DEBUG whatever the console shows. Third-party libraries (openai,
+    httpx) stay at WARNING below -vv."""
+    root = logging.getLogger()
+    for h in _handlers:
+        root.removeHandler(h)
+        h.close()
+    _handlers.clear()
+    console_level = logging.WARNING - 10 * min(verbose, 2)
+    console = logging.StreamHandler(sys.stderr)
+    console.setLevel(min(console_level, logging.INFO))
+    console.addFilter(lambda r: r.levelno >= console_level or r.name == PROGRESS_LOGGER)
+    console.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+    _handlers.append(console)
+    if log_file is not None:
+        f = logging.FileHandler(log_file, encoding="utf-8")
+        f.setLevel(logging.DEBUG)
+        f.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(threadName)s %(name)s: %(message)s"))
+        _handlers.append(f)
+    for h in _handlers:
+        root.addHandler(h)
+    ours = logging.DEBUG if log_file is not None else console_level
+    logging.getLogger("cameo_ingest").setLevel(ours)
+    logging.getLogger(PROGRESS_LOGGER).setLevel(min(ours, logging.INFO))
+    root.setLevel(min(ours, logging.WARNING) if verbose < 2 else logging.DEBUG)
 
 
 def load_env(path: Path) -> None:
@@ -117,14 +151,20 @@ def build_parser() -> argparse.ArgumentParser:
                     help="answer LLM requests only from a recorded llm.sqlite, never the network; a request "
                          "with no recorded answer fails its project (for tests)")
     ap.add_argument("--force", action="store_true", help="allow writing into a non-empty output directory")
-    ap.add_argument("-v", "--verbose", action="count", default=0)
+    ap.add_argument("--llm-concurrency", type=int, default=1, metavar="N",
+                    help="LLM requests in flight at once (default 1; hosted endpoints usually allow more)")
+    ap.add_argument("--heartbeat", type=float, default=30.0, metavar="SECONDS",
+                    help="when stderr is not a terminal, log progress every SECONDS (default 30; 0: never); "
+                         "on a terminal, progress bars are shown instead")
+    ap.add_argument("--log-file", type=Path, metavar="FILE", help="also write a detailed (DEBUG) log to FILE")
+    ap.add_argument("-v", "--verbose", action="count", default=0, help="-v: progress and phases; -vv: debug")
     ap.add_argument("--version", action="version", version=f"cameo-ingest {__version__}")
     return ap
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    logging.basicConfig(level=logging.WARNING - 10 * args.verbose, format="%(levelname)s %(name)s: %(message)s")
+    setup_logging(args.verbose, args.log_file)
 
     if args.env is not None:
         if not args.env.is_file():
@@ -162,6 +202,7 @@ def main(argv: list[str] | None = None) -> int:
                         metadata=_parse_meta(args.meta, args.meta_file))
     run = RunInfo(source=source, llm=cfg.public() if cfg.enabled else {})
 
+    started = time.monotonic()
     try:
         projects = list(discover(data, args.source.name))
     except UnsupportedInput as e:
@@ -170,6 +211,8 @@ def main(argv: list[str] | None = None) -> int:
     if not projects:
         print(f"error: no Cameo/XMI model found in {args.source}", file=sys.stderr)
         return 3
+    log.info("found %d project(s) in %s in %.1f s", len(projects), source.name, time.monotonic() - started)
+    progress = Progress(heartbeat=args.heartbeat)  # bars on a terminal, heartbeat lines otherwise
 
     # manifest.json depends only on the input, the options and the tool version, so two runs
     # can be compared file by file; run-specific facts go to run.json (BASE-015).
@@ -189,7 +232,8 @@ def main(argv: list[str] | None = None) -> int:
         where = "!".join(proj.trace_container) or proj.name
         log.info("ingesting %s -> %s", where, name)
         try:
-            result = ingest_project(run, proj, out / name, llm, render=not args.no_render)
+            result = ingest_project(run, proj, out / name, llm, render=not args.no_render, progress=progress,
+                                    concurrency=args.llm_concurrency)
         except Exception as e:  # one bad project must not stop the others (BASE-004)
             log.error("project %s failed: %s: %s", where, type(e).__name__, e)
             log.debug("traceback for %s", where, exc_info=True)

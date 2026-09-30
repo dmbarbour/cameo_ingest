@@ -21,6 +21,7 @@ from __future__ import annotations
 import csv
 import json
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -181,15 +182,22 @@ class ProjectWriter:
             },
         })
 
-    def write_all(self) -> Outputs:
+    def write_steps(self) -> int:
+        """How many times `write_all` calls `tick`."""
+        return len(self.pkg_file) + len(self.dia_file) + 4
+
+    def write_all(self, tick: Callable[[], None] = lambda: None) -> Outputs:
+        """Write every file; `tick` is called after each page and each of the four
+        project-wide steps (README, ledger, tables, indices)."""
         for pkg_id, rel in self.pkg_file.items():
             self.write_package(self.ix.elements[pkg_id], rel)
+            tick()
         for dia_id, rel in self.dia_file.items():
             self.write_diagram(dia_id, rel)
-        self.write_readme()
-        LedgerWriter(self).write()
-        self.write_tables()
-        self.write_indices()
+            tick()
+        for step in (self.write_readme, LedgerWriter(self).write, self.write_tables, self.write_indices):
+            step()
+            tick()
         return self.out
 
     # -- element sections ------------------------------------------------------

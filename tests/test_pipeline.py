@@ -4,6 +4,8 @@ import json
 import logging
 import os
 import re
+import threading
+import time
 import zipfile
 from collections import Counter
 from pathlib import Path
@@ -343,6 +345,9 @@ class FakeOpenAI:
     """Stands in for openai.OpenAI: records requests and returns a fixed reply."""
 
     fail = False  # set on the class to make every request raise
+    delay = 0.0  # seconds per request
+    inflight = max_inflight = 0
+    _lock = threading.Lock()
 
     def __init__(self, **kwargs):
         self.kwargs = kwargs
@@ -353,6 +358,12 @@ class FakeOpenAI:
         self.requests.append((model, messages))
         if self.fail:
             raise RuntimeError("endpoint down")
+        with FakeOpenAI._lock:
+            FakeOpenAI.inflight += 1
+            FakeOpenAI.max_inflight = max(FakeOpenAI.max_inflight, FakeOpenAI.inflight)
+        time.sleep(self.delay)
+        with FakeOpenAI._lock:
+            FakeOpenAI.inflight -= 1
         reply = "A block definition diagram showing Drone composed of Battery."
         return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=reply))])
 
@@ -476,12 +487,43 @@ def test_env_file_and_preflight(tmp_path, capsys, caplog):
     src.write_bytes(make_mdzip())
     out = tmp_path / "out"
     # Nothing listens on port 9: the preflight check fails before any parsing (BASE-020).
-    assert main([str(src), "-o", str(out), "--env", str(env), "--llm-retries", "0", "--llm-timeout", "5"]) == 5
+    assert main([str(src), "-o", str(out), "--env", str(env), "--llm-retries", "0", "--llm-timeout", "5", "-v"]) == 5
     err = capsys.readouterr().err
     assert "shell-model" in err and "127.0.0.1:9" in err
     assert "loaded OPENAI_API_KEY, OPENAI_BASE_URL from" in caplog.text and "not loaded: OPENAI_MODEL" in caplog.text
     assert "sk-secret-123" not in err + caplog.text
     assert not out.exists()
+
+
+def test_progress_heartbeats_and_log_file(tmp_path, fake_openai, monkeypatch, capsys):
+    monkeypatch.setattr(FakeOpenAI, "delay", 0.1)
+    src = tmp_path / "drone.mdzip"
+    src.write_bytes(make_mdzip())
+    log_file = tmp_path / "run.log"
+    # Not a terminal, default verbosity: heartbeat lines still reach the console (BASE-018).
+    assert main([str(src), "-o", str(tmp_path / "out"), "--vision-model", "m", "--heartbeat", "0.05",
+                 "--log-file", str(log_file)]) == 0
+    err = capsys.readouterr().err
+    assert re.search(r"drone\.mdzip: LLM: \d requests? of 3 requests \(\d+%\)", err)
+    assert "drone.mdzip: LLM: 3 requests in" in err and "found 1 project" not in err  # -v lines stay hidden
+    logged = log_file.read_text()
+    assert "DEBUG" in logged and "LLM m answered for sha256:" in logged and "found 1 project" in logged
+
+
+def test_llm_concurrency(tmp_path, fake_openai, monkeypatch):
+    monkeypatch.setattr(FakeOpenAI, "delay", 0.1)
+    monkeypatch.setattr(FakeOpenAI, "max_inflight", 0)
+    src = tmp_path / "drone.mdzip"
+    src.write_bytes(make_mdzip())
+    trees = []
+    for n in (1, 3):
+        out = tmp_path / f"out{n}"
+        assert main([str(src), "-o", str(out), "--vision-model", "m", "--cache-dir", str(tmp_path / f"store{n}"),
+                     "--llm-concurrency", str(n)]) == 0
+        trees.append({str(f.relative_to(out)): f.read_bytes() for f in out.rglob("*") if f.is_file()
+                      and f.name != "run.json"})
+    assert FakeOpenAI.max_inflight >= 2  # requests overlapped (BASE-019R4)...
+    assert trees[0] == trees[1]  # ...and the output is the same as a sequential run
 
 
 def test_ledger(tmp_path):

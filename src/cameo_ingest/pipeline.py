@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -14,6 +17,7 @@ from .emit import Annotation, Outputs, ProjectWriter, slug
 from .layout import Layout, parse_layout
 from .llm import LLM
 from .model import ModelIndex
+from .progress import QUIET, Progress
 from .provenance import Derivation, RunInfo, Trace
 from .text import front_matter
 from .xmi import finalize, parse_into
@@ -51,37 +55,54 @@ class ProjectResult:
     summary: dict[str, Any] = field(default_factory=dict)
 
 
-def parse_project(project: Project) -> ModelIndex:
+class _Counting:
+    """Reports the bytes read from a stream, for parsing progress."""
+
+    def __init__(self, f: Any, advance: Callable[[int], None]):
+        self._f, self._advance = f, advance
+
+    def read(self, n: int = -1) -> bytes:
+        data = self._f.read(n)
+        self._advance(len(data))
+        return data
+
+
+def parse_project(project: Project, progress: Progress = QUIET) -> ModelIndex:
     ix = ModelIndex()
-    for entry in project.model_entries:
-        with project.open(entry) as f:
-            parse_into(ix, f, entry)
-    finalize(ix)
+    total = sum(project.size(e) for e in project.model_entries)
+    with progress.phase(f"{project.name}: parsing", total, "B") as ph:
+        for entry in project.model_entries:
+            with project.open(entry) as f:
+                parse_into(ix, _Counting(f, ph.advance), entry)
+        finalize(ix)
+    log.info("%s: %s elements, %s diagrams, %s stereotype applications", project.name,
+             f"{len(ix.elements):,}", f"{len(ix.diagrams):,}", f"{len(ix.stereotypes):,}")
     return ix
 
 
-def load_layouts(project: Project, ix: ModelIndex) -> dict[str, Layout]:
+def load_layouts(project: Project, ix: ModelIndex, progress: Progress = QUIET) -> dict[str, Layout]:
     """Parse each diagram's layout stream; record which elements it shows."""
     names = set(project.entry_names)
+    todo = [(d, [s for s in d.streams if s in names]) for d in ix.diagrams.values()]
+    todo = [(d, streams) for d, streams in todo if streams]
     out: dict[str, Layout] = {}
-    for d in ix.diagrams.values():
-        streams = [s for s in d.streams if s in names]
-        if not streams:
-            continue
-        layout = Layout()
-        for s in streams:
-            with project.open(s) as f:
-                tag = first_tag(f.read(4096))
-            if tag is None or tag.split(":")[-1] != "mdOwnedViews":
-                continue  # an attachment stream, not a layout
-            try:
+    with progress.phase(f"{project.name}: layouts", len(todo), "diagram") as ph:
+        for d, streams in todo:
+            layout = Layout()
+            for s in streams:
                 with project.open(s) as f:
-                    layout.views += parse_layout(f).views
-            except Exception as e:  # malformed stream: keep going
-                log.warning("diagram %s: cannot parse layout %s: %s", d.id, s, e)
-        if layout.views:
-            out[d.id] = layout
-            d.shown = list(dict.fromkeys(d.shown + [e for e in layout.elements() if e in ix.elements]))
+                    tag = first_tag(f.read(4096))
+                if tag is None or tag.split(":")[-1] != "mdOwnedViews":
+                    continue  # an attachment stream, not a layout
+                try:
+                    with project.open(s) as f:
+                        layout.views += parse_layout(f).views
+                except Exception as e:  # malformed stream: keep going
+                    log.warning("diagram %s: cannot parse layout %s: %s", d.id, s, e)
+            if layout.views:
+                out[d.id] = layout
+                d.shown = list(dict.fromkeys(d.shown + [e for e in layout.elements() if e in ix.elements]))
+            ph.advance()
     return out
 
 
@@ -92,41 +113,80 @@ def _image_mime(head: bytes) -> str | None:
     return None
 
 
-def ingest_project(run: RunInfo, project: Project, root: Path, llm: LLM, render: bool = True) -> ProjectResult:
-    ix = parse_project(project)
+@dataclass
+class _Request:
+    """One LLM request, made after rendering so that requests can run in parallel."""
+
+    kind: str  # "diagram", "image" or "summary"
+    key: str  # diagram id, image entry or package id
+    trace: Trace
+    call: Callable[[], Any]
+
+
+def _describe_file(llm: LLM, prompt: str, path: Path, mime: str, inputs: tuple[str, ...]) -> Any:
+    # The image is read back from disk only when the request runs, so queued requests
+    # don't hold every diagram in memory.
+    return llm.describe_image(prompt, path.read_bytes(), mime, inputs=inputs)
+
+
+def _answer(requests: list[_Request], progress: Progress, label: str, concurrency: int) -> list[Any]:
+    """Results in request order, whatever order the answers come in, so output stays
+    deterministic (BASE-019R4)."""
+    if not requests:
+        return []
+    with progress.phase(f"{label}: LLM", len(requests), "request") as ph:
+        if concurrency <= 1:
+            results = []
+            for r in requests:
+                results.append(r.call())
+                ph.advance()
+            return results
+        with ThreadPoolExecutor(max_workers=concurrency, thread_name_prefix="llm") as pool:
+            futures = [pool.submit(r.call) for r in requests]
+            for _ in as_completed(futures):
+                ph.advance()
+            return [f.result() for f in futures]  # re-raises e.g. a replay miss
+
+
+def ingest_project(run: RunInfo, project: Project, root: Path, llm: LLM, render: bool = True,
+                   progress: Progress = QUIET, concurrency: int = 1) -> ProjectResult:
+    ix = parse_project(project, progress)
     annotations: dict[str, list[Annotation]] = {}
     base = Trace(source_sha256=run.source.sha256, container=project.trace_container)
-    layouts = load_layouts(project, ix)
+    layouts = load_layouts(project, ix, progress)
     writer = ProjectWriter(run, project, ix, root, annotations, layouts)
+    requests: list[_Request] = []
     truncated = 0  # LLM inputs cut short to fit the prompt
 
-    for dia_id, layout in layouts.items() if render else ():
-        d = ix.diagrams[dia_id]
-        el = ix.elements[dia_id]
-        png = dg.render_png(ix, layout, f"{d.diagram_type or 'Diagram'}: {ix.qualified_name(dia_id)}")
-        if png is None:
-            continue
-        rel = writer.dia_file[dia_id].removesuffix(".md") + ".png"
-        (root / rel).parent.mkdir(parents=True, exist_ok=True)
-        (root / rel).write_bytes(png)
-        writer.out.files.append(root / rel)
-        tr = writer.trace(el).with_(entry=d.streams[0] if d.streams else el.entry, line=None,
-                                    derivation=Derivation(method="rendered", inputs=tuple(d.streams)))
-        annotations.setdefault(dia_id, []).append(
-            Annotation("Diagram sketch (re-drawn from layout data, not a Cameo rendering)", "", tr, image=rel))
-        if llm.cfg.vision_model:
-            nodes, edges = dg.describe(ix, layout, lambda e: ix.label(e))
-            if max(len(nodes), len(edges)) > DIAGRAM_CONTEXT_ITEMS:
-                truncated += 1
-                llm.truncated(writer.trace(el).locator(), f"{len(nodes)} shapes, {len(edges)} connections; "
-                                                          f"the first {DIAGRAM_CONTEXT_ITEMS} of each sent")
-            context = "\n".join([f"Diagram: {d.name} ({d.diagram_type})", "Shapes:"] + nodes[:DIAGRAM_CONTEXT_ITEMS]
-                                 + ["Connections:"] + edges[:DIAGRAM_CONTEXT_ITEMS])
-            res = llm.describe_image(DIAGRAM_PROMPT + "\n\n" + context, png, "image/png",
-                                     inputs=(writer.trace(el).locator(), tr.locator()))
-            if res:
-                text, deriv = res
-                annotations[dia_id].append(Annotation("Diagram description", text, tr.with_(derivation=deriv)))
+    if render and layouts:
+        with progress.phase(f"{project.name}: rendering", len(layouts), "diagram") as ph:
+            for dia_id, layout in layouts.items():
+                ph.advance()
+                d = ix.diagrams[dia_id]
+                el = ix.elements[dia_id]
+                png = dg.render_png(ix, layout, f"{d.diagram_type or 'Diagram'}: {ix.qualified_name(dia_id)}")
+                if png is None:
+                    continue
+                rel = writer.dia_file[dia_id].removesuffix(".md") + ".png"
+                (root / rel).parent.mkdir(parents=True, exist_ok=True)
+                (root / rel).write_bytes(png)
+                writer.out.files.append(root / rel)
+                tr = writer.trace(el).with_(entry=d.streams[0] if d.streams else el.entry, line=None,
+                                            derivation=Derivation(method="rendered", inputs=tuple(d.streams)))
+                annotations.setdefault(dia_id, []).append(
+                    Annotation("Diagram sketch (re-drawn from layout data, not a Cameo rendering)", "", tr, image=rel))
+                if llm.cfg.vision_model:
+                    nodes, edges = dg.describe(ix, layout, lambda e: ix.label(e))
+                    if max(len(nodes), len(edges)) > DIAGRAM_CONTEXT_ITEMS:
+                        truncated += 1
+                        llm.truncated(writer.trace(el).locator(), f"{len(nodes)} shapes, {len(edges)} connections; "
+                                                                  f"the first {DIAGRAM_CONTEXT_ITEMS} of each sent")
+                    context = "\n".join([f"Diagram: {d.name} ({d.diagram_type})", "Shapes:"]
+                                        + nodes[:DIAGRAM_CONTEXT_ITEMS] + ["Connections:"]
+                                        + edges[:DIAGRAM_CONTEXT_ITEMS])
+                    call = partial(_describe_file, llm, DIAGRAM_PROMPT + "\n\n" + context, root / rel, "image/png",
+                                   (writer.trace(el).locator(), tr.locator()))
+                    requests.append(_Request("diagram", dia_id, tr, call))
 
     # Embedded images (attachments, image shapes...). Linking them to elements depends on
     # version-specific storage, so they are listed at project level for now.
@@ -138,14 +198,15 @@ def ingest_project(run: RunInfo, project: Project, root: Path, llm: LLM, render:
             mime = _image_mime(f.read(8))
         if not mime:
             continue
-        data = project.read(entry)
         rel = f"images/{slug(PurePosixPath(entry).name, 100)}.{mime.split('/')[1]}"
         writer.root.joinpath(rel).parent.mkdir(parents=True, exist_ok=True)
-        writer.root.joinpath(rel).write_bytes(data)
+        writer.root.joinpath(rel).write_bytes(project.read(entry))
         writer.out.files.append(writer.root / rel)
         tr = base.with_(entry=entry)
-        desc = llm.describe_image(IMAGE_PROMPT, data, mime, inputs=(tr.locator(),)) if llm.cfg.vision_model else None
-        image_notes.append((entry, rel, tr, desc))
+        image_notes.append((entry, rel, tr))
+        if llm.cfg.vision_model:
+            call = partial(_describe_file, llm, IMAGE_PROMPT, writer.root / rel, mime, (tr.locator(),))
+            requests.append(_Request("image", entry, tr, call))
 
     # Package summaries from the deterministic text, so the LLM only rephrases what is there.
     if llm.cfg.text_model:
@@ -159,18 +220,32 @@ def ingest_project(run: RunInfo, project: Project, root: Path, llm: LLM, render:
             if len(text) > SUMMARY_INPUT_CHARS:
                 truncated += 1
                 llm.truncated(tr.locator(), f"{len(text):,} characters; the first {SUMMARY_INPUT_CHARS:,} sent")
-            res = llm.summarize(PACKAGE_SUMMARY_PROMPT, text[:SUMMARY_INPUT_CHARS], inputs=(tr.locator(),))
-            if res:
-                summary, deriv = res
-                annotations.setdefault(pkg_id, []).append(
-                    Annotation("Summary", summary, tr.with_(derivation=deriv)))
+            call = partial(llm.summarize, PACKAGE_SUMMARY_PROMPT, text[:SUMMARY_INPUT_CHARS], inputs=(tr.locator(),))
+            requests.append(_Request("summary", pkg_id, tr, call))
+
+    if truncated:
+        log.warning("%s: %d LLM input(s) were cut short to fit the prompt (at most %s characters of package "
+                    "text, %d shapes and %d connections per diagram)", project.name, truncated,
+                    f"{SUMMARY_INPUT_CHARS:,}", DIAGRAM_CONTEXT_ITEMS, DIAGRAM_CONTEXT_ITEMS)
+
+    image_desc: dict[str, tuple[str, Derivation]] = {}
+    for req, res in zip(requests, _answer(requests, progress, project.name, concurrency), strict=True):
+        if res is None:
+            continue
+        text, deriv = res
+        if req.kind == "diagram":
+            annotations[req.key].append(Annotation("Diagram description", text, req.trace.with_(derivation=deriv)))
+        elif req.kind == "summary":
+            annotations.setdefault(req.key, []).append(Annotation("Summary", text, req.trace.with_(derivation=deriv)))
+        else:
+            image_desc[req.key] = res
 
     if image_notes:
         lines = ["# Embedded images", ""]
-        for entry, rel, tr, desc in image_notes:
+        for entry, rel, tr in image_notes:
             lines += [f"## {entry}", "", f"![{entry}]({rel})", ""]
-            if desc:
-                text, deriv = desc
+            if entry in image_desc:
+                text, deriv = image_desc[entry]
                 lines += [f"**Description** _(generated by {deriv.model}; not part of the source model)_:",
                           "", text, ""]
                 labelled = (f"Description of embedded image {entry} (generated by {deriv.model}; not part of "
@@ -182,11 +257,8 @@ def ingest_project(run: RunInfo, project: Project, root: Path, llm: LLM, render:
                            "provenance": writer.file_provenance(trace=base.to_dict())})
         writer.write_text("images.md", fm + "\n".join(lines))
 
-    if truncated:
-        log.warning("%s: %d LLM input(s) were cut short to fit the prompt (at most %s characters of package "
-                    "text, %d shapes and %d connections per diagram)", project.name, truncated,
-                    f"{SUMMARY_INPUT_CHARS:,}", DIAGRAM_CONTEXT_ITEMS, DIAGRAM_CONTEXT_ITEMS)
-    out = writer.write_all()
+    with progress.phase(f"{project.name}: writing", writer.write_steps(), "step") as ph:
+        out = writer.write_all(tick=ph.advance)
 
     summary = {
         "name": project.name,
@@ -201,4 +273,3 @@ def ingest_project(run: RunInfo, project: Project, root: Path, llm: LLM, render:
         "images": len(image_notes),
     }
     return ProjectResult(out, summary)
-
