@@ -475,6 +475,34 @@ def test_templates_and_request_log(tmp_path, fake_openai):
     assert templates == {"diagram-description@v1", "image-description@v1", "package-summary@v1"}
 
 
+def test_quality_sample(tmp_path, fake_openai, capsys):
+    """A spot-check set shows each template with stand-ins, and each item with its request,
+    image, response, and reference without the response (plan LQ-03)."""
+    src = tmp_path / "drone.mdzip"
+    src.write_bytes(make_mdzip())
+    out = tmp_path / "out"
+    assert main([str(src), "-o", str(out), "--text-model", "m", "--no-preflight"]) == 0
+    drawn = []
+    for _ in range(2):  # the same seed draws the same items
+        assert main(["quality", "sample", "-o", str(out), "--n", "3", "--seed", "7"]) == 0
+        set_dir = Path(capsys.readouterr().out.split("spot-check set ")[1].split(":")[0])
+        items = [json.loads(line) for line in (set_dir / "items.jsonl").open()]
+        drawn.append((set_dir.name, [i["id"] for i in items]))
+    assert drawn[0][1] == drawn[1][1] and drawn[0][0] != drawn[1][0]
+    assert sorted(i["kind"] for i in items) == ["diagram_description", "image_description", "summary"]
+    for it in items:
+        assert it["response"] and it["response"] not in it["reference"], it["kind"]
+    summary = next(i for i in items if i["kind"] == "summary")
+    assert "Model::Structure" in summary["prompt"] and summary["image"] is None
+    page = (set_dir / "index.html").read_text()
+    assert '<span class="slot">⟦CONTEXT:' in page and '<span class="slot">⟦IMAGE SKETCH' in page
+    assert page.count("src='data:image/png;base64,") == 2  # the diagram sketch and the embedded image
+    with (set_dir / "rate-items.csv").open() as f:
+        assert [r["item"] for r in csv.DictReader(f)] == [i["id"] for i in items]
+    with (set_dir / "rate-templates.csv").open() as f:
+        assert {r["template"] for r in csv.DictReader(f)} == {i["template"] for i in items}
+
+
 def test_llm_call_budget(tmp_path, fake_openai):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())

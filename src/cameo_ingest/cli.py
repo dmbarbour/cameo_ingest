@@ -5,6 +5,7 @@
     cameo-ingest ingest -o OUT PATH... [options]   add, then run (the default command)
     cameo-ingest status -o OUT [--json]            what the tree holds, and the latest run
     cameo-ingest prune -o OUT [--dry-run]          drop missing inputs and the projects only they held
+    cameo-ingest quality sample -o OUT [--n N]     draw a spot-check set of LLM requests and answers
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ from .state import State, StateError
 
 log = logging.getLogger("cameo_ingest")
 
-COMMANDS = ("add", "run", "ingest", "status", "prune")
+COMMANDS = ("add", "run", "ingest", "status", "prune", "quality")
 
 NO_MODEL = """error: no LLM model is configured. Either
   - pass --no-llm to ingest without LLM summaries and descriptions, or
@@ -162,6 +163,13 @@ def build_parser() -> argparse.ArgumentParser:
     pr = sub.add_parser("prune", parents=[common],
                         help="drop missing inputs, and the projects that no remaining input contains")
     pr.add_argument("--dry-run", action="store_true", help="only list what would be removed")
+    q = sub.add_parser("quality", help="measure the quality of LLM enrichment (see docs/plans/llm-quality-*.md)")
+    qs = q.add_subparsers(dest="action", required=True, metavar="ACTION")
+    qsample = qs.add_parser("sample", parents=[common], help="draw a spot-check set of requests and answers")
+    qsample.add_argument("--n", type=int, default=30, help="items to draw (default 30)")
+    qsample.add_argument("--seed", type=int, default=1, help="random seed (default 1)")
+    qsample.add_argument("--kind", action="append", metavar="KIND",
+                         help="only this kind: diagram_description, image_description, summary (repeatable)")
     return ap
 
 
@@ -311,7 +319,7 @@ def main(argv: list[str] | None = None) -> int:
     setup_logging(args.verbose, args.log_file)
     out: Path = args.out
     if not State.exists(out):
-        if args.command in ("run", "status", "prune"):
+        if args.command in ("run", "status", "prune", "quality"):
             print(f"error: no output tree at {out}; start one with `add` or `ingest`", file=sys.stderr)
             return 2
         if out.exists() and any(p.name != ".cache" for p in out.iterdir()):
@@ -332,6 +340,24 @@ def main(argv: list[str] | None = None) -> int:
             print_status(state, args.json)
         finally:
             state.close()
+        return 0
+    if args.command == "quality":
+        from . import quality
+
+        state = State(out)
+        cache = Path(state.settings().get("cache_dir") or out / ".cache")
+        state.close()
+        try:
+            set_dir = quality.sample(out, cache, n=args.n, seed=args.seed, kinds=args.kind)
+        except (FileNotFoundError, ValueError) as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        meta = json.loads((set_dir / "set.json").read_text())
+        print(f"spot-check set {set_dir}: {meta['items']} of {meta['available']} items, {len(meta['templates'])} "
+              f"templates; open {set_dir / 'index.html'}")
+        if meta["unexplained"]:
+            print(f"note: {meta['unexplained']} generated chunks predate the request log and were left out; "
+                  "a run with the same settings logs them without new LLM calls", file=sys.stderr)
         return 0
     if args.command == "prune":
         state = State(out)
