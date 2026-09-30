@@ -41,6 +41,14 @@ DASHED = {"Dependency", "Abstraction", "Realization", "Usage", "Include", "Exten
 HOLLOW = {"Generalization", "Realization", "InterfaceRealization"}
 ROUND = {"UseCase", "InitialNode", "ActivityFinalNode", "FlowFinalNode", "PseudoNode"}
 _NOT_SHOWN = "DiagramInfo"  # MagicDraw_Profile metadata on diagrams, not a stereotype to display (FU-003)
+# How a dependency reads from source to target, by stereotype or kind (lower case). A stated
+# rule about arrow direction was not enough for the model (FU-013); words in the line are.
+VERBS = {
+    "derivereqt": "is derived from", "satisfy": "satisfies", "verify": "verifies", "refine": "refines",
+    "trace": "traces to", "allocate": "is allocated to", "copy": "is a copy of", "generalization": "is a kind of",
+    "include": "includes", "extend": "extends", "realization": "realizes", "interfacerealization": "realizes",
+    "usage": "uses", "dependency": "depends on", "abstraction": "depends on",
+}
 
 
 def _stereotypes(ix: ModelIndex, el_id: str) -> list[str]:
@@ -90,6 +98,7 @@ class Link:
     target: View | None
     directed: bool
     label: str  # «stereotype» name
+    verb: str  # how a dependency reads from source to target ("is derived from"); "" for flows
     items: list[str]  # conveyed items, "Energy →" read from source to target
     target_at_first_point: bool  # where to draw the arrowhead
 
@@ -150,7 +159,14 @@ def build(ix: ModelIndex, layout: Layout, rels: dict[str, Relationship],
             # Cameo stores a directed path's target as its first end (FU-001).
             source, target, at_first = second, first, True
         el = ix.elements.get(v.element or "")
-        label = " ".join([f"«{s}»" for s in _stereotypes(ix, el.id)] + ([el.name] if el.name else [])) if el else ""
+        stereotypes = _stereotypes(ix, el.id) if el else []
+        label = " ".join([f"«{s}»" for s in stereotypes] + ([el.name] if el and el.name else []))
+        verb = ""
+        if directed:
+            for k in [*stereotypes, rel.metaclass if rel else "", v.cls]:
+                if k.lower() in VERBS:
+                    verb = VERBS[k.lower()]
+                    break
         items = []
         for f in flows.get(v.element or "", []):
             names = ", ".join(ix.label(i) for i in f.items) or ix.label(f.id)
@@ -163,7 +179,7 @@ def build(ix: ModelIndex, layout: Layout, rels: dict[str, Relationship],
             # A connector has no direction of its own: list it the way its items flow.
             source, target, at_first = target, source, not at_first
             items = [i[:-1] + "→" for i in items]
-        g.links.append(Link(v, source, target, directed, label, items, at_first))
+        g.links.append(Link(v, source, target, directed, label, verb, items, at_first))
     return g
 
 
@@ -191,8 +207,9 @@ def describe(ix: ModelIndex, g: DiagramGraph, link) -> tuple[list[str], list[str
     lines = []
     for lk in g.links:
         arrow = "→" if lk.directed else "—"
-        detail = "; ".join(x for x in (md_inline(lk.label), "carries " + ", ".join(md_inline(i) for i in lk.items)
-                                       if lk.items else "") if x)
+        detail = "; ".join(x for x in (md_inline(lk.label), lk.verb,
+                                       "carries " + ", ".join(md_inline(i) for i in lk.items) if lk.items else "")
+                           if x)
         lines.append(f"- {end(lk.source)} {arrow}[{lk.view.cls}{': ' + detail if detail else ''}]{arrow} "
                      f"{end(lk.target)}")
     return legend, lines

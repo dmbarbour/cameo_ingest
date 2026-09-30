@@ -197,5 +197,37 @@ PACKAGE_SUMMARY_V2 = Template(
     ),
 )
 
+# Version 3 (2026-09-30): which way dependency arrows point (FU-013), and what the flows
+# achieve rather than which "matter most" (which drew filler).
+_DEPENDENCIES = (
+    "A dependency arrow runs from the element that depends to the one it depends on: with «DeriveReqt», "
+    "X → Y means X is derived from Y; with «Satisfy», X satisfies Y; with «Verify», X verifies Y; with "
+    "«Refine», X refines Y; with «Allocate», X is allocated to Y. With Generalization, X → Y means X is a "
+    "kind of Y; with Include, use case X includes Y."
+)
+
+DIAGRAM_DESCRIPTION_V3 = Template(
+    id="diagram-description",
+    version=3,
+    purpose=DIAGRAM_DESCRIPTION.purpose,
+    text=(
+        "You are helping to index a systems engineering model (UML/SysML, authored in Cameo) for search. "
+        "Below is one diagram: a sketch redrawn from its layout (the attached image), and its content as "
+        f"text. {_NOTATION} {_DEPENDENCIES}\n\n"
+        "Explain what this diagram tells a reader about the system: what it is for, what it shows the "
+        "system or its parts doing or being made of, and what its main flows or dependencies achieve. "
+        "Do not restate the legend or list every connection: they are already recorded exactly. Group or "
+        "order elements only as the diagram itself does (nesting, frames, partitions, the order of flows). "
+        "Base every statement on the text and the sketch; when the diagram shows little, say little. "
+        f"{_STYLE} At most 150 words.\n\n"
+        "Diagram: {{DIAGRAM}}\nLegend:\n{{LEGEND}}\nConnections:\n{{CONNECTIONS}}{{CUT_NOTE}}"
+    ),
+    slots=DIAGRAM_DESCRIPTION_V2.slots,
+)
+
 TEMPLATES = {t.key: t for t in (DIAGRAM_DESCRIPTION, IMAGE_DESCRIPTION, PACKAGE_SUMMARY,
-                                DIAGRAM_DESCRIPTION_V2, PACKAGE_SUMMARY_V2)}
+                                DIAGRAM_DESCRIPTION_V2, PACKAGE_SUMMARY_V2, DIAGRAM_DESCRIPTION_V3)}
+
+# The versions in use. Their keys are part of a run's options, so that a project written
+# with other versions is written again (FU-014).
+CURRENT = {t.id: t for t in (DIAGRAM_DESCRIPTION_V3, IMAGE_DESCRIPTION, PACKAGE_SUMMARY_V2)}

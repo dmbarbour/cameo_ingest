@@ -171,7 +171,7 @@ def test_diagram_directions_item_flows_and_labels(tmp_path):
     out = run(tmp_path, "drone.mdzip", make_mdzip(layout=LAYOUT_DIRECTED))
     page = (project_dir(out) / "diagrams/Drone_BDD.md").read_text()
     refine = next(line for line in page.splitlines() if "«Refine»" in line)
-    assert refine.index("Drone") < refine.index("→[Abstraction: «Refine»]→") < refine.index("Endurance"), refine
+    assert refine.index("Drone") < refine.index("→[Abstraction: «Refine»; refines]→") < refine.index("Endurance"), refine
     assert "numbered as in the sketch" in page and "- [1] Class: «Block» [Drone]" in page
     with Image.open(project_dir(out) / "diagrams/Drone_BDD.png") as img:
         assert max(img.size) <= 768
@@ -328,7 +328,7 @@ def test_tree_rules_and_missing_inputs(tmp_path, capsys):
     assert "(input missing)" in (out / "INDEX.md").read_text()
 
 
-def test_options_change_rewrites_projects(tmp_path, monkeypatch):
+def test_options_change_rewrites_projects(tmp_path, monkeypatch, fake_openai):
     """Output made with other options or another tool version is written again, and files
     the new version doesn't produce disappear with the old directory (plan RI-06)."""
     src = tmp_path / "drone.mdzip"
@@ -342,8 +342,17 @@ def test_options_change_rewrites_projects(tmp_path, monkeypatch):
     assert main(["run", "-o", str(out), "--no-render"]) == 0
     assert json.loads((out / "run.json").read_text())["projects"]["written"] == 1
     assert not (proj / "diagrams/Drone_BDD.png").exists() and (proj / "README.md").exists()
-    from cameo_ingest import runner
+    from cameo_ingest import prompts, runner
 
+    # A new prompt template version counts as an option change (FU-014).
+    monkeypatch.setitem(prompts.CURRENT, "package-summary", prompts.PACKAGE_SUMMARY)
+    assert main(["run", "-o", str(out), "--text-model", "m"]) == 0
+    assert json.loads((out / "run.json").read_text())["projects"]["written"] == 1
+    monkeypatch.setitem(prompts.CURRENT, "package-summary", prompts.PACKAGE_SUMMARY_V2)
+    assert main(["run", "-o", str(out)]) == 0
+    assert json.loads((out / "run.json").read_text())["projects"]["written"] == 1
+    assert main(["run", "-o", str(out)]) == 0
+    assert json.loads((out / "run.json").read_text())["projects"]["written"] == 0
     monkeypatch.setattr(runner, "TOOL", "cameo-ingest/99")
     assert main(["run", "-o", str(out)]) == 0
     assert json.loads((out / "run.json").read_text())["projects"]["written"] == 1
@@ -548,17 +557,17 @@ def test_templates_and_request_log(tmp_path, fake_openai):
     db = sqlite3.connect(out / ".cache/llm.sqlite")
     rows = db.execute("SELECT template, project, item, image_path, prompt, notes FROM requests ORDER BY template, "
                       "image_path").fetchall()
-    assert [(r[0], r[3]) for r in rows] == [("diagram-description@v2", "diagrams/Drone_BDD.png"),
+    assert [(r[0], r[3]) for r in rows] == [("diagram-description@v3", "diagrams/Drone_BDD.png"),
                                            ("image-description@v1", "images/BINARY-img1.png"),
                                            ("image-description@v1", "images/BINARY-img2.png"),
                                            ("package-summary@v2", None)]
     assert all(r[1] == token and r[2].startswith(token[:23]) for r in rows)
-    assert rows[0][4].startswith(TEMPLATES["diagram-description@v2"].text.split("{{")[0])
+    assert rows[0][4].startswith(TEMPLATES["diagram-description@v3"].text.split("{{")[0])
     assert "Diagram: Drone BDD (SysML Block Definition Diagram)" in rows[0][4]
     chunks = [json.loads(line) for line in (out / "chunks.jsonl").open()]
     templates = {c["metadata"]["provenance"]["derivation"].get("template") for c in chunks
                  if c["metadata"]["kind"].startswith("generated:")}
-    assert templates == {"diagram-description@v2", "image-description@v1", "package-summary@v2"}
+    assert templates == {"diagram-description@v3", "image-description@v1", "package-summary@v2"}
 
 
 def test_quality_sample(tmp_path, fake_openai, capsys):

@@ -129,7 +129,8 @@ out/
                          activities, use cases…), with members, tagged values, relationships
                          in both directions, and "shown in diagrams"
     diagrams/<name>.md   diagram type, author and dates, a numbered legend of the shapes (by
-                         nesting), connections from source to target with the items they carry,
+                         nesting), connections from source to target, with the items they carry
+                         and, for dependencies, how they read ("is derived from", "satisfies"),
                          and the table/matrix configuration
     diagrams/<name>.png  a sketch redrawn from the layout data at --image-size (768 px): shapes
                          tagged with their legend numbers, arrows at the target; not a Cameo

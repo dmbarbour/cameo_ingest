@@ -18,7 +18,7 @@ from .layout import Layout, parse_layout
 from .llm import LLM
 from .model import ModelIndex
 from .progress import QUIET, Progress
-from .prompts import DIAGRAM_DESCRIPTION_V2, IMAGE_DESCRIPTION, PACKAGE_SUMMARY_V2, Template
+from .prompts import CURRENT, Template
 from .provenance import ContentInfo, Derivation, Trace
 from .text import front_matter
 from .xmi import finalize, parse_into
@@ -214,7 +214,7 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
                               "LEGEND": "\n".join(nodes[:DIAGRAM_CONTEXT_ITEMS]),
                               "CONNECTIONS": "\n".join(edges[:DIAGRAM_CONTEXT_ITEMS]) or "(none)",
                               "CUT_NOTE": cut_note}
-                    call = partial(_ask_with_image, llm, DIAGRAM_DESCRIPTION_V2, values, root, rel, "image/png",
+                    call = partial(_ask_with_image, llm, CURRENT["diagram-description"], values, root, rel, "image/png",
                                    project=content.token, inputs=(writer.trace(el).locator(), tr.locator()),
                                    notes=notes)
                     requests.append(_Request("diagram", dia_id, tr, call))
@@ -239,7 +239,7 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
         tr = base.with_(entry=entry)
         image_notes.append((entry, rel, tr))
         if llm.cfg.vision_model:
-            call = partial(_ask_with_image, llm, IMAGE_DESCRIPTION, {}, writer.root, rel, mime, image_size=image_size,
+            call = partial(_ask_with_image, llm, CURRENT["image-description"], {}, writer.root, rel, mime, image_size=image_size,
                            project=content.token, inputs=(tr.locator(),))
             requests.append(_Request("image", entry, tr, call))
 
@@ -262,7 +262,7 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
                 notes = {"truncated": {"characters": len(text), "limit": SUMMARY_INPUT_CHARS}}
                 cut_note = (f"The text was cut at {SUMMARY_INPUT_CHARS:,} of its {len(text):,} characters, so the "
                             "later elements are known by name only. ")
-            call = partial(llm.ask, PACKAGE_SUMMARY_V2,
+            call = partial(llm.ask, CURRENT["package-summary"],
                            {"CUT_NOTE": cut_note, "PACKAGE_TEXT": text[:SUMMARY_INPUT_CHARS]},
                            project=content.token, inputs=(tr.locator(),), notes=notes)
             requests.append(_Request("summary", pkg_id, tr, call))

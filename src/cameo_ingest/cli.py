@@ -24,6 +24,7 @@ from . import runner as tree
 from .archive import ZIP_MAGIC, sniff_xmi
 from .llm import LLM, LLMConfig
 from .progress import Progress
+from .prompts import CURRENT
 from .runner import Runner
 from .state import State, StateError
 
@@ -270,7 +271,8 @@ def run_tree(args: argparse.Namespace, argv: list[str]) -> int:
         state.save_settings(settings)
         options = {"render": settings.get("render", True), "text_model": cfg.text_model,
                    "vision_model": cfg.vision_model, "max_calls": cfg.max_calls,
-                   "image_size": settings.get("image_size") or 768}
+                   "image_size": settings.get("image_size") or 768,
+                   "templates": sorted(t.key for t in CURRENT.values()) if cfg.enabled else []}
         runner = Runner(state, out, llm, options, Progress(heartbeat=args.heartbeat),
                         concurrency=settings.get("llm_concurrency") or 1)
         previous = signal.signal(signal.SIGTERM, _interrupt)
