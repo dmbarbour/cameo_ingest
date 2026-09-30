@@ -93,6 +93,7 @@ class Node:
     view: View
     label: str  # full label, plain text
     depth: int  # nesting among shapes
+    parent: int | None = None  # number of the shape this one is nested in
 
 
 @dataclass
@@ -136,8 +137,9 @@ def build(ix: ModelIndex, layout: Layout, rels: dict[str, Relationship],
         parent = by_id.get(v.parent or "")
         while parent is not None and (parent.view_id or "") not in g.node_of:
             parent = by_id.get(parent.parent or "")
-        depth = g.node_of[parent.view_id or ""].depth + 1 if parent is not None else 0
-        node = Node(len(g.nodes) + 1, v, element_label(ix, v) if v.element else f'"{v.text}"', depth)
+        up = g.node_of[parent.view_id or ""] if parent is not None else None
+        node = Node(len(g.nodes) + 1, v, element_label(ix, v) if v.element else f'"{v.text}"',
+                    up.depth + 1 if up else 0, up.num if up else None)
         g.nodes.append(node)
         g.node_of[v.view_id or ""] = node
 

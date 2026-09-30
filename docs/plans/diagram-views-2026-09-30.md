@@ -121,7 +121,7 @@ of the others.
 | Step | Work | Status |
 |---|---|---|
 | DV-01 | The diagram graph: nodes with stable numbers and nesting, edges with model direction and item flows. The legend, text lists and sketch all built from it. Unit tests. | Done, with the review's FU-001, FU-002, FU-007 and FU-008 fixes |
-| DV-02 | Partitioning, compared: `networkx` communities against alternatives (connected components with the modeller's groups, label propagation, spatial clustering of the layout, and `igraph`'s Leiden if it earns its dependency). Measure module sizes, edges cut, geometric compactness and speed on the drone sample and TMT, then keep what works. Write the results up as a research note. | Not started |
+| DV-02 | Partitioning, compared: `networkx` communities against alternatives (connected components with the modeller's groups, label propagation, spatial clustering of the layout, and `igraph`'s Leiden if it earns its dependency). Measure module sizes, edges cut, geometric compactness and speed on the drone sample and TMT, then keep what works. Write the results up as a research note. | Done: `docs/research/diagram-partitioning-2026-09-30.md`; networkx Louvain with geometric weights, with spatial cuts as the fallback |
 | DV-03 | Diagram views: module crops with faded boundary nodes, and the overview with module outlines, all at the pixel budget. | Not started |
 | DV-04 | Diagram requests and output: `module-description@v1` and a synthesis request; module chunks with their provenance; the page layout; thresholds as settings with built-in defaults. | Not started |
 | DV-05 | Package modules: the element graph, partitioning by section size, `module-summary@v1`, a new `package-summary` built from modules, and chunks. | Not started |
