@@ -111,7 +111,11 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--llm-max-calls", type=int, metavar="N", help="stop calling the LLM after N requests "
                                                                    "(default: no limit)")
     ap.add_argument("--no-render", action="store_true", help="do not render diagram images")
-    ap.add_argument("--cache-dir", type=Path, help="LLM response cache (default: OUT/.cache)")
+    ap.add_argument("--cache-dir", type=Path, metavar="DIR",
+                    help="directory of the LLM response store, llm.sqlite (default: OUT/.cache)")
+    ap.add_argument("--llm-replay", type=Path, metavar="FILE",
+                    help="answer LLM requests only from a recorded llm.sqlite, never the network; a request "
+                         "with no recorded answer fails its project (for tests)")
     ap.add_argument("--force", action="store_true", help="allow writing into a non-empty output directory")
     ap.add_argument("-v", "--verbose", action="count", default=0)
     ap.add_argument("--version", action="version", version=f"cameo-ingest {__version__}")
@@ -139,7 +143,10 @@ def main(argv: list[str] | None = None) -> int:
     if out.exists() and any(p.name != ".cache" for p in out.iterdir()) and not args.force:
         print(f"error: output directory {out} is not empty (use --force)", file=sys.stderr)
         return 2
-    llm = LLM(cfg, args.cache_dir or out / ".cache" / "llm")
+    if args.llm_replay is not None and not (cfg.enabled and args.llm_replay.is_file()):
+        print(f"error: --llm-replay needs a model and an existing store file ({args.llm_replay})", file=sys.stderr)
+        return 2
+    llm = LLM(cfg, args.cache_dir or out / ".cache", replay=args.llm_replay)
     if cfg.enabled and not args.no_preflight:
         log.info("checking LLM endpoint %s", cfg.base_url or "(OpenAI default)")
         err = llm.preflight()
@@ -206,7 +213,7 @@ def main(argv: list[str] | None = None) -> int:
     (out / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
     record = {"run_id": run.run_id, "started": run.started, "finished": utc_now(), "tool": run.tool,
               "source_path": source.path, "argv": sys.argv[1:] if argv is None else list(argv),
-              "llm_calls": llm.calls}
+              "llm": llm.report()}
     (out / "run.json").write_text(json.dumps(record, ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"{len(projects)} project(s), {len(all_chunks)} chunks, {len(manifest['files'])} files -> {out}")
     if manifest["failed"]:

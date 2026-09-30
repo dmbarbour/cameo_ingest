@@ -342,6 +342,8 @@ def test_samples(tmp_path, sample):
 class FakeOpenAI:
     """Stands in for openai.OpenAI: records requests and returns a fixed reply."""
 
+    fail = False  # set on the class to make every request raise
+
     def __init__(self, **kwargs):
         self.kwargs = kwargs
         self.requests: list[tuple[str, list]] = []
@@ -349,6 +351,8 @@ class FakeOpenAI:
 
     def _create(self, model, messages, **kw):
         self.requests.append((model, messages))
+        if self.fail:
+            raise RuntimeError("endpoint down")
         reply = "A block definition diagram showing Drone composed of Battery."
         return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=reply))])
 
@@ -394,7 +398,63 @@ def test_llm_call_budget(tmp_path, fake_openai):
     out = tmp_path / "out"
     assert main([str(src), "-o", str(out), "--vision-model", "m", "--llm-max-calls", "1"]) == 0
     assert len(fake_openai[0].enrichment()) == 1
-    assert json.loads((out / "run.json").read_text())["llm_calls"] == 1
+    report = json.loads((out / "run.json").read_text())["llm"]
+    assert report["calls"] == 1 and report["outcomes"]["skipped_budget"] == 2
+    assert all(i["item"].startswith("sha256:") for i in report["incomplete"])
+
+
+def test_llm_store_and_replay(tmp_path, fake_openai, monkeypatch):
+    src = tmp_path / "drone.mdzip"
+    src.write_bytes(make_mdzip())
+    store = tmp_path / "store"
+    args = [str(src), "--vision-model", "m", "--cache-dir", str(store), "--meta", "program=test"]
+    trees = []
+    for i in range(2):  # the second run is answered from the store (BASE-005)
+        out = tmp_path / f"out{i}"
+        assert main([*args, "-o", str(out)]) == 0
+        trees.append({str(f.relative_to(out)): f.read_bytes() for f in out.rglob("*") if f.is_file()})
+    report = json.loads(trees[1].pop("run.json"))["llm"]
+    assert report["calls"] == 0 and report["outcomes"] == {"cached": 3}
+    # Replay never touches the network; it reproduces the recorded run exactly (BASE-022R5).
+    monkeypatch.setattr(FakeOpenAI, "fail", True)
+    out = tmp_path / "replayed"
+    assert main([str(src), "--vision-model", "m", "--llm-replay", str(store / "llm.sqlite"),
+                 "--meta", "program=test", "-o", str(out)]) == 0
+    replayed = {str(f.relative_to(out)): f.read_bytes() for f in out.rglob("*") if f.is_file()}
+    assert json.loads(replayed.pop("run.json"))["llm"]["outcomes"] == {"replayed": 3}
+    assert replayed == trees[1]
+    assert len(fake_openai) == 2  # no client at all in replay mode
+    # A request the store has no answer for fails the project, loudly.
+    out = tmp_path / "missed"
+    assert main([str(src), "--vision-model", "other", "--llm-replay", str(store / "llm.sqlite"), "-o", str(out)]) == 4
+    assert "ReplayMiss: no recorded other response" in json.loads((out / "manifest.json").read_text())["failed"][0]["error"]
+
+
+def test_llm_store_corrupt(tmp_path, fake_openai, caplog):
+    import sqlite3
+
+    store = tmp_path / "store"
+    store.mkdir()
+    (store / "llm.sqlite").write_bytes(b"not a database, e.g. a file cut short by a killed run")
+    src = tmp_path / "drone.mdzip"
+    src.write_bytes(make_mdzip())
+    out = tmp_path / "out"
+    assert main([str(src), "-o", str(out), "--vision-model", "m", "--cache-dir", str(store)]) == 0  # BASE-005
+    assert "is unreadable" in caplog.text and list(store.glob("llm.sqlite.corrupt-*"))
+    assert sqlite3.connect(store / "llm.sqlite").execute("SELECT count(*) FROM responses").fetchone() == (3,)
+
+
+def test_llm_circuit_breaker(tmp_path, fake_openai, monkeypatch):
+    monkeypatch.setattr(FakeOpenAI, "fail", True)
+    src = tmp_path / "drone.mdzip"
+    src.write_bytes(make_mdzip())
+    out = tmp_path / "out"
+    # Four items (a diagram, two images, a package summary); the endpoint fails every request.
+    assert main([str(src), "-o", str(out), "--text-model", "m", "--no-preflight"]) == 0
+    assert len(fake_openai[0].requests) == 3  # then enrichment is switched off (BASE-006)
+    report = json.loads((out / "run.json").read_text())["llm"]
+    assert report["disabled_after_failures"] and report["outcomes"] == {"failed": 3, "skipped_disabled": 1}
+    assert report["incomplete"][0]["detail"] == "RuntimeError: endpoint down"
 
 
 def test_no_model_fails_fast(tmp_path, capsys):

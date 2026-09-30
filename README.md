@@ -42,10 +42,20 @@ Flags take precedence over variables. `.env.example` lists the variables: copy i
 which is gitignored, and pass `--env .env`. Variables already set in the environment take
 precedence over the file, and the log names the variables loaded but never their values.
 
-LLM responses are cached under `OUT/.cache/llm`, or `--cache-dir`, keyed by model, prompt and
-image hash, so re-runs are cheap and repeatable. A failed LLM call is logged and skipped; it
-never fails the ingest. The API key is never written to the outputs. Generated text is only
-reproducible while the cache is kept: a fresh cache gets fresh answers from the model.
+LLM responses are kept in an SQLite store, `OUT/.cache/llm.sqlite` (or `--cache-dir DIR`),
+keyed by endpoint, model and a hash of the request, so re-runs are cheap and repeatable; each
+response is committed on its own, so a stopped run keeps what it got. A failed request is
+logged and skipped, and never fails the ingest; after 3 consecutive failures, enrichment is
+switched off for the rest of the run. `run.json` reports the calls made and, for every item
+left without generated text, why (failed, budget, switched off, empty answer), plus how many
+inputs were cut short to fit the prompt. The API key is never written to the outputs.
+Generated text is only reproducible while the store is kept: a fresh store gets fresh
+answers from the model.
+
+`--llm-replay FILE` answers every request from a recorded `llm.sqlite` and never uses the
+network; a request with no recorded answer fails its project. The store holds request
+hashes, not prompts, so a store recorded on public samples can be committed as a test
+fixture.
 
 ## Output
 
@@ -54,7 +64,7 @@ out/
   manifest.json          source (file name, sha256, --meta), tool version, options, per-project
                          summary, failed projects, and every output file with its sha256
   run.json               this run only: id, start and finish times, source path, command line,
-                         LLM calls made
+                         LLM calls and outcomes (which items got no generated text, and why)
   chunks.jsonl           all chunks from all projects: {id, title, text, metadata}
   LEDGER.md              the projects found in the source file, with counts
   <project>/

@@ -22,7 +22,8 @@ log = logging.getLogger(__name__)
 
 IMAGE_MAGIC = {b"\x89PNG": "image/png", b"\xff\xd8\xff": "image/jpeg", b"GIF8": "image/gif"}
 MIN_SECTIONS_FOR_SUMMARY = 5
-SUMMARY_INPUT_CHARS = 12000
+SUMMARY_INPUT_CHARS = 12000  # package text sent for a summary
+DIAGRAM_CONTEXT_ITEMS = 150  # shapes, and connections, listed with a diagram image
 
 PACKAGE_SUMMARY_PROMPT = (
     "You are documenting a systems engineering model (UML/SysML, authored in Cameo). Below is an "
@@ -97,6 +98,7 @@ def ingest_project(run: RunInfo, project: Project, root: Path, llm: LLM, render:
     base = Trace(source_sha256=run.source.sha256, container=project.trace_container)
     layouts = load_layouts(project, ix)
     writer = ProjectWriter(run, project, ix, root, annotations, layouts)
+    truncated = 0  # LLM inputs cut short to fit the prompt
 
     for dia_id, layout in layouts.items() if render else ():
         d = ix.diagrams[dia_id]
@@ -114,8 +116,12 @@ def ingest_project(run: RunInfo, project: Project, root: Path, llm: LLM, render:
             Annotation("Diagram sketch (re-drawn from layout data, not a Cameo rendering)", "", tr, image=rel))
         if llm.cfg.vision_model:
             nodes, edges = dg.describe(ix, layout, lambda e: ix.label(e))
-            context = "\n".join([f"Diagram: {d.name} ({d.diagram_type})", "Shapes:"] + nodes[:150]
-                                 + ["Connections:"] + edges[:150])
+            if max(len(nodes), len(edges)) > DIAGRAM_CONTEXT_ITEMS:
+                truncated += 1
+                llm.truncated(writer.trace(el).locator(), f"{len(nodes)} shapes, {len(edges)} connections; "
+                                                          f"the first {DIAGRAM_CONTEXT_ITEMS} of each sent")
+            context = "\n".join([f"Diagram: {d.name} ({d.diagram_type})", "Shapes:"] + nodes[:DIAGRAM_CONTEXT_ITEMS]
+                                 + ["Connections:"] + edges[:DIAGRAM_CONTEXT_ITEMS])
             res = llm.describe_image(DIAGRAM_PROMPT + "\n\n" + context, png, "image/png",
                                      inputs=(writer.trace(el).locator(), tr.locator()))
             if res:
@@ -150,6 +156,9 @@ def ingest_project(run: RunInfo, project: Project, root: Path, llm: LLM, render:
                 continue
             text = writer.section(pkg, rel, 1) + "\n".join(writer.section(e, rel, 2) for e in sections)
             tr = writer.trace(pkg)
+            if len(text) > SUMMARY_INPUT_CHARS:
+                truncated += 1
+                llm.truncated(tr.locator(), f"{len(text):,} characters; the first {SUMMARY_INPUT_CHARS:,} sent")
             res = llm.summarize(PACKAGE_SUMMARY_PROMPT, text[:SUMMARY_INPUT_CHARS], inputs=(tr.locator(),))
             if res:
                 summary, deriv = res
@@ -173,6 +182,10 @@ def ingest_project(run: RunInfo, project: Project, root: Path, llm: LLM, render:
                            "provenance": writer.file_provenance(trace=base.to_dict())})
         writer.write_text("images.md", fm + "\n".join(lines))
 
+    if truncated:
+        log.warning("%s: %d LLM input(s) were cut short to fit the prompt (at most %s characters of package "
+                    "text, %d shapes and %d connections per diagram)", project.name, truncated,
+                    f"{SUMMARY_INPUT_CHARS:,}", DIAGRAM_CONTEXT_ITEMS, DIAGRAM_CONTEXT_ITEMS)
     out = writer.write_all()
 
     summary = {
