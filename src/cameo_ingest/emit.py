@@ -34,7 +34,7 @@ from .layout import Layout
 from .ledger import LedgerWriter
 from .model import Element, ModelIndex
 from .provenance import TOOL, ContentInfo, Trace, sha256_text
-from .text import front_matter, md_escape, md_inline, slug
+from .text import front_matter, md_escape, md_inline, shown_value, slug
 
 DIAGRAM_INFO = "DiagramInfo"  # MagicDraw_Profile stereotype holding a diagram's author and dates
 SKIP_MEMBER_ROLES = {
@@ -322,7 +322,7 @@ class ProjectWriter:
                     continue
                 shown = ", ".join(self.ix.label(v) if v in self.ix.elements else v.strip() for v in vals if v.strip())
                 if shown:
-                    out.append((app.name, k, shown))
+                    out.append((app.name, k, shown_value(shown)))
         return out
 
     def members(self, el: Element, from_file: str, depth: int) -> list[str]:
@@ -536,7 +536,7 @@ class ProjectWriter:
             if app.name == DIAGRAM_INFO:
                 continue
             for k, vals in app.tags.items():
-                shown = [self.ix.qualified_name(v) or v if v in self.ix.elements else v for v in vals]
+                shown = [self.ix.qualified_name(v) or v if v in self.ix.elements else shown_value(v) for v in vals]
                 if len(shown) > 12:
                     shown = shown[:12] + [f"... ({len(vals) - 12} more)"]
                 out.append(f"- «{app.name}» {k}: {'; '.join(shown)}")

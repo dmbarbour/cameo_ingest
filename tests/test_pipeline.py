@@ -76,6 +76,8 @@ def check_invariants(out: Path) -> None:
     chunks = [json.loads(line) for line in (out / "chunks.jsonl").open(encoding="utf-8")]
     dup = [i for i, n in Counter(c["id"] for c in chunks).items() if n > 1]
     assert not dup, dup[:3]
+    long = [c["id"] for c in chunks if max(map(len, c["text"].splitlines()), default=0) > 8000]
+    assert not long, long[:3]  # no encoded images or configuration dumps (FU-020)
     for c in chunks:
         if "content" in c["metadata"]:  # traces start from the project's content (plan RI-02)
             assert c["metadata"]["provenance"]["locator"].startswith(c["metadata"]["content"][:23]), c["id"]
@@ -410,6 +412,16 @@ def test_decompression_budget(tmp_path, monkeypatch):
     assert main([str(src), "-o", str(out), "--no-llm", "--no-render"]) == 4
     failed = json.loads((out / "manifest.json").read_text())["failed"]
     assert "exceeds 1,000 decompressed bytes" in failed[0]["error"]
+
+
+def test_long_tagged_values():
+    """Hex-encoded images are described, other long values cut (FU-020)."""
+    from cameo_ingest.text import shown_value
+
+    svg = " ".join(f"{b:x}" for b in b'<?xml version="1.0"?>\n<svg xmlns="x">' + b"a" * 5000)
+    assert shown_value(svg) == "(SVG image, 5,037 bytes, hex-encoded; not shown)"
+    assert shown_value("x" * 5000).endswith("… (cut; 5,000 characters in all)")
+    assert shown_value("a b c") == "a b c"
 
 
 def test_first_tag():
