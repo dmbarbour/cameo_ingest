@@ -15,7 +15,8 @@ here.
 ## Tentative
 
 These plans are not yet written. The first comes from the LLM quality plan's open question
-4; the others come from the roadmap in the top-level `README.md`.
+4, the last from the maintainer; the others come from the roadmap in the top-level
+`README.md`.
 
 - **Retrieval evaluation.** A set of questions of the kinds the README's RAG advice targets
   ("why does requirement R exist?", "list the activity diagrams", "which models came from
@@ -39,3 +40,11 @@ These plans are not yet written. The first comes from the LLM quality plan's ope
 - **Better module boundaries.** Split sequence diagrams into bands along the time axis, and
   activity diagrams along their partitions (swimlanes, from the model's `inPartition`),
   rather than by connectivity alone. Both were found in plan DV's partitioning study.
+- **Vision calibration by "eye chart".** Sketches are drawn for what gemma-4 on DeepInfra is
+  known to see: the 645,120-pixel budget, 48-pixel patches, 12-pixel text, and diagrams split
+  above 25 shapes (FU-012, FU-015, `docs/research/gemma4-images-2026-09-30.md`). Those values
+  were found by hand and hold for one model on one host. The maintainer is building an
+  automated eye-chart test in another project (a semantic PDF diff), which measures what a
+  vision model can actually read. Once it matures, investigate adopting it here, to calibrate
+  the pixel budget, text size, line weights and module thresholds for whichever model and
+  endpoint are configured, in place of the gemma-4 constants.
