@@ -484,13 +484,20 @@ def _leaving(pts: list[tuple[float, float]], box: tuple[float, float, float, flo
 
 
 def _fit(d: ImageDraw.ImageDraw, text: str, font, width: float) -> str:
-    """`text` on one line, cut with an ellipsis to fit `width` px (the legend has it all)."""
+    """`text` on one line, cut with an ellipsis to fit `width` px (the legend has it all):
+    the longest prefix that fits, found by bisection, since notes and requirement texts
+    can run to thousands of characters."""
     text = _one_line(text)  # Pillow can't measure text with line breaks (FU-016)
     if d.textlength(text, font=font) <= width:
         return text
-    while text and d.textlength(text + "…", font=font) > width:
-        text = text[:-1]
-    return text + "…" if text else ""
+    lo, hi = 0, len(text) - 1  # the longest fitting prefix has lo to hi characters
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if d.textlength(text[:mid] + "…", font=font) <= width:
+            lo = mid
+        else:
+            hi = mid - 1
+    return text[:lo] + "…" if lo else ""
 
 
 def _polyline(d: ImageDraw.ImageDraw, pts: list[tuple[float, float]], dashed: bool, fill: str | None = None) -> None:
