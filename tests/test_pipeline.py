@@ -235,6 +235,19 @@ def test_diagram_directions_item_flows_and_labels(tmp_path):
     assert element_label(ix, View("v", "Part", "a1")) == "Battery"
     assert element_label(ix, View("v", "Diagram", "d1")) == "Drone BDD"  # «DiagramInfo» is not shown
     assert dg._shown_name(ix, View("v", "Part", "a1")) == "Battery"  # drawn in the sketch too (FU-018)
+    # Unnamed elements that say what they are otherwise (FU-024).
+    from cameo_ingest.model import Element
+
+    def el(kind: str, **kw) -> str:
+        e = Element(f"x{len(ix.elements)}", f"uml:{kind}", "packagedElement", None, None, "e", None, **kw)
+        ix.elements[e.id] = e
+        return e.id
+
+    assert element_label(ix, View("v", "SwimlaneHeader", el("ActivityPartition", refs=[("represents", "a1")]))) \
+        == "Battery"  # the part it represents is unnamed here: its type
+    assert element_label(ix, View("v", "OpaqueAction", el("OpaqueAction", attrs={"body": "j = 1\nk = 2"}))) == "j = 1 k = 2"
+    assert element_label(ix, View("v", "Note", el("Comment", attrs={"body": "<p>Check <b>this</b></p>"}))) \
+        == '"Check this"'
 
 
 def test_provenance_everywhere(tmp_path):

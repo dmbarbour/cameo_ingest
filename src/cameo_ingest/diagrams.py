@@ -22,8 +22,10 @@ from dataclasses import dataclass, field
 
 from PIL import Image, ImageDraw, ImageFont
 
+from . import semantics as sem
 from .layout import Layout, View
-from .model import ModelIndex
+from .model import Element, ModelIndex
+from .richtext import to_text
 from .semantics import ItemFlow, Relationship
 from .text import md_inline, one_line
 
@@ -69,10 +71,45 @@ def _name(ix: ModelIndex, v: View) -> str:
         return (v.element.rsplit("#", 1)[-1] if v.element and "#" in v.element else v.element) or v.text or ""
     if el.name:
         return el.name
-    for role in ("behavior", "operation", "signal", "event"):
+    for role in ("behavior", "operation", "signal", "event", "structuralFeature"):
         tgt = next((t for r, t in el.refs if r == role), None)
         if tgt:
             return ix.label(tgt)
+    return _described(ix, el)
+
+
+def _described(ix: ModelIndex, el: Element) -> str:
+    """What an unnamed element otherwise says it is (FU-024): the part a swimlane or lifeline
+    represents, an opaque action's body, a value action's value, a state invariant's
+    constraint, a comment's text, a requirement's id or text. Empty when nothing does."""
+    def short(text: str | None) -> str:
+        text = one_line(text or "")
+        return text if len(text) <= 80 else text[:79] + "…"
+
+    represents = next((t for r, t in el.refs if r == "represents"), None)
+    if represents:
+        part = ix.elements.get(represents)
+        typ = next((t for r, t in part.refs if r == "type"), None) if part is not None else None
+        if part is not None and typ:
+            return f"{part.name} : {ix.label(typ)}" if part.name else ix.label(typ)
+        return ix.label(represents)
+    if el.kind == "OpaqueAction":
+        return short(el.attrs.get("body"))
+    for trigger in sem.children(ix, el, "trigger"):  # an AcceptEventAction: the event, or its signal
+        event = ix.elements.get(next((t for r, t in trigger.refs if r == "event"), ""))
+        if event is not None:
+            return event.name or ix.label(next((t for r, t in event.refs if r == "signal"), event.id))
+    if el.kind == "Comment":
+        return f'"{short(to_text(el.attrs.get("body")))}"' if el.attrs.get("body") else ""
+    for role in ("value", "invariant"):  # a ValueSpecificationAction's value; a StateInvariant's constraint
+        spec = next(iter(sem.children(ix, el, role)), None)
+        if spec is not None and spec.kind == "Constraint":
+            spec = next(iter(sem.children(ix, spec, "specification")), None)
+        if spec is not None:
+            return short(sem.value_text(ix, spec))
+    if sem.is_requirement(ix, el):
+        fields = sem.requirement_fields(ix, el)
+        return short(fields.get("Id") or fields.get("Text"))
     return ""
 
 
