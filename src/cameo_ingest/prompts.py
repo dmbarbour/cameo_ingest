@@ -450,6 +450,41 @@ PACKAGE_SYNTHESIS = Template(
     ),
 )
 
+# Sandwiched versions (plan DV-06): the task is repeated after the long input, since models
+# attend unevenly across a long context. Compared with version 1 on the same items by
+# scripts/sandwich_study.py before either is chosen.
+MODULE_SUMMARY_V2 = Template(
+    id="module-summary",
+    version=2,
+    purpose=MODULE_SUMMARY.purpose,
+    text=MODULE_SUMMARY.text + (
+        "\n---\nThe task again: summarize what part {{PART}} of package {{PACKAGE}} models, from the sections "
+        "above: its purpose, its main elements and how they relate, to each other and to elements elsewhere. "
+        f"{_STYLE} At most 120 words."),
+    slots=MODULE_SUMMARY.slots,
+)
+
+PACKAGE_SYNTHESIS_V2 = Template(
+    id="package-synthesis",
+    version=2,
+    purpose=PACKAGE_SYNTHESIS.purpose,
+    text=PACKAGE_SYNTHESIS.text + (
+        "\n---\nThe task again: summarize what {{SCOPE}} of package {{PACKAGE}} models, from the section and "
+        "summaries above: its purpose, its main elements, and how the parts relate, referring to parts by what "
+        f"they cover rather than by number. {_STYLE} At most 200 words."),
+    slots=PACKAGE_SYNTHESIS.slots,
+)
+
+PACKAGE_SUMMARY_V3 = Template(
+    id="package-summary",
+    version=3,
+    purpose=PACKAGE_SUMMARY.purpose,
+    text=PACKAGE_SUMMARY_V2.text + (
+        "\n---\nThe task again: summarize what this package models, from the text above: its purpose, its main "
+        f"elements, and how they relate. {_STYLE} At most 150 words."),
+    slots=PACKAGE_SUMMARY_V2.slots,
+)
+
 # The versions in use. Their keys are part of a run's options, so that a project written
 # with other versions is written again (FU-014).
 CURRENT = {t.id: t for t in (DIAGRAM_DESCRIPTION_V4, MODULE_DESCRIPTION_V2, DIAGRAM_SYNTHESIS_V2,
@@ -458,4 +493,5 @@ CURRENT = {t.id: t for t in (DIAGRAM_DESCRIPTION_V4, MODULE_DESCRIPTION_V2, DIAG
 TEMPLATES = {t.key: t for t in (DIAGRAM_DESCRIPTION, IMAGE_DESCRIPTION, PACKAGE_SUMMARY, DIAGRAM_DESCRIPTION_V2,
                                 PACKAGE_SUMMARY_V2, DIAGRAM_DESCRIPTION_V3, DIAGRAM_DESCRIPTION_V4,
                                 IMAGE_DESCRIPTION_V2, MODULE_DESCRIPTION, DIAGRAM_SYNTHESIS, MODULE_DESCRIPTION_V2,
-                                DIAGRAM_SYNTHESIS_V2, MODULE_SUMMARY, PACKAGE_SYNTHESIS)}
+                                DIAGRAM_SYNTHESIS_V2, MODULE_SUMMARY, PACKAGE_SYNTHESIS, MODULE_SUMMARY_V2,
+                                PACKAGE_SYNTHESIS_V2, PACKAGE_SUMMARY_V3)}

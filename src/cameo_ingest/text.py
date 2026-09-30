@@ -16,7 +16,7 @@ def shown_value(value: str, limit: int = VALUE_CHARS) -> str:
     """A tagged value as a page shows it: hex-encoded bytes (such as the images of
     «CustomImageHolder») described rather than shown, and other long values cut (FU-020)."""
     if len(value) > limit and _HEX.match(value) and re.fullmatch(r"[0-9a-fA-F\s]+", value):
-        head = bytes.fromhex("".join(f"{b:0>2}" for b in value[:400].split()[:64]))
+        head = bytes.fromhex("".join(f"{b:0>2}" for b in value[:2000].split()[:512]))
         kind = next((k for magic, k in _MAGIC if head.lstrip().startswith(magic)), "binary data")
         if kind == "XML" and b"<svg" in head:
             kind = "SVG image"

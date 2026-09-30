@@ -179,7 +179,8 @@ def build_parser() -> argparse.ArgumentParser:
     qsample.add_argument("--n", type=int, default=30, help="items to draw (default 30)")
     qsample.add_argument("--seed", type=int, default=1, help="random seed (default 1)")
     qsample.add_argument("--kind", action="append", metavar="KIND",
-                         help="only this kind: diagram_description, image_description, summary (repeatable)")
+                         help="only this kind: diagram_description, module_description (of a large diagram), "
+                              "image_description, summary, module_summary (part of a large package); repeatable")
     return ap
 
 

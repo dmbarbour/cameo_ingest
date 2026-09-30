@@ -173,7 +173,17 @@ def _answer(requests: list[_Request], progress: Progress, label: str, concurrenc
             pool.shutdown(wait=False, cancel_futures=True)
 
 
-def _package_parts(writer: ProjectWriter, sections: list[Element], texts: list[str]) -> list[list[int]]:
+def part_values(package: str, k: int, n: int, body: str) -> tuple[dict[str, str], dict[str, Any]]:
+    """The text slots and notes of a module-summary request for part `k` of `n`."""
+    notes: dict[str, Any] = {"part": f"{k} of {n}"}
+    cut_note = ""
+    if len(body) > PART_CHARS[1]:
+        notes["truncated"] = {"characters": len(body), "limit": PART_CHARS[1]}
+        cut_note = f"The text was cut at {PART_CHARS[1]:,} of its {len(body):,} characters, so its end is missing. "
+    return {"CUT_NOTE": cut_note, "PACKAGE": package, "PART": f"{k} of {n}", "SECTIONS": body[:PART_CHARS[1]]}, notes
+
+
+def package_parts(writer: ProjectWriter, sections: list[Element], texts: list[str]) -> list[list[int]]:
     """A large package's sections (indices), in parts of related elements: by nesting,
     relationships and order, each of PART_CHARS where the sections allow (plan DV-05)."""
     index = {e.id: i for i, e in enumerate(sections)}
@@ -194,6 +204,19 @@ def _package_parts(writer: ProjectWriter, sections: list[Element], texts: list[s
 Level = list[tuple[tuple[int, int], str | None]]  # (first part, last part), summary
 
 
+def synthesis_values(package: str, sizes: list[int], own: str, run: Level, whole: bool) -> dict[str, str]:
+    """The text slots of a package-synthesis request over `run` of a package whose parts
+    have `sizes` elements."""
+    a, b = run[0][0][0], run[-1][0][1]
+    summaries = "\n\n".join(
+        (f"Part {x} ({plural(sizes[x - 1], 'element')}): " if x == y else f"Parts {x} to {y}: ")
+        + (text or "(not summarized)") for (x, y), text in run)
+    return {"SCOPE": "the whole package" if whole else f"parts {a} to {b} of {len(sizes)}",
+            "CUT_NOTE": (f"The package's own section was cut at {OWN_CHARS:,} of its {len(own):,} characters. "
+                         if len(own) > OWN_CHARS else ""),
+            "PACKAGE": package, "PACKAGE_TEXT": own[:OWN_CHARS], "SUMMARIES": summaries}
+
+
 def _synthesis_requests(llm: LLM, content: ContentInfo, ix: ModelIndex, pkg_id: str, tr: Trace,
                         parts: list[list[Element]], own: str, level: Level) -> list[tuple[Level, _Request | None]]:
     """The next step in summarizing a large package from its parts' summaries: a request for
@@ -201,8 +224,6 @@ def _synthesis_requests(llm: LLM, content: ContentInfo, ix: ModelIndex, pkg_id: 
     of one summary is carried up as it is, without a request."""
     n = -(-len(level) // MAX_SUMMARIES)
     runs = [level[i * len(level) // n:(i + 1) * len(level) // n] for i in range(n)]
-    cut_note = (f"The package's own section was cut at {OWN_CHARS:,} of its {len(own):,} characters. "
-                if len(own) > OWN_CHARS else "")
     out: list[tuple[Level, _Request | None]] = []
     for run in runs:
         a, b = run[0][0][0], run[-1][0][1]
@@ -210,15 +231,9 @@ def _synthesis_requests(llm: LLM, content: ContentInfo, ix: ModelIndex, pkg_id: 
         if len(run) == 1 and not whole:
             out.append((run, None))
             continue
-        scope = "the whole package" if whole else f"parts {a} to {b} of {len(parts)}"
-        summaries = "\n\n".join(
-            (f"Part {x} ({plural(len(parts[x - 1]), 'element')}): " if x == y else f"Parts {x} to {y}: ")
-            + (text or "(not summarized)")
-            for (x, y), text in run)
-        values = {"SCOPE": scope, "CUT_NOTE": cut_note, "PACKAGE": ix.qualified_name(pkg_id),
-                  "PACKAGE_TEXT": own[:OWN_CHARS], "SUMMARIES": summaries}
+        values = synthesis_values(ix.qualified_name(pkg_id), [len(p) for p in parts], own, run, whole)
         call = partial(llm.ask, CURRENT["package-synthesis"], values, project=content.token, inputs=(tr.locator(),),
-                       notes={"parts": len(parts), "scope": scope})
+                       notes={"parts": len(parts), "scope": values["SCOPE"]})
         out.append((run, _Request("summary", pkg_id, tr, call) if whole else
                        _Request("run", pkg_id, tr, call, parts=(a, b))))
     return out
@@ -361,22 +376,16 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
                                project=content.token, inputs=(tr.locator(),))
                 requests.append(_Request("summary", pkg_id, tr, call))
                 continue
-            parts = [[sections[i] for i in g] for g in _package_parts(writer, sections, texts)]
+            parts = [[sections[i] for i in g] for g in package_parts(writer, sections, texts)]
             writer.package_parts[pkg_id] = [[e.id for e in part] for part in parts]
             large_packages.append((pkg_id, tr, parts, own))
             qn = ix.qualified_name(pkg_id)
             for k, part in enumerate(parts, 1):
                 body = "\n".join(texts[sections.index(e)] for e in part)
-                notes: dict[str, Any] = {"part": f"{k} of {len(parts)}"}
-                cut_note = ""
-                if len(body) > PART_CHARS[1]:  # a single section over the limit
+                values, notes = part_values(qn, k, len(parts), body)
+                if "truncated" in notes:  # a single section over the limit
                     truncated += 1
                     llm.truncated(tr.locator(), f"part {k}: {len(body):,} characters; the first {PART_CHARS[1]:,} sent")
-                    notes["truncated"] = {"characters": len(body), "limit": PART_CHARS[1]}
-                    cut_note = (f"The text was cut at {PART_CHARS[1]:,} of its {len(body):,} characters, so its "
-                                "end is missing. ")
-                values = {"CUT_NOTE": cut_note, "PACKAGE": qn, "PART": f"{k} of {len(parts)}",
-                          "SECTIONS": body[:PART_CHARS[1]]}
                 call = partial(llm.ask, CURRENT["module-summary"], values, project=content.token,
                                inputs=(tr.locator(),), notes=notes)
                 requests.append(_Request("part", pkg_id, tr, call, module=k))
