@@ -1,7 +1,7 @@
 # Plan: retrieval evaluation, 2026-09-30
 
-- **Status:** Proposed on 2026-09-30. It waits on the maintainer's answers to the open questions
-  at the end.
+- **Status:** Proposed on 2026-09-30, and revised the same day with the maintainer's answers
+  (Decisions, below). Ready to start.
 - **Step prefix:** `RE`, so steps are `RE-01`, `RE-02` and so on
 - **Addresses:** the "Retrieval evaluation" tentative plan in `docs/plans/README.md`, and the
   advice in the README's "Using the output for RAG", which is untested. It also informs the
@@ -22,6 +22,35 @@
 
 **Not goals:** choosing a vector store, generating answers end to end (a possible later step),
 and training or fine-tuning models.
+
+## Decisions
+
+All answered by the maintainer on 2026-09-30.
+
+| # | Question | Decision |
+|---|---|---|
+| 1 | The production stack | Not fully known, nor controlled by the maintainer. It cuts text into 512-token chunks, with some overlap between neighbouring chunks. There is no reranker. Keyword search is wanted, but can't be added cleanly yet. |
+| 2 | The in-house models' settings | Unknown. The evaluation measures what the unknowns cost (below), so they can be raised with the stack's owners. |
+| 3 | A gold set from the maintainer | No: the maintainer doesn't know the samples well enough to be a gold standard. The maintainer spot-checks a sample of the generated questions for sense instead. |
+| 4 | The judge | High-quality models: Claude, and a few strong models on DeepInfra, within a modest budget. |
+| 5 | The corpora | Several sample projects, ideally all of them. |
+| 6 | A second text field for embedding | Not pursued: the stack embeds whatever text it is given, and we can't change which field it reads. If plainer text helps, `text` itself becomes plainer. |
+
+### What these mean for the design
+
+- **Simulate the production pipeline.** The baseline cuts each chunk's text into 512-token
+  windows that overlap their neighbours, as the stack does. The overlap is unknown, so 64
+  tokens is assumed, with 0 and 128 as a check. Whether the stack reads `chunks.jsonl` or the
+  Markdown pages is also unknown, so both are run.
+- **Measure what the unknowns cost.**
+  - **Window against model:** a 512-token window embedded by MiniLM at its usual 256-token limit
+    is embedded by half. MPNet's limit is 384 tokens. Each model is run at its standard limit,
+    and the loss is reported.
+  - **e5 prefixes:** the e5 models are run with and without their `query: ` and `passage: `
+    prefixes.
+- **Keyword search is secondary.** BM25 and hybrid search are measured, to show what they would
+  add once they can be integrated. The recommendations assume dense retrieval alone.
+- **No rerankers.**
 
 ## What we know already
 
@@ -67,11 +96,19 @@ measured with the MiniLM tokenizer; plain English prose runs about 4.
 
 ### Corpora
 
-- **The drone sample** (183 chunks): small enough to check every result by hand.
+All the samples (decision 5), ingested with LLM enrichment into one tree, as production would
+hold them:
 - **TMT** (about 21,000 chunks): the realistic scale, with many near-duplicates such as
-  requirement lists and analysis results.
-- **Optionally SAF_FFDS:** another modelling style (the SAF and UAF profiles). Combined with
-  the others, it tests confusion between projects in one tree.
+  requirement lists and analysis results. It is ingested already (`out/tmt-dv`), and its answers
+  are cached.
+- **The others:** SAF_FFDS, SAF_Profile and SAF_Blank (the SAF and UAF profiles), NIST_M-SysML,
+  MDK_DocGen, OpenSUT (two projects), EOSS, GTRI, MDK_CSyncTest, cusa26 and the drone sample.
+  Their enrichment should cost a few dollars at most.
+- **TMT-2024x:** probably the same model as TMT, saved by a later Cameo. Two near-identical
+  answers would make "the right chunk" ambiguous, so it is left out of the main index. It is a
+  ready-made test of confusion between versions, if that matters later.
+- **Results by project:** reported for each project, and for the whole. The drone sample (183
+  chunks) stays the one small enough to check every result by hand.
 
 ### Queries, from three sources, each with its own ground truth
 
@@ -84,12 +121,13 @@ measured with the MiniLM tokenizer; plain English prose runs about 4.
 
    They share words with their answers, so they favour lexical search and flatter embeddings.
    They serve for regressions and coverage, not to choose a model by themselves.
-2. **Natural questions, written by an LLM from a sampled chunk** ("doc2query"). The LLM is told
+2. **Natural questions, written by a strong LLM from a sampled chunk** ("doc2query"). The LLM is told
    to paraphrase rather than copy names where it can, and to tag each question with a
    category. The source chunk is relevant; other chunks are judged by pooling (below).
-3. **A gold set from the maintainer:** 25 to 40 questions of the kinds real users ask, each
-   with the answer they would expect. It is the smallest source and the most valid. Its
-   relevance is judged by pooling, and reviewed by the maintainer.
+3. **The maintainer's spot check:** a random sample of the questions from both sources above is
+   shown to the maintainer, who marks any that make no sense or that nobody would ask. Those
+   point to faults in the generators, which are fixed before the questions are used. (Decision
+   3: no gold set.)
 
 The categories come from the README's RAG advice:
 - **lookup:** what is X;
@@ -107,13 +145,25 @@ The categories come from the README's RAG advice:
   - **1:** a chunk that holds the needed fact about it, such as a ledger row or a diagram's
     legend.
 - **Other questions:** by pooling. The top 10 of every configuration are pooled, and each pair
-  of question and chunk is judged 0, 1 or 2 by an LLM judge, given the question and the
-  chunk's text.
+  of question and chunk is judged 0, 1 or 2 by a panel, given the question and the chunk's
+  text.
   - **Cached:** a pair is judged once, whichever configuration retrieved it.
-- **Checking the judge:** Claude and the maintainer label a stratified sample of about 100 pairs
-  by hand, and agreement with the LLM judge is measured (Cohen's kappa).
-  - **If it agrees well enough:** the judge is used.
-  - **If not:** Claude labels the pools instead, which is feasible for a few hundred pairs.
+- **The panel (decision 4):**
+  - **Two models on every pair,** from different families, strong but cheap:
+    `deepseek-ai/DeepSeek-V3.2` and `Qwen/Qwen3-235B-A22B-Instruct-2507`.
+  - **A third, stronger model on the pairs they disagree on,** and on a check set:
+    `moonshotai/Kimi-K2.5` or `deepseek-ai/DeepSeek-V4-Pro`.
+  - **Claude:** labels a stratified check set of about 200 pairs by hand, in session, and
+    settles a sample of the remaining disagreements.
+  - **`google/gemma-4-31B-it`, the enrichment model, also judges the check set,** to learn
+    whether a cheap judge would do for later runs.
+- **Checking the judges:** each judge's agreement with Claude's labels is measured (Cohen's
+  kappa). A judge that agrees poorly is dropped, and the final label is the panel's majority.
+- **Budget:** a judgment reads about 800 tokens and writes a few. With about 300 questions and
+  heavy overlap between configurations, the pools come to perhaps 6,000 to 10,000 pairs:
+  - the two main judges, about $1 to $3 per full round;
+  - the stronger one, on disagreements and the check set, well under $5;
+  - embeddings, cents per model for all the samples ($0.005 to $0.01 per million tokens).
 
 ### Measures
 
@@ -127,6 +177,8 @@ The categories come from the README's RAG advice:
 
 ## What is compared
 
+- **The simulated production pipeline** is the baseline: 512-token windows with overlap, over
+  `chunks.jsonl` and over the Markdown pages (see Decisions).
 - **Dense retrieval** with the four target models:
   - **MiniLM** both locally and on DeepInfra, to check that the two give the same vectors;
   - **MPNet and e5-large** on DeepInfra;
@@ -134,16 +186,15 @@ The categories come from the README's RAG advice:
 
   The e5 models are run with and without their `query: ` and `passage: ` prefixes, in case the
   in-house pipeline doesn't add them.
-- **Lexical retrieval:** BM25 over the same chunks.
+- **Lexical retrieval:** BM25 over the same windows, to show what keyword search would add.
 - **Hybrid retrieval:** BM25 with each dense model, by reciprocal rank fusion.
-- **Later, if the stack allows it:** a cross-encoder reranker.
 
 ## Changes to try, each measured against the baseline
 
-1. **Text for embedding:** a plain version of each chunk, with the full Markdown kept for
-   display. Links are reduced to their labels, the trace line is dropped, the qualified name
-   is shortened to its owning package, and the key text comes first (the requirement's id and
-   text, the documentation).
+1. **Plainer chunk text:** links reduced to their labels (pages keep them), the trace line left
+   to the metadata that already holds it, the qualified name shortened to its owning package,
+   and the key text first (the requirement's id and text, the documentation). If it helps, it
+   replaces `text` itself (decision 6).
 2. **Splitting long chunks** into overlapping windows that fit the model, each repeating the
    element's header, or splitting by field (text, tagged values, relationships).
 3. **Titles for unnamed requirements:** the requirement's id and the start of its text, in
@@ -175,30 +226,22 @@ hash of their text, so unchanged chunks cost nothing.
 
 | Step | Work | Status |
 |---|---|---|
-| RE-01 | Inventory: chunk lengths in each model's tokens, and what fills them (links, names, traces), as a script and a research note. | Partly done: the tables above |
+| RE-01 | Inventory: chunk lengths in each model's tokens, what fills them (links, names, traces), and how the simulated 512-token windows fall; as a script and a research note. | Partly done: the tables above |
 | RE-02 | Endpoints and the embedding cache: local TEI (MiniLM, and a container for e5-small) and DeepInfra (MiniLM, MPNet, e5-large). Check that local and DeepInfra MiniLM agree. Record input limits, prefixes and speed. | Not started |
-| RE-03 | Questions: the structural generator, the LLM question writer, and a template for the maintainer's gold set. | Not started |
-| RE-04 | The harness: indexes, dense, BM25 and hybrid search, measures with confidence intervals, the report and per-question pages. | Not started |
-| RE-05 | Judging: the pooled LLM judge, with cached judgments, checked against labels by Claude and the maintainer. | Not started |
-| RE-06 | Baseline: the four models, each dense and hybrid, and BM25, on the drone sample and TMT as they are now. | Not started |
-| RE-07 | Changes: text for embedding, splitting, titles, generated and ledger chunks included or not. | Not started |
-| RE-08 | Recommendations: adopt what helps into the output (with a version bump), rewrite the README's RAG advice, and say what the in-house pipeline should do (prefixes, windows, hybrid search). | Not started |
+| RE-03 | Corpora: ingest every sample except TMT-2024x into one tree, with LLM enrichment, reusing TMT's cached answers. | Not started |
+| RE-04 | Questions: the structural generator and the LLM question writer. A sample goes to the maintainer to spot-check for sense; the generators are fixed where it finds faults. | Not started |
+| RE-05 | The harness: the simulated pipeline (windows over chunks and over pages), indexes, dense, BM25 and hybrid search, measures with confidence intervals, the report and per-question pages. | Not started |
+| RE-06 | Judging: the judge panel, with cached judgments; Claude's check set; agreement per judge; the panel's labels. | Not started |
+| RE-07 | Baseline: the four models (at their standard limits; e5 with and without prefixes), dense alone, and BM25 and hybrid for comparison, on every project. | Not started |
+| RE-08 | Changes: plainer chunk text, splitting, titles for unnamed requirements, generated and ledger chunks included or not. | Not started |
+| RE-09 | Recommendations: adopt what helps into the output (with a version bump), rewrite the README's RAG advice, and write down what to ask of the stack (model limits, overlap, prefixes). | Not started |
 
-## Open questions for the maintainer
+## Questions to raise with the stack's owners
 
-1. **The production stack:**
-   - Which vector store, and how many chunks does a prompt take?
-   - Is keyword or hybrid search available, and a reranker?
-   - Does the pipeline embed our chunks as they are, or split them again?
-   - Does it add the e5 prefixes?
-2. **The in-house models' settings:** the input limits (MiniLM is often run at 256 tokens,
-   sometimes 512), and whether vectors are normalized.
-3. **The gold set:** can you write 25 to 40 real questions, with the answers you'd expect?
-   Can they be committed, or do they belong with the samples, outside the repository?
-4. **The judge:** is `google/gemma-4-31B-it` on DeepInfra acceptable, checked as above, or
-   should a stronger model judge? This is the same question as the deferred judge panel.
-5. **The corpora:** is TMT representative of your models? Should SAF_FFDS, or anything else,
-   be included?
-6. **The output format:** if a plain text for embedding helps, may it go into `chunks.jsonl`
-   as a second field (say `embed_text`, with `text` kept for display)? Or should `text` itself
-   become plainer?
+The evaluation will put numbers on these. They are listed here so they can be asked meanwhile:
+1. **Which model,** and at what input limit? MiniLM is usually run at 256 tokens, so a 512-token
+   chunk would be embedded by half.
+2. **How much overlap** between chunks, and does the splitter respect paragraphs?
+3. **What is ingested:** `chunks.jsonl`, the Markdown pages, or both?
+4. **For e5 models:** are the `query: ` and `passage: ` prefixes added?
+5. **How many chunks** go into a prompt?
