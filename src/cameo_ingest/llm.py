@@ -177,8 +177,10 @@ class LLMStore:
 
 
 class LLM:
-    def __init__(self, cfg: LLMConfig, cache_dir: Path, replay: Path | None = None):
+    def __init__(self, cfg: LLMConfig, cache_dir: Path, replay: Path | None = None,
+                 max_failures: int = MAX_CONSECUTIVE_FAILURES):
         self.cfg = cfg
+        self.max_failures = max_failures  # consecutive failures before switching off (an evaluation may wait out more)
         self.cache_dir = cache_dir
         self.calls = 0  # requests sent to the endpoint
         self.outcomes: Counter[str] = Counter()
@@ -300,7 +302,7 @@ class LLM:
             with self._lock:
                 self._skip(item, "failed", f"{type(e).__name__}: {e}")
                 self._failures += 1
-                if self._failures >= MAX_CONSECUTIVE_FAILURES and not self.disabled:
+                if self._failures >= self.max_failures and not self.disabled:
                     self.disabled = True
                     log.error("LLM enrichment switched off for the rest of this run after %d consecutive "
                               "failures; the last was: %s", self._failures, e)

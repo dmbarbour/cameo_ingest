@@ -38,7 +38,7 @@ def main() -> int:
     ap.add_argument("--out", type=Path, default=Path("out/eval/judge/judgments.jsonl"))
     ap.add_argument("--cache", type=Path, default=Path("out/eval/judge/.cache"))
     ap.add_argument("--window-tokenizer", default="intfloat/multilingual-e5-large")
-    ap.add_argument("--concurrency", type=int, default=16)
+    ap.add_argument("--concurrency", type=int, default=6)
     ap.add_argument("--limit", type=int, help="only this many pairs (a trial)")
     args = ap.parse_args()
     if args.env:
@@ -78,13 +78,17 @@ def main() -> int:
     print(f"{len(pairs):,} pairs pooled; {len(todo):,} to judge")
 
     for model in args.judges:
-        llm = LLM(LLMConfig.from_env(model, None, timeout=180), args.cache)
-        done = [p for p in todo if (model, p["set"], p["qid"], p["unit"]) not in grade_of]
+        # Patient: a busy endpoint (HTTP 429) is waited out with retries, never a reason to stop.
+        llm = LLM(LLMConfig.from_env(model, None, timeout=180, retries=8), args.cache, max_failures=10**9)
+        done = [p for p in todo if grade_of.get((model, p["set"], p["qid"], p["unit"])) is None]
+        redo = {(model, p["set"], p["qid"], p["unit"]) for p in done}
+        old = [j for j in old if (j["judge"], j["set"], j["qid"], j["unit"]) not in redo]  # failed before
         for j in judge(llm, done, args.concurrency):
             j["judge"] = model
             old.append(j)
             grade_of[(model, j["set"], j["qid"], j["unit"])] = j["grade"]
-        print(f"{model}: judged {len(done):,} ({llm.calls} requests)", flush=True)
+        print(f"{model}: judged {len(done):,} ({llm.calls} requests, "
+              f"{sum(1 for j in old if j['judge'] == model and j['grade'] is None)} without a grade)", flush=True)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with args.out.open("w", encoding="utf-8") as f:
         for j in old:
