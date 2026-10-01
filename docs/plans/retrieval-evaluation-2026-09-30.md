@@ -38,6 +38,8 @@ All answered by the maintainer on 2026-09-30.
 | 7 | Which models (added later that day) | Production probably doesn't use MiniLM. The in-house list has `llmrails/ember-v1` (512 tokens) beside the two e5 models, and one reranker, `BAAI/bge-reranker-v2-m3` (8,192 tokens). |
 | 8 | Local models (after two crashes that day) | Not restarted: only what DeepInfra serves is evaluated. |
 | 9 | A gold standard (the maintainer's suggestion) | A synthetic project with planted facts and questions whose answers are known by construction. |
+| 10 | Keyword search (2026-10-01, after the baseline) | A future plan: a keyword index of the corpus, and an export searchable without special tools (Ctrl+F in Excel). It is in the plan index's tentative list. |
+| 11 | The changes to try (2026-10-01) | Plainer chunk text, with structural detail kept apart from meaning, perhaps in a separate file; readable titles; the heading repeated in each part of a long section. Judge first, then try them. |
 
 ### What these mean for the design
 
@@ -232,6 +234,10 @@ The categories come from the README's RAG advice:
    to the metadata that already holds it, the qualified name shortened to its owning package,
    and the key text first (the requirement's id and text, the documentation). If it helps, it
    replaces `text` itself (decision 6).
+   - **Meaning apart from structure (decision 11):** what an element means (its kind, name,
+     documentation, requirement text, relationships in words) in its chunk; its structural detail
+     (members, tagged values, configuration) in a separate detail chunk or file, so that neither
+     dilutes the other.
 2. **Splitting long chunks** into overlapping windows that fit the model, each repeating the
    element's header, or splitting by field (text, tagged values, relationships).
 3. **Titles for unnamed requirements:** the requirement's id and the start of its text, in

@@ -34,6 +34,16 @@ roadmap in the top-level `README.md`.
 - **Better module boundaries.** Split sequence diagrams into bands along the time axis, and
   activity diagrams along their partitions (swimlanes, from the model's `inPartition`),
   rather than by connectivity alone. Both were found in plan DV's partitioning study.
+- **Keyword search over the corpus, and an export to search without tools.** The retrieval
+  baseline (`docs/research/retrieval-baseline-2026-10-01.md`) found that embeddings almost never
+  find a requirement by its id, where keyword search (BM25) does nine times in ten; but the
+  production stack can't take keyword search yet. Investigate:
+  - a keyword index of the whole tree, built with the output and searchable from the command
+    line;
+  - an export that needs no special tools: one workbook for the whole corpus, with ids, names,
+    requirement texts, documentation and where each item is (file and anchor), searchable with
+    Ctrl+F in Excel. The per-project CSV tables and `LEDGER.md` are a start, but are split by
+    project.
 - **Vision calibration by "eye chart".** Sketches are drawn for what gemma-4 on DeepInfra is
   known to see: the 645,120-pixel budget, 48-pixel patches, 12-pixel text, and diagrams split
   above 25 shapes (FU-012, FU-015, `docs/research/gemma4-images-2026-09-30.md`). Those values
