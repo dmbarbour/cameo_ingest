@@ -8,8 +8,9 @@ production stack cuts long chunks into windows that lose their heading. In the p
 - **heading:** what the item is, its name (a requirement's id and text when it has no name),
   where it is (the last packages of its path) and the project;
 - **meaning apart from structure:** an element's meaning (its requirement text, documentation,
-  relationships, diagrams) in one chunk, its structural detail (members, tagged values) in a
-  details chunk;
+  relationships, diagrams) first, its structural detail (members, tagged values) after it, in
+  the same chunk when the whole fits in one part, else in a details chunk of its own. (A short
+  details chunk is mostly heading, so it outranks the element's meaning for its name: RE-08.)
 - **parts:** text longer than `BUDGET` characters is split at line boundaries, each part
   repeating the heading, so that every window says whose text it is.
 """
@@ -120,5 +121,8 @@ def section(md: str, heading: str) -> tuple[list[str], list[str]]:
         target = detail if name in DETAIL_BLOCKS else meaning
         inline = "\n" not in text and len(text) < 200 and not text.startswith("- ")  # lists keep their lines
         target.append(f"{name}: {one_line(text)}" if inline else f"{name}:\n{text}")
+    together = "\n".join(meaning + detail)
+    if len(together) <= BUDGET:
+        return parts(heading, together), []
     # Always a meaning chunk: the heading alone (name, kind, place, project) is what a lookup finds.
     return parts(heading, "\n".join(meaning)), parts(f"{heading}, details", "\n".join(detail)) if detail else []

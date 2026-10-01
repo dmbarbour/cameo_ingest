@@ -84,17 +84,22 @@ def main() -> int:
                          "the same candidates (models with smaller limits are cut by the endpoint)")
     ap.add_argument("--concurrency", type=int, default=8)
     ap.add_argument("--project", help="only the chunks of projects whose element ids start so (a smoke test)")
+    ap.add_argument("--without-details", action="store_true",
+                    help="leave the plain style's details chunks out of the index, as if they were in a file apart")
     ap.add_argument("--questions", default="synthetic", help="synthetic, structural, or a JSONL file of questions")
     ap.add_argument("--judgments", type=Path, help="the judge panel's grades (scripts/judge_pools.py), which override "
                                                    "construction except for the synthetic questions")
     ap.add_argument("--judges", nargs=2, default=["deepseek-ai/DeepSeek-V3.2", "Qwen/Qwen3-235B-A22B-Instruct-2507"])
-    ap.add_argument("--tiebreak", default="moonshotai/Kimi-K2.5")
+    ap.add_argument("--tiebreak", default="moonshotai/Kimi-K2-Instruct-0905",
+                    help="the judge that settles the main judges' disagreements; none: take the lower grade")
     args = ap.parse_args()
     if args.env:
         load_env(args.env)
     units = chunk_units(args.tree)
     if args.project:
         units = [u for u in units if (u.element_id or "").startswith(args.project)]
+    if args.without_details:
+        units = [u for u in units if not u.kind.endswith(":details")]
     cache = EmbeddingCache(args.cache)
     if args.questions == "synthetic":
         questions = QUESTIONS
@@ -107,7 +112,7 @@ def main() -> int:
     if args.judgments and args.questions != "synthetic":
         name = Path(args.questions).stem if args.questions != "structural" else "structural"
         panel = consensus([json.loads(line) for line in args.judgments.read_text(encoding="utf-8").splitlines()],
-                          tuple(args.judges), args.tiebreak)
+                          tuple(args.judges), None if args.tiebreak == "none" else args.tiebreak)
         for (s, qid, unit), grade in panel.items():
             if s == name:
                 judged_of[qid][unit] = grade

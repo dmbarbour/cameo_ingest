@@ -60,8 +60,8 @@ def test_search_and_measures():
 
 
 def test_plain_chunk_text():
-    """The plain chunk style (plan RE-08): links to labels, no traces or marks, meaning apart
-    from details, parts that repeat their heading, readable requirement titles."""
+    """The plain chunk style (plan RE-08): links to labels, no traces or marks, meaning before
+    details (apart when long), parts that repeat their heading, readable requirement titles."""
     from cameo_ingest import plain as pl
 
     md = ("## «Requirement» (unnamed)\n\n- **Kind:** Class\n- **Qualified name:** `M::P::Q::R`\n"
@@ -72,9 +72,12 @@ def test_plain_chunk_text():
     meaning, details = pl.section(md, "Requirement X in P (project p)")
     assert meaning == [("Requirement X in P (project p)\n\nRequirement ID: 16890\n"
                        "Requirement text: [REQ-1-OAD-0468] Tip/tilt error budget\n"
-                       "Relationships:\n- Satisfy: Drone satisfies this")]
-    assert details == [("Requirement X in P (project p), details\n\nTagged values:\n"
-                       "- «TMT_Requirement» Rationale = [CR163] latest results")]
+                       "Relationships:\n- Satisfy: Drone satisfies this\n"
+                       "Tagged values:\n- «TMT_Requirement» Rationale = [CR163] latest results")] and not details
+    long_values = md.replace("latest results", "latest results " + "y" * 900 + "\n- Note = " + "z" * 900)
+    meaning, details = pl.section(long_values, "Requirement X in P (project p)")
+    assert meaning[0].endswith("Drone satisfies this") and len(details) == 2
+    assert details[0].startswith("Requirement X in P (project p), details (part 1 of 2)\n\nTagged values:\n")
     assert pl.requirement_title(None, "16890", "[REQ-1-OAD-0468] Tip/tilt error budget") == \
         "REQ-1-OAD-0468: Tip/tilt error budget"
     assert pl.requirement_title("Endurance", "R-1", "The drone shall fly.") == "Endurance (R-1)"
