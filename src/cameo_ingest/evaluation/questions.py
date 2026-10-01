@@ -24,6 +24,8 @@ from ..llm import LLM
 from ..prompts import Slot, Template
 
 csv.field_size_limit(1 << 30)
+# The synthetic and fictional projects' element ids start so: they have questions of their own.
+FICTIONAL = ("_kois_", "_abk_", "_rwt_", "_fvx_", "_pct_")
 _BRACKET_ID = re.compile(r"^\s*\[([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+)\]")  # "[REQ-1-OAD-0468] ..." in DOORS text
 
 
@@ -35,9 +37,9 @@ def _rows(project: Path, table: str) -> list[dict]:
         return list(csv.DictReader(f))
 
 
-def structural(tree: Path, per_project: int = 5, seed: int = 1, skip_prefix: str = "_kois_") -> list[dict]:
-    """Questions for every project of the tree but the synthetic one (whose elements' ids start
-    with `skip_prefix`; it has questions of its own)."""
+def structural(tree: Path, per_project: int = 5, seed: int = 1, skip_prefix: tuple[str, ...] = FICTIONAL) -> list[dict]:
+    """Questions for every project of the tree but the synthetic and fictional ones (whose
+    elements' ids start with one of `skip_prefix`; they have questions of their own)."""
     manifest = json.loads((tree / "manifest.json").read_text())
     out: list[dict] = []
     for p in manifest["projects"]:
@@ -138,7 +140,8 @@ def _plain(text: str) -> str:
     return re.sub(r"<sub>trace: `[^`]*`</sub>", "", text).strip()
 
 
-def sample_chunks(tree: Path, per_project: int = 6, seed: int = 1, skip_prefix: str = "_kois_") -> list[dict]:
+def sample_chunks(tree: Path, per_project: int = 6, seed: int = 1, skip_prefix: tuple[str, ...] = FICTIONAL,
+                  ) -> list[dict]:
     """Chunks to write questions from: up to `per_project` from each project, of the kinds that
     describe something (not ledgers or project overviews), at least 300 characters long."""
     by_project: dict[str, list[dict]] = defaultdict(list)

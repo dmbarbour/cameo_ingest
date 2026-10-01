@@ -56,6 +56,13 @@ def grades(q: dict, units: list[Unit], judged: dict[str, int] | None = None) -> 
     for i, u in enumerate(units):
         if u.id.split("#w")[0] in sources:  # a written question's source chunk
             out[i] = 2 if quote and quote in _norm(_plain(u.text)) else 1  # the window with the quote
+        elif "prefix" in q:  # a fictional project's: only a window that holds the fact answers
+            if (u.element_id or "").startswith(q["prefix"]) and (
+                    holds(q["evidence"], u.text)
+                    or holds(q.get("evidence_by_element", {}).get(u.element_id, []), u.text)):
+                out[i] = 2
+            elif u.element_id in q["answers"] or u.element_id in q["related"]:
+                out[i] = 1
         elif u.element_id in q["answers"] or (
                 "evidence" in q and (u.element_id or "").startswith(SYNTHETIC) and holds(q["evidence"], u.text)):
             out[i] = 2  # about an answering element, or holding the planted fact (a ledger quoting it, say)
@@ -140,7 +147,8 @@ def main() -> int:
             per_q = []
             for q, ranking in zip(questions, ranked, strict=True):
                 g = grades(q, ws, judged_of.get(q["id"]))
-                per_q.append({"id": q["id"], "style": q["style"], **measures(ranking, g)})
+                per_q.append({"id": q["id"], "style": q["style"], "difficulty": q.get("difficulty"),
+                              "project_name": q.get("project_name"), **measures(ranking, g)})
                 rankings.append({"system": name, "question": q["id"], "text": q["question"],
                                  "top": [{"unit": ws[j].id, "kind": ws[j].kind, "grade": g.get(j, 0),
                                           "text": ws[j].text[:200]} for j in ranking[:10]]})
@@ -154,11 +162,15 @@ def main() -> int:
     lines = [f"# Retrieval: {args.questions} questions on {args.tree}", "",
              (f"{len(units):,} chunks, windows of {args.window} tokens with {args.overlap} of overlap; "
               f"{len(questions)} questions ({', '.join(f'{n} {s}' for s, n in sorted(styles.items()))})."), ""]
-    for style in ["all", *sorted(styles)] if len(styles) > 1 else ["all"]:
-        lines += [f"## {style.capitalize()} questions", "",
+    groups = [("all", None)]  # all questions, then by style, difficulty and project where they differ
+    for field in ("style", "difficulty", "project_name"):
+        values = sorted({str(q.get(field)) for q in questions if q.get(field)})
+        groups += [(v, field) for v in values] if len(values) > 1 else []
+    for group, field in groups:
+        lines += [f"## {group.capitalize() if field != 'project_name' else group} questions", "",
                   "| System | " + " | ".join(MEASURES) + " |", "|---|" + "---|" * len(MEASURES)]
         for name, per_q in results.items():
-            rows = [r for r in per_q if style == "all" or r["style"] == style]
+            rows = [r for r in per_q if field is None or str(r.get(field)) == group]
             cells = []
             for mname in MEASURES:
                 mean, lo, hi = mean_ci([r[mname] for r in rows])
