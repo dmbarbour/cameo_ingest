@@ -1,9 +1,8 @@
-"""Text embeddings from OpenAI-style endpoints: a local text-embeddings-inference (TEI)
-container, or DeepInfra. Vectors are cached in SQLite by model, endpoint, role and the text's
+"""Text embeddings from an OpenAI-style endpoint (DeepInfra). Vectors are cached in SQLite by model, endpoint, role and the text's
 sha256, so a text is embedded once whatever the experiment.
 
-Both kinds of endpoint cut an input longer than the model's limit without notice, as a
-production stack left at its defaults would (MiniLM 256 tokens, MPNet 384, the e5 models 512).
+DeepInfra cuts an input longer than the model's limit without notice, as a production stack
+left at its defaults would (MiniLM 256 tokens, MPNet 384, the others 512).
 """
 
 from __future__ import annotations
@@ -38,29 +37,25 @@ class EmbeddingModel:
     limit: int  # tokens the model reads; the endpoint cuts longer inputs
     query_prefix: str = ""  # the e5 models are trained with "query: " and "passage: "
     passage_prefix: str = ""
-    batch: int = 32  # texts per request (TEI allows at most 32 by default)
+    batch: int = 32  # texts per request
     key_env: str | None = None  # environment variable holding the API key
 
     def prefixed(self, text: str, role: Role) -> str:
         return (self.query_prefix if role == "query" else self.passage_prefix) + text
 
 
-# The maintainer's target models (plan RE, "The target models"), by where they run.
+# The models evaluated, all on DeepInfra (plan RE, decisions 7 and 8): local containers were
+# too slow for this machine, and tied to two crashes. ember-v1 and e5-small are not on DeepInfra;
+# bge-large-en-v1.5 stands in for ember-v1 (the same BERT-large shape, CLS pooling, 1,024
+# dimensions and 512 tokens, and nearly the same benchmark score), and is reported as a stand-in.
 MODELS = {
-    "minilm-local": EmbeddingModel("sentence-transformers/all-MiniLM-L6-v2", "http://localhost:8083/v1", 256),
-    "minilm": EmbeddingModel("sentence-transformers/all-MiniLM-L6-v2", DEEPINFRA, 256, key_env="OPENAI_API_KEY"),
-    "mpnet": EmbeddingModel("sentence-transformers/all-mpnet-base-v2", DEEPINFRA, 384, key_env="OPENAI_API_KEY"),
     "e5-large": EmbeddingModel("intfloat/multilingual-e5-large", DEEPINFRA, 512, "query: ", "passage: ",
                                key_env="OPENAI_API_KEY"),
     "e5-large-bare": EmbeddingModel("intfloat/multilingual-e5-large", DEEPINFRA, 512, key_env="OPENAI_API_KEY"),
-    "e5-small-local": EmbeddingModel("intfloat/multilingual-e5-small", "http://localhost:8082/v1", 512, "query: ",
-                                     "passage: "),
-    "ember-local": EmbeddingModel("llmrails/ember-v1", "http://localhost:8084/v1", 512),
+    "bge-large": EmbeddingModel("BAAI/bge-large-en-v1.5", DEEPINFRA, 512, key_env="OPENAI_API_KEY"),
+    "mpnet": EmbeddingModel("sentence-transformers/all-mpnet-base-v2", DEEPINFRA, 384, key_env="OPENAI_API_KEY"),
+    "minilm": EmbeddingModel("sentence-transformers/all-MiniLM-L6-v2", DEEPINFRA, 256, key_env="OPENAI_API_KEY"),
 }
-# Local TEI containers, one at a time on this machine (plan RE, "This machine"):
-#   docker run -d --name cameo-embed-<short name> -p 127.0.0.1:<port>:80 \
-#       ghcr.io/huggingface/text-embeddings-inference:cpu-latest --model-id <model>
-# with ports 8082 (e5-small), 8083 (MiniLM), 8084 (ember-v1) and 8085 (the reranker).
 
 
 @functools.cache
@@ -75,7 +70,10 @@ def count_tokens(model_name: str, texts: list[str]) -> list[int]:
     """Tokens each text takes, special tokens included, as the model sees it before any cut."""
     tok = tokenizer(model_name)
     tok.no_truncation()
-    return [len(e.ids) for e in tok.encode_batch(texts)]
+    out: list[int] = []
+    for i in range(0, len(texts), 256):  # in batches: encodings hold every token's offsets
+        out += [len(e.ids) for e in tok.encode_batch(texts[i:i + 256])]
+    return out
 
 
 class EmbeddingCache:

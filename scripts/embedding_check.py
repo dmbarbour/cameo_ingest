@@ -5,8 +5,10 @@
 
 For a random sample of chunks from an output tree:
 - each model's token counts, and the share of chunks longer than its limit;
-- the local and DeepInfra copies of MiniLM compared, text by text (cosine similarity);
 - each model's speed, embedding the sample from an empty cache.
+
+(Local and DeepInfra copies of MiniLM gave identical vectors on 300 TMT chunks; the local
+containers have since been dropped, plan RE decision 8.)
 
 Vectors are cached in DIR/.cache/embeddings.sqlite (default: the tree's .cache).
 """
@@ -19,8 +21,6 @@ import random
 import statistics
 import time
 from pathlib import Path
-
-import numpy as np
 
 from cameo_ingest.cli import load_env
 from cameo_ingest.evaluation.embed import MODELS, Embedder, EmbeddingCache, count_tokens
@@ -42,13 +42,12 @@ def main() -> int:
     print(f"{len(texts)} chunks sampled from {len(chunks):,} in {args.tree}\n")
     print("| model | limit | tokens (median) | over the limit | seconds for the sample | texts per second |")
     print("|---|---|---|---|---|---|")
-    vectors = {}
     for key, m in MODELS.items():
         counts = count_tokens(m.name, [m.prefixed(t, "passage") for t in texts])
         e = Embedder(m, cache)
         t0 = time.perf_counter()
         try:
-            vectors[key] = e.embed(texts)
+            e.embed(texts)
         except Exception as ex:  # an endpoint that isn't running
             print(f"| {key} | {m.limit} | {statistics.median(counts):.0f} | "
                   f"{sum(c > m.limit for c in counts) / len(counts):.0%} | unavailable: {type(ex).__name__} | |")
@@ -57,10 +56,6 @@ def main() -> int:
         speed = f"{len(texts) / dt:.0f}" if e.calls else "(cached)"
         print(f"| {key} | {m.limit} | {statistics.median(counts):.0f} | {sum(c > m.limit for c in counts) / len(counts):.0%} "
               f"| {dt:.1f} | {speed} |")
-    if "minilm" in vectors and "minilm-local" in vectors:
-        cos = np.sum(vectors["minilm"] * vectors["minilm-local"], axis=1)
-        print(f"\nMiniLM, local against DeepInfra: cosine similarity min {cos.min():.6f}, "
-              f"median {np.median(cos):.6f}, over 0.999: {np.mean(cos > 0.999):.0%}")
     return 0
 
 

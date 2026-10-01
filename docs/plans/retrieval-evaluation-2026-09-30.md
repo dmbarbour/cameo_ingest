@@ -36,6 +36,7 @@ All answered by the maintainer on 2026-09-30.
 | 5 | The corpora | Several sample projects, ideally all of them. |
 | 6 | A second text field for embedding | Not pursued: the stack embeds whatever text it is given, and we can't change which field it reads. If plainer text helps, `text` itself becomes plainer. |
 | 7 | Which models (added later that day) | Production probably doesn't use MiniLM. The in-house list has `llmrails/ember-v1` (512 tokens) beside the two e5 models, and one reranker, `BAAI/bge-reranker-v2-m3` (8,192 tokens). |
+| 8 | Local models (after two crashes that day) | Not restarted: only what DeepInfra serves is evaluated. |
 
 ### What these mean for the design
 
@@ -51,20 +52,22 @@ All answered by the maintainer on 2026-09-30.
     prefixes.
 - **Keyword search is secondary.** BM25 and hybrid search are measured, to show what they would
   add once they can be integrated. The recommendations assume dense retrieval alone.
-- **The models (decision 7):**
-  - **The main three:** e5-small, e5-large and ember-v1.
-  - **MPNet** is kept from the first list.
-  - **MiniLM** stays only as a cheap point of reference.
-  - **The reranker:** `bge-reranker-v2-m3` is tried as a second stage over each model's top 50,
-    since it is on the in-house list.
-- **This machine:** 8 cores, 15 GB of memory and no GPU.
-  - **Speed:** e5-small embeds about 6 chunks a second in a local container, and ember-v1 (three
-    times its size) and the reranker will be slower still. DeepInfra serves e5-large, MPNet and
-    MiniLM, but not e5-small, ember-v1 or the reranker.
-  - **Memory:** local containers run one at a time, and are stopped when done.
-  - **Size of the index:** if the local models can't embed every project in reasonable time, the
-    whole index shrinks for every model alike, since results are only comparable on the same
-    index.
+- **The models (decisions 7 and 8), all on DeepInfra:**
+  - **e5-large,** with and without its prefixes.
+  - **`BAAI/bge-large-en-v1.5`, standing in for ember-v1,** which DeepInfra doesn't serve. It has the
+    same shape (BERT-large, `[CLS]` pooling, 1,024 dimensions, 512 tokens) and nearly the same
+    benchmark score (63.2, against ember-v1's 63.5). It is reported as a stand-in, not as ember-v1.
+  - **MPNet,** kept from the first list.
+  - **MiniLM,** only as a cheap point of reference.
+  - **Not evaluated:** e5-small, which DeepInfra doesn't serve (e5-large shows how the family
+    reads our text). The reranker `bge-reranker-v2-m3` isn't served either. DeepInfra's
+    `Qwen/Qwen3-Reranker-4B` could stand in for it later, to show what a reranking stage adds.
+- **Why not locally:** this machine has 8 cores, 15 GB of memory and no GPU. In local containers,
+  e5-small embedded about 6 chunks a second and ember-v1 under 0.2, so a model would take hours to
+  days. Running ember-v1 alongside other work also coincided with the machine's second crash.
+- **Memory:** heavy local work (tokenizing, indexing) runs one job at a time, under a systemd memory
+  cap (`systemd-run --user --scope -p MemoryMax=3G`), so that a runaway job is killed rather than
+  the machine.
 
 ## What we know already
 
@@ -74,12 +77,12 @@ Measured on 2026-09-30.
 
 | Model | Dimensions | Input limit (tokens) | Prefixes | Available now |
 |---|---|---|---|---|
-| `sentence-transformers/all-MiniLM-L6-v2` | 384 | 256 | none | Local TEI container `spd-embed-all-minilm-l6-v2` (`http://localhost:8081/v1/embeddings`; plain HTTP, not HTTPS); DeepInfra |
+| `sentence-transformers/all-MiniLM-L6-v2` | 384 | 256 | none | DeepInfra (and the same vectors from a local container) |
 | `sentence-transformers/all-mpnet-base-v2` | 768 | 384 | none | DeepInfra |
-| `intfloat/multilingual-e5-small` | 384 | 512 | `query: `, `passage: ` | Not on DeepInfra (404); runs in the same TEI image |
+| `intfloat/multilingual-e5-small` | 384 | 512 | `query: `, `passage: ` | Not on DeepInfra (404); not evaluated (decision 8) |
 | `intfloat/multilingual-e5-large` | 1024 | 512 | `query: `, `passage: ` | DeepInfra |
-| `llmrails/ember-v1` | 1024 | 512 | none | Not on DeepInfra; a local TEI container (English only) |
-| `BAAI/bge-reranker-v2-m3` (reranker) | | 8,192 | | Not on DeepInfra; a local TEI container |
+| `llmrails/ember-v1` | 1024 | 512 | none | Not on DeepInfra; `BAAI/bge-large-en-v1.5` stands in (decision 8) |
+| `BAAI/bge-reranker-v2-m3` (reranker) | | 8,192 | | Not on DeepInfra; not evaluated (decision 8) |
 
 Both kinds of endpoint cut longer inputs silently, at each model's standard limit (DeepInfra
 reports 260, 388 and 516 tokens for an input of 2,000), as the in-house deployment probably
@@ -244,9 +247,9 @@ hash of their text, so unchanged chunks cost nothing.
 
 | Step | Work | Status |
 |---|---|---|
-| RE-01 | Inventory: chunk lengths in each model's tokens, what fills them (links, names, traces), and how the simulated 512-token windows fall; as a script and a research note. | Partly done: the tables above |
-| RE-02 | Endpoints and the embedding cache: local TEI (MiniLM, and a container for e5-small) and DeepInfra (MiniLM, MPNet, e5-large). Check that local and DeepInfra MiniLM agree. Record input limits, prefixes and speed. | Not started |
-| RE-03 | Corpora: ingest every sample except TMT-2024x into one tree, with LLM enrichment, reusing TMT's cached answers. | Not started |
+| RE-01 | Inventory: chunk lengths in each model's tokens, what fills them (links, names, traces), and how the simulated 512-token windows fall; as a script and a research note. | Done: `scripts/chunk_inventory.py`, `docs/research/chunk-inventory-2026-09-30.md` |
+| RE-02 | Endpoints and the embedding cache: the models on DeepInfra, their input limits, prefixes and speed. | Done: `cameo_ingest.evaluation.embed`, `scripts/embedding_check.py`. Local containers dropped (decision 8) |
+| RE-03 | Corpora: ingest every sample except TMT-2024x into one tree, with LLM enrichment, reusing TMT's cached answers. | Done: `out/all`, 19 projects, 28,220 chunks; about 400 new LLM requests |
 | RE-04 | Questions: the structural generator and the LLM question writer. A sample goes to the maintainer to spot-check for sense; the generators are fixed where it finds faults. | Not started |
 | RE-05 | The harness: the simulated pipeline (windows over chunks and over pages), indexes, dense, BM25 and hybrid search, measures with confidence intervals, the report and per-question pages. | Not started |
 | RE-06 | Judging: the judge panel, with cached judgments; Claude's check set; agreement per judge; the panel's labels. | Not started |
