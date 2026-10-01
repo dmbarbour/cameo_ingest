@@ -35,7 +35,8 @@ from .layout import Layout
 from .ledger import LedgerWriter
 from .model import Element, ModelIndex
 from .provenance import TOOL, ContentInfo, Trace, sha256_text
-from .text import front_matter, md_escape, md_inline, one_line, plural, shown_value, slug
+from .richtext import to_text
+from .text import front_matter, md_escape, md_inline, one_line, plural, requirement_title, shown_value, slug
 
 DIAGRAM_INFO = "DiagramInfo"  # MagicDraw_Profile stereotype holding a diagram's author and dates
 SKIP_MEMBER_ROLES = {
@@ -83,6 +84,12 @@ class ProjectWriter:
             self.rels_by_end[r.source].append(r)
             self.rels_by_end[r.target].append(r)
         self.flows = sem.item_flows(ix)
+        self.notes: dict[str, list[Element]] = defaultdict(list)  # comments owned elsewhere, by what they annotate
+        for c in ix.elements.values():
+            if c.kind == "Comment" and c.attrs.get("body"):
+                for target in sem.refs(c, "annotatedElement"):
+                    if target != c.owner:
+                        self.notes[target].append(c)
         self._graphs: dict[str, dg.DiagramGraph] = {}
         self._parts: dict[str, mod.Partition | None] = {}
         self.package_parts: dict[str, list[list[str]]] = {}  # large packages, summarized in parts (element ids)
@@ -217,7 +224,7 @@ class ProjectWriter:
         st = [s for s in ix.stereotype_names(el.id) if s != DIAGRAM_INFO]
         if sem.is_requirement(ix, el):
             fields = sem.requirement_fields(ix, el)
-            kind_word, name = "Requirement", pl.requirement_title(el.name, fields.get("Id"), fields.get("Text"))
+            kind_word, name = "Requirement", requirement_title(el.name, fields.get("Id"), fields.get("Text"))
         else:
             name = el.name or f"(unnamed {el.kind})"
         kind_word = kind_word or (st[0] if st else el.kind)
@@ -280,7 +287,8 @@ class ProjectWriter:
         ix = self.ix
         st = ix.stereotype_names(el.id)
         st_txt = " ".join(f"«{s}»" for s in st)
-        title = f"{st_txt + ' ' if st_txt else ''}{md_inline(el.name) if el.name else '(unnamed)'}"
+        name = el.name or (ix.label(el.id) if sem.is_requirement(ix, el) else "")  # an unnamed requirement: id, text
+        title = f"{st_txt + ' ' if st_txt else ''}{md_inline(name) if name else '(unnamed)'}"
         lines = [f'{"#" * level} {title}', ""]
         lines.append(f"- **Kind:** {el.kind}")
         qn = ix.qualified_name(el.id)
@@ -307,6 +315,9 @@ class ProjectWriter:
         doc = sem.documentation(ix, el)
         if doc:
             lines += ["**Documentation:**", "", md_escape(doc), ""]
+        notes = [to_text(c.attrs["body"]) for c in self.notes.get(el.id, [])]  # a diagram's notes about it
+        if notes:
+            lines += ["**Notes:**", ""] + [f"- {md_escape(one_line(n))}" for n in notes if n] + [""]
         spec = next(iter(sem.children(ix, el, "specification")), None)
         if spec is not None and sem.value_text(ix, spec):
             lang = spec.attrs.get("language", "")

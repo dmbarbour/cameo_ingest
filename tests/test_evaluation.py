@@ -63,6 +63,7 @@ def test_plain_chunk_text():
     """The plain chunk style (plan RE-08): links to labels, no traces or marks, meaning before
     details (apart when long), parts that repeat their heading, readable requirement titles."""
     from cameo_ingest import plain as pl
+    from cameo_ingest.text import requirement_title
 
     md = ("## «Requirement» (unnamed)\n\n- **Kind:** Class\n- **Qualified name:** `M::P::Q::R`\n"
           "- **Requirement ID:** 16890\n\n**Requirement text:**\n\n> [REQ-1-OAD-0468] Tip/tilt error budget\n\n"
@@ -78,9 +79,9 @@ def test_plain_chunk_text():
     meaning, details = pl.section(long_values, "Requirement X in P (project p)")
     assert meaning[0].endswith("Drone satisfies this") and len(details) == 2
     assert details[0].startswith("Requirement X in P (project p), details (part 1 of 2)\n\nTagged values:\n")
-    assert pl.requirement_title(None, "16890", "[REQ-1-OAD-0468] Tip/tilt error budget") == \
+    assert requirement_title(None, "16890", "[REQ-1-OAD-0468] Tip/tilt error budget") == \
         "REQ-1-OAD-0468: Tip/tilt error budget"
-    assert pl.requirement_title("Endurance", "R-1", "The drone shall fly.") == "Endurance (R-1)"
+    assert requirement_title("Endurance", "R-1", "The drone shall fly.") == "Endurance (R-1)"
     assert pl.where("A::B::C::D::E", "x.mdzip") == "in B::C::D (project x.mdzip)"
     long = pl.parts("H", "\n".join(f"line {i} " + "x" * 90 for i in range(40)), budget=1000)
     assert len(long) == 4 and all(p.startswith("H (part ") and len(p) < 1100 for p in long)

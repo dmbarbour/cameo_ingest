@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .text import requirement_title
+
 
 @dataclass
 class Element:
@@ -104,5 +106,10 @@ class ModelIndex:
             return id_.rsplit("#", 1)[-1] if "#" in id_ else id_
         if el.name:
             return el.name
+        for app in self.applications(id_):  # an unnamed requirement (DOORS imports): its id and text
+            rid, text = (app.tags.get("Id") or app.tags.get("id") or [None])[0], (
+                app.tags.get("Text") or app.tags.get("text") or [None])[0]
+            if rid or text:
+                return requirement_title(None, rid, text)
         # Unnamed relationships and literals: describe by type.
         return f"({el.kind})"

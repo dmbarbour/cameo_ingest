@@ -59,22 +59,6 @@ def blocks(md: str) -> tuple[list[str], list[tuple[str, list[str]]]]:
     return header, out
 
 
-_BRACKET_ID = re.compile(r"^\s*\[([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+)\]\s*")  # "[REQ-1-OAD-0468] ..." (DOORS)
-
-
-def requirement_title(name: str | None, rid: str | None, text: str | None) -> str:
-    """A requirement's readable title: its name with its id; or, unnamed (as DOORS imports are),
-    its id and the start of its text."""
-    text = one_line(text or "")
-    m = _BRACKET_ID.match(text)
-    if m:  # the id in the text is the one people use; the Id tag is often a database number
-        rid, text = m.group(1), text[m.end():]
-    if name:
-        return f"{name} ({rid})" if rid else name
-    start = text if len(text) <= 90 else text[:89].rsplit(" ", 1)[0] + "…"
-    return f"{rid}: {start}" if rid and start else rid or start or "(unnamed)"
-
-
 def where(qualified_name: str, project: str) -> str:
     """'in A::B::C (project X)': the last three packages of the owner's path, and the project."""
     owner = qualified_name.rsplit("::", 1)[0] if "::" in qualified_name else ""
