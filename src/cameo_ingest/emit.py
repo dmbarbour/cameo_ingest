@@ -418,9 +418,16 @@ class ProjectWriter:
                 r = self.rel_by_id.get(c.id)
                 if r:
                     desc += f": {md_inline(ix.label(r.source))} → {md_inline(ix.label(r.target))}"
+                flow = sem.flow_label(ix, c)  # a transition's trigger and guard, a flow's guard
+                if flow:
+                    desc += f" — {md_inline(flow)}"
+            if c.kind == "Trigger" and sem.trigger_text(ix, c):
+                desc += f" — {md_inline(sem.trigger_text(ix, c) or '')}"
             spec = sem.value_text(ix, next(iter(sem.children(ix, c, "specification")), None))
             if spec:
                 desc += f" — `{spec}`"
+            elif c.kind in sem.VALUE_KINDS and not c.name and not dv and sem.value_text(ix, c):
+                desc += f" — `{sem.value_text(ix, c)}`"  # a guard, say: the value is the point
             doc = sem.documentation(ix, c)
             if doc:
                 desc += " — " + md_escape(doc).replace("\n", " ")

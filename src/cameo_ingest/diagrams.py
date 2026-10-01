@@ -260,7 +260,9 @@ def build(ix: ModelIndex, layout: Layout, rels: dict[str, Relationship],
                 source, target, at_first = second, first, True
         el = ix.elements.get(v.element or "")
         stereotypes = _stereotypes(ix, el.id) if el else []
-        label = " ".join([f"«{s}»" for s in stereotypes] + ([el.name] if el and el.name else []))
+        flow = sem.flow_label(ix, el) if el is not None and el.kind in ("Transition", "ControlFlow", "ObjectFlow") else ""
+        label = " ".join([f"«{s}»" for s in stereotypes] + ([el.name] if el and el.name else [])
+                         + ([flow] if flow and flow != (el.name if el else None) else []))
         verb = ""
         if directed:
             for k in [*stereotypes, rel.metaclass if rel else "", v.cls]:

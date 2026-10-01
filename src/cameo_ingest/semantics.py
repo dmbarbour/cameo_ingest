@@ -154,6 +154,62 @@ def value_text(ix: ModelIndex, v: Element | None) -> str | None:
     return v.attrs.get("value") or v.attrs.get("body") or v.name
 
 
+VALUE_KINDS = {
+    "LiteralNull", "LiteralInteger", "LiteralReal", "LiteralUnlimitedNatural", "LiteralBoolean", "LiteralString",
+    "OpaqueExpression", "InstanceValue", "ElementValue", "Expression", "TimeExpression",
+}
+
+
+def event_text(ix: ModelIndex, event: Element | None) -> str | None:
+    """What an event is: its name, or else the signal or operation it receives, the change it
+    waits for, or the time. Cameo leaves signal events unnamed."""
+    if event is None:
+        return None
+    if event.name:
+        return event.name
+    for role in ("signal", "operation"):
+        target = refs(event, role)
+        if target:
+            return ix.label(target[0])
+    if event.kind == "ChangeEvent":
+        change = value_text(ix, next(iter(children(ix, event, "changeExpression")), None))
+        return f"when {change}" if change else None
+    if event.kind == "TimeEvent":
+        when = next(iter(children(ix, event, "when")), None)
+        expr = next(iter(children(ix, when, "expr")), None) if when is not None else None
+        text = value_text(ix, expr) or (value_text(ix, when) if when is not None else None)
+        return (("at " if event.attrs.get("isRelative") != "true" else "after ") + text) if text else None
+    return None
+
+
+def trigger_text(ix: ModelIndex, trigger: Element) -> str | None:
+    event = refs(trigger, "event")
+    return event_text(ix, ix.elements.get(event[0])) if event else trigger.name or None
+
+
+def guard_text(ix: ModelIndex, el: Element) -> str | None:
+    """A transition's or flow's guard: a constraint's specification, or a value."""
+    guard = next(iter(children(ix, el, "guard")), None)
+    if guard is not None and guard.kind in ("Constraint", "InteractionConstraint"):
+        guard = next(iter(children(ix, guard, "specification")), None)
+    return value_text(ix, guard) if guard is not None else None
+
+
+def flow_label(ix: ModelIndex, el: Element) -> str:
+    """A transition's or flow's label, as UML writes it: 'trigger [guard] / effect'."""
+    parts = []
+    triggers = [t for t in (trigger_text(ix, c) for c in children(ix, el, "trigger")) if t]
+    if triggers:
+        parts.append(", ".join(triggers))
+    guard = guard_text(ix, el)
+    if guard:
+        parts.append(f"[{guard}]")
+    effect = next(iter(children(ix, el, "effect")), None)
+    if effect is not None and (effect.name or value_text(ix, effect)):
+        parts.append(f"/ {effect.name or value_text(ix, effect)}")
+    return " ".join(parts)
+
+
 def multiplicity(ix: ModelIndex, el: Element) -> str | None:
     lo_el = next(iter(children(ix, el, "lowerValue")), None)
     hi_el = next(iter(children(ix, el, "upperValue")), None)
