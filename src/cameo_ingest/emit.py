@@ -241,7 +241,7 @@ class ProjectWriter:
             name = el.name or f"(unnamed {el.kind})"
         kind_word = kind_word or (st[0] if st else el.kind)
         owner = ix.qualified_name(el.owner) if el.owner else ""  # not the element's: an unnamed one's ends with its owner
-        return f"{kind_word} {one_line(name)} {pl.where(owner, self.content.name)}"
+        return f"{kind_word} {one_line(name)} {pl.where(owner, self.content.label)}"
 
     def section_chunks(self, kind: str, el: Element, md: str, file: str, trace: Trace,
                        heading: str | None = None, extra: dict[str, Any] | None = None) -> None:
@@ -706,7 +706,9 @@ class ProjectWriter:
             lines.append("")
         text = "\n".join(lines)
         tr = self.trace()
-        self.text_chunks(kind="project", title=f"Cameo project {self.content.name}", text=text,
+        # The chunk names the project by its label: file names can be long, and can repeat.
+        chunk_text = text.replace(lines[0], f"# Cameo project: {md_inline(self.content.label)}", 1)
+        self.text_chunks(kind="project", title=f"Cameo project {self.content.name}", text=chunk_text,
                          file="README.md", el=None, trace=tr)
         fm = front_matter({"title": f"Cameo project {self.content.name}", "kind": "project",
                            "provenance": self.file_provenance(trace=tr.to_dict())})

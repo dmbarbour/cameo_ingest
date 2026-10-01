@@ -154,23 +154,20 @@ def _safe(name: str, limit: int = 80) -> str:
 
 def rag_text(chunk: dict[str, Any], project: RagProject | None, form: str = "trace") -> str:
     """A chunk as a file: its text, then where it came from. A RAG tool that reads files may
-    keep only their text, so the source goes in it as well as in the metadata file. One short
-    line, since every token of it is one fewer for the text (the plain style leaves room for it
-    within a 512-token window), in one of two forms (`--rag-source`):
-    - `trace`: the project and the trace locator (content, archive entry, element and line);
-    - `id`: only short logical ids, the project's and the chunk's, which rag/meta/_sources.json
-      and chunks.jsonl resolve to the input files and the locator.
-    Never the input files' paths, which can be longer than a whole window. Then the --meta
-    values of the inputs it was found in."""
+    keep only their text, so the source goes in it as well as in the metadata file. The chunk's
+    heading already names the project, by its label ("TMT [9ffd7a2c]"); the source line adds,
+    in one of two forms (`--rag-source`):
+    - `trace`: the trace locator (content, archive entry, element and line);
+    - `id`: only the short ids of the project and the chunk ("[9ffd7a2c:14d101e0b1d2]"), which
+      rag/meta/_sources.json and chunks.jsonl resolve to the input files and the locator.
+    Never the input files' names or paths, which can be longer than a whole window, and repeat.
+    Then the --meta values of the inputs it was found in."""
     meta = chunk["metadata"]
-    prov = meta.get("provenance") or {}
-    locator = prov.get("locator")
-    if project is None:  # the tree's own chunks (the projects ledger)
-        source = locator
-    elif form == "id":
-        source = f"{project.name} [{project.id}:{chunk['id'][:12]}]"
+    locator = (meta.get("provenance") or {}).get("locator")
+    if project is not None and form == "id":
+        source = f"[{project.id}:{chunk['id'][:12]}]"
     else:
-        source = "; ".join(x for x in (project.name, f"trace {locator}" if locator else None) if x)
+        source = locator
     lines = [chunk["text"].rstrip(), ""] + ([f"Source: {source}"] if source else [])
     if project is not None and project.found_with:
         lines.append("Found with: " + "; ".join(f"{k}={', '.join(v)}" for k, v in sorted(project.found_with.items())))

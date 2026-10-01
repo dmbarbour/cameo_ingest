@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import hashlib
+import re
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -37,6 +38,9 @@ def utc_now() -> str:
     return _dt.datetime.now(_dt.UTC).isoformat(timespec="seconds")
 
 
+LABEL_CHARS = 32  # of a file name, in chunk text
+
+
 @dataclass(frozen=True)
 class ContentInfo:
     """What a project's output is about: the content's hash and the file name under
@@ -49,6 +53,18 @@ class ContentInfo:
     def token(self) -> str:
         """The stable reference to this content's provenance."""
         return f"sha256:{self.sha256}"
+
+    @property
+    def label(self) -> str:
+        """How chunk text names the project: the start of its file name and its short id, as in
+        "TMT [9ffd7a2c]". File names can be very long, and files of the same name can hold
+        different models; the id tells them apart, and rag/meta/_sources.json resolves it to
+        the files' paths."""
+        stem = re.sub(r"\.(mdzipx?|mdxml|xmi|xml|uml|zip|rdzip)$", "", self.name, flags=re.IGNORECASE)
+        if len(stem) > LABEL_CHARS:
+            cut = max(stem.rfind(c, 0, LABEL_CHARS) for c in " _-.")
+            stem = stem[:cut if cut > LABEL_CHARS // 2 else LABEL_CHARS].rstrip(" _-.") + "…"
+        return f"{stem} [{self.sha256[:8]}]"
 
 
 @dataclass(frozen=True)

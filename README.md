@@ -231,16 +231,22 @@ ingested beside the chunks.
   - `found_with` (the `--meta` values).
 - **Sources:** `rag/meta/_sources.json` maps each project's short id (`9ffd7a2c`, as in its
   folder's name) to its name, token, input files and `--meta` values.
-- **Provenance in the text too:** a tool may keep only a file's text, so each file also ends
-  with a source line, in one of two forms, set for the whole tree with `--rag-source` (a run
-  rewrites `rag/` in the new form without ingesting again):
-  - `trace` (the default): `Source:` the project and the trace locator (content, archive entry,
-    element and line);
-  - `id`: `Source:` the project and short ids, `[9ffd7a2c:14d101e0b1d2]`, the project's and
-    the chunk's, which `_sources.json` and `chunks.jsonl` resolve to files and locators.
+- **Provenance in the text too:** a tool may keep only a file's text, so the text names its
+  source, briefly. File names can be very long, and files of the same name can hold different
+  models, so chunk text never uses them:
+  - **The heading** names the project by a label: the start of its file name and its short id,
+    `(project ACME_Proposal_Vol3_Annex_B… [9ffd7a2c])`. Two files both called `model.mdzip`
+    read `model [1a2b3c4d]` and `model [5e6f7a8b]`.
+  - **A source line** ends each file, in one of two forms, set for the whole tree with
+    `--rag-source` (a run rewrites `rag/` in the new form, without ingesting again):
+    - `trace` (the default): `Source:` and the trace locator (content, archive entry, element and
+      line);
+    - `id`: `Source:` and short ids, `[9ffd7a2c:14d101e0b1d2]`, the project's and the chunk's,
+      which `_sources.json` and `chunks.jsonl` resolve to files and locators.
+  - **A last line,** `Found with:`, gives the `--meta` values of the inputs, if any. Adding each
+    group's folder with its own value (`--meta group=...`) puts it in every chunk.
 
-  Input file paths are never in the text: they can be longer than a whole window. A last line,
-  `Found with:`, gives the `--meta` values of the inputs, if any.
+  Input file paths never go in the text: they can be longer than a whole window.
 - **One window per file:** plain chunks are split so that a file, its heading and its source
   line fit in a 512-token embedding window, as estimated for e5 and bge. A tool that cuts files
   into 512-token windows then keeps the source with the text.
@@ -250,7 +256,7 @@ ingested beside the chunks.
 old chunks, as on the pages):
 - **A heading on every chunk:** what the item is, its name, where it is and the project. For
   example, "Block Movement Channel in M-SysML::Facility::Material Handling System (project
-  NIST_M-SysML.mdzip)". An unnamed requirement is titled by its id and the start of its text.
+  NIST_M-SysML [50ba80fd])". An unnamed requirement is titled by its id and the start of its text.
 - **No apparatus:** link labels without their targets, and no trace line (the metadata keeps
   the provenance).
 - **Parts that fit a 512-token window:** text that won't fit is split into parts, each

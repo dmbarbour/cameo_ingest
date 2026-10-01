@@ -137,8 +137,8 @@ class LedgerWriter:
         style_plain = self.w.chunk_style == "plain"  # parts that fit an embedding window (plan RE-08)
         # A plain part fits an embedding window with its header (estimated tokens); a Markdown one
         # holds MAX_CHARS characters.
-        header_est = pl.tokens(f"{heading} ledger (part 99 of 99) — Cameo project {self.w.content.name}, {where}. "
-                               "Content `sha256:0123456789abcdef`, 9999 entries in this group.")
+        header_est = pl.tokens(f"{heading} ledger (part 99 of 99) — Cameo project {self.w.content.label}, {where}. "
+                               "9999 entries in this group.")
         limit = pl.BUDGET - header_est - 4 if style_plain else MAX_CHARS
         for eid, r in items:
             plain = pl.plain(r) if style_plain else md_plain(_MD_LINK.sub(r"\1", r))
@@ -152,8 +152,8 @@ class LedgerWriter:
         content = self.w.content
         for i, part in enumerate(parts, 1):
             of = f" (part {i} of {len(parts)})" if len(parts) > 1 else ""
-            header = (f"{heading} ledger{of} — Cameo project {content.name}, {where}. "
-                      f"Content `sha256:{content.sha256[:16]}`, {len(rows)} entries in this group.")
+            header = (f"{heading} ledger{of} — Cameo project {content.label}, {where}. "
+                      f"{len(rows)} entries in this group.")  # the label: file names can be long, and repeat
             text = header + "\n\n" + "\n".join(r for _, r in part)
             tr = self.w.trace(pkg) if pkg is not None else self.w.trace()
             self.w.chunk(kind=f"ledger:{kind}", title=f"{heading} ledger: {where}{of}", text=text, file=FILE,

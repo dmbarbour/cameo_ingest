@@ -422,8 +422,9 @@ def test_rag_files(tmp_path):
     drone = next(f for f in files if f.read_text().startswith("Block Drone in "))
     meta = json.loads((rag / "meta" / folder / f"{drone.stem}.json").read_text())
     assert meta["kind"] == "element" and meta["title"].startswith("Block Drone in ")
+    assert f"(project drone [{meta['source_id']}])" in meta["title"]  # a label, not the file name
     assert meta["page"].startswith("by-sha256/") and meta["found_with"] == {"program": ["X"]}
-    assert "\n\nSource: drone.mdzip; trace sha256:" in drone.read_text()
+    assert f"\n\nSource: {meta['trace']}\n" in drone.read_text()
     assert drone.read_text().endswith("Found with: program=X\n")
     # Input files: in the metadata, and in _sources.json under the project's short id; never in the text.
     assert meta["source_file"] == str(src.resolve()) and meta["source_files"] == [str(src.resolve())]
@@ -436,8 +437,8 @@ def test_rag_files(tmp_path):
     # --rag-source is set for the whole tree: a run rewrites every file in the new form.
     assert main(["run", "-o", str(out), "--rag-source", "id"]) == 0
     texts = [f.read_text() for f in (rag / "text" / folder).glob("*.txt")]
-    assert any(f"Source: drone.mdzip [{meta['source_id']}:{meta['chunk_id'][:12]}]" in t for t in texts)
-    assert not any("trace sha256:" in t for t in texts)
+    assert any(f"Source: [{meta['source_id']}:{meta['chunk_id'][:12]}]" in t for t in texts)
+    assert not any("Source: sha256:" in t or "drone.mdzip" in t for t in texts)
     assert main(["run", "-o", str(out), "--no-rag-files"]) == 0
     assert not rag.exists()
 
@@ -1152,7 +1153,7 @@ def test_ledger(tmp_path):
             "ledger:elements"} <= kinds
     req = next(c for c in chunks if c["metadata"]["kind"] == "ledger:requirements")
     # Self-describing header, no link noise, and ids row-for-row for the application.
-    assert "Model::Requirements" in req["text"] and "drone.mdzip" in req["text"]
+    assert "Model::Requirements" in req["text"] and "Cameo project drone [" in req["text"]  # its label
     assert "](" not in req["text"]
     assert req["metadata"]["element_ids"] == ["r1"]
     assert req["metadata"]["provenance"]["xmi_id"] == "p2"
