@@ -57,3 +57,27 @@ def test_search_and_measures():
     assert measures([3], {3: 2})["ndcg@10"] == 1.0
     mean, lo, hi = mean_ci([0.0, 1.0, 1.0, 1.0])
     assert mean == 0.75 and lo <= mean <= hi
+
+
+def test_plain_chunk_text():
+    """The plain chunk style (plan RE-08): links to labels, no traces or marks, meaning apart
+    from details, parts that repeat their heading, readable requirement titles."""
+    from cameo_ingest import plain as pl
+
+    md = ("## «Requirement» (unnamed)\n\n- **Kind:** Class\n- **Qualified name:** `M::P::Q::R`\n"
+          "- **Requirement ID:** 16890\n\n**Requirement text:**\n\n> [REQ-1-OAD-0468] Tip/tilt error budget\n\n"
+          "**Tagged values:**\n- «TMT_Requirement» Rationale = \\[CR163\\] latest results\n\n"
+          "**Relationships:**\n- Satisfy: [Drone](../p.md#drone-b1) satisfies this\n\n"
+          "<sub>trace: `sha256:x!e#r@L1`</sub>\n")
+    meaning, details = pl.section(md, "Requirement X in P (project p)")
+    assert meaning == [("Requirement X in P (project p)\n\nRequirement ID: 16890\n"
+                       "Requirement text: [REQ-1-OAD-0468] Tip/tilt error budget\n"
+                       "Relationships:\n- Satisfy: Drone satisfies this")]
+    assert details == [("Requirement X in P (project p), details\n\nTagged values:\n"
+                       "- «TMT_Requirement» Rationale = [CR163] latest results")]
+    assert pl.requirement_title(None, "16890", "[REQ-1-OAD-0468] Tip/tilt error budget") == \
+        "REQ-1-OAD-0468: Tip/tilt error budget"
+    assert pl.requirement_title("Endurance", "R-1", "The drone shall fly.") == "Endurance (R-1)"
+    assert pl.where("A::B::C::D::E", "x.mdzip") == "in B::C::D (project x.mdzip)"
+    long = pl.parts("H", "\n".join(f"line {i} " + "x" * 90 for i in range(40)), budget=1000)
+    assert len(long) == 4 and all(p.startswith("H (part ") and len(p) < 1100 for p in long)

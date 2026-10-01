@@ -28,13 +28,14 @@ from typing import Any
 
 from . import diagrams as dg
 from . import modules as mod
+from . import plain as pl
 from . import semantics as sem
 from .archive import Project
 from .layout import Layout
 from .ledger import LedgerWriter
 from .model import Element, ModelIndex
 from .provenance import TOOL, ContentInfo, Trace, sha256_text
-from .text import front_matter, md_escape, md_inline, plural, shown_value, slug
+from .text import front_matter, md_escape, md_inline, one_line, plural, shown_value, slug
 
 DIAGRAM_INFO = "DiagramInfo"  # MagicDraw_Profile stereotype holding a diagram's author and dates
 SKIP_MEMBER_ROLES = {
@@ -64,8 +65,10 @@ class Outputs:
 class ProjectWriter:
     def __init__(self, content: ContentInfo, project: Project, ix: ModelIndex, root: Path,
                  annotations: dict[str, list[Annotation]] | None = None,
-                 layouts: dict[str, Layout] | None = None, modules: tuple[int, int, int] = mod.DEFAULTS):
+                 layouts: dict[str, Layout] | None = None, modules: tuple[int, int, int] = mod.DEFAULTS,
+                 chunk_style: str = "markdown"):
         self.layouts = layouts or {}
+        self.chunk_style = chunk_style  # "markdown" (as on the pages) or "plain" (plan RE-08, plain.py)
         self.modules = modules  # large diagrams: split above N shapes, into MIN to MAX
         self.content = content
         self.project = project
@@ -207,6 +210,49 @@ class ProjectWriter:
                 **(extra or {}),
             },
         })
+
+    def heading(self, el: Element, kind_word: str | None = None) -> str:
+        """The plain style's heading: what the element is, its readable name, where it is."""
+        ix = self.ix
+        st = [s for s in ix.stereotype_names(el.id) if s != DIAGRAM_INFO]
+        if sem.is_requirement(ix, el):
+            fields = sem.requirement_fields(ix, el)
+            kind_word, name = "Requirement", pl.requirement_title(el.name, fields.get("Id"), fields.get("Text"))
+        else:
+            name = el.name or f"(unnamed {el.kind})"
+        kind_word = kind_word or (st[0] if st else el.kind)
+        return f"{kind_word} {one_line(name)} {pl.where(ix.qualified_name(el.id), self.content.name)}"
+
+    def section_chunks(self, kind: str, el: Element, md: str, file: str, trace: Trace,
+                       heading: str | None = None, extra: dict[str, Any] | None = None) -> None:
+        """An element's (or package's, or diagram's) chunks: its Markdown as one chunk, or in the
+        plain style, its meaning and its details as plain parts under its heading."""
+        if self.chunk_style != "plain":
+            self.chunk(kind=kind, title=f"{el.kind} {self.ix.qualified_name(el.id)}" if kind in ("element", "requirement")
+                       else (extra or {}).pop("title", f"{kind.capitalize()} {self.ix.qualified_name(el.id)}"),
+                       text=md, file=file, el=el, trace=trace, extra=extra)
+            return
+        title = (extra or {}).pop("title", None) or f"{el.kind} {self.ix.qualified_name(el.id)}"
+        meaning, details = pl.section(md, heading or self.heading(el))
+        for suffix, texts in (("", meaning), (":details", details)):
+            for k, text in enumerate(texts, 1):
+                more = {"part": k, "parts": len(texts)} if len(texts) > 1 else {}
+                self.chunk(kind=kind + suffix, title=title + (", details" if suffix else ""), text=text, file=file,
+                           el=el, trace=trace, extra={**(extra or {}), **more}, salt=f"{suffix}#{k}")
+
+    def text_chunks(self, *, kind: str, title: str, text: str, file: str, el: Element | None, trace: Trace,
+                    extra: dict[str, Any] | None = None, salt: str = "") -> None:
+        """A chunk of running text (a ledger, the project overview): as it is, or in the plain
+        style, plain and in parts under its first line."""
+        if self.chunk_style != "plain":
+            self.chunk(kind=kind, title=title, text=text, file=file, el=el, trace=trace, extra=extra, salt=salt)
+            return
+        first, _, rest = pl.plain(text).partition("\n")
+        texts = pl.parts(first, rest.strip())
+        for k, part in enumerate(texts, 1):
+            more = {"part": k, "parts": len(texts)} if len(texts) > 1 else {}
+            self.chunk(kind=kind, title=title, text=part, file=file, el=el, trace=trace,
+                       extra={**(extra or {}), **more}, salt=f"{salt}#{k}")
 
     def write_steps(self) -> int:
         """How many times `write_all` calls `tick`."""
@@ -399,16 +445,15 @@ class ProjectWriter:
             body += [f"- {self.link(d.id, rel)}" for d in dias]
             body.append("")
         pkg_trace = self.trace(pkg)
-        self.chunk(kind="package", title=f"Package {qn}", text=self.section(pkg, rel, 1, generated=False),
-                   file=rel, el=pkg, trace=pkg_trace)
+        self.section_chunks("package", pkg, self.section(pkg, rel, 1, generated=False), rel, pkg_trace,
+                            heading=self.heading(pkg, "Package"), extra={"title": f"Package {qn}"})
         self.generated_chunks(pkg, rel)
         # Every non-package section element whose nearest package is this one.
         for el in self._section_elements_in(pkg):
             body += [f'<a id="{self.anchor(el)}"></a>\n', self.section(el, rel, 2)]
             anchor = f"{rel}#{self.anchor(el)}"
-            self.chunk(kind="requirement" if sem.is_requirement(ix, el) else "element",
-                       title=f"{el.kind} {ix.qualified_name(el.id)}", text=self.section(el, rel, 2, generated=False),
-                       file=anchor, el=el, trace=self.trace(el))
+            self.section_chunks("requirement" if sem.is_requirement(ix, el) else "element", el,
+                                self.section(el, rel, 2, generated=False), anchor, self.trace(el))
             self.generated_chunks(el, anchor)
         fm = front_matter({
             "title": f"Package {qn}",
@@ -516,8 +561,9 @@ class ProjectWriter:
             lines.append("")
         tr = self.trace(el)
         trace_line = [f"<sub>trace: `{tr.locator()}`</sub>", ""]
-        self.chunk(kind="diagram", title=f"Diagram {qn}", text="\n".join(lines + trace_line), file=rel, el=el,
-                   trace=tr, extra={"diagram_type": d.diagram_type})
+        self.section_chunks("diagram", el, "\n".join(lines + trace_line), rel, tr,
+                            heading=self.heading(el, f"Diagram ({d.diagram_type or 'unknown type'})"),
+                            extra={"title": f"Diagram {qn}", "diagram_type": d.diagram_type})
         self.generated_chunks(el, rel)
         for a in self.ann.get(dia_id, []):
             if a.module is None:
@@ -629,8 +675,8 @@ class ProjectWriter:
             lines.append("")
         text = "\n".join(lines)
         tr = self.trace()
-        self.chunk(kind="project", title=f"Cameo project {self.content.name}", text=text,
-                   file="README.md", el=None, trace=tr)
+        self.text_chunks(kind="project", title=f"Cameo project {self.content.name}", text=text,
+                         file="README.md", el=None, trace=tr)
         fm = front_matter({"title": f"Cameo project {self.content.name}", "kind": "project",
                            "provenance": self.file_provenance(trace=tr.to_dict())})
         self.write_text("README.md", fm + text)

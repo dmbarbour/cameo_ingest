@@ -15,6 +15,7 @@ import re
 from collections import defaultdict
 from typing import TYPE_CHECKING
 
+from . import plain as pl
 from . import semantics as sem
 from .model import Element
 from .text import front_matter, md_escape, md_inline, md_plain
@@ -133,9 +134,11 @@ class LedgerWriter:
         self.md += [f"### {heading} — {where}", ""] + [r for _, r in items] + [""]
         parts: list[list[tuple[str, str]]] = [[]]
         size = 0
+        style_plain = self.w.chunk_style == "plain"  # parts that fit an embedding window (plan RE-08)
+        limit = pl.BUDGET if style_plain else MAX_CHARS
         for eid, r in items:
-            plain = md_plain(_MD_LINK.sub(r"\1", r))
-            if parts[-1] and (len(parts[-1]) >= MAX_ROWS or size + len(plain) > MAX_CHARS):
+            plain = pl.plain(r) if style_plain else md_plain(_MD_LINK.sub(r"\1", r))
+            if parts[-1] and (len(parts[-1]) >= MAX_ROWS or size + len(plain) > limit):
                 parts.append([])
                 size = 0
             parts[-1].append((eid, plain))

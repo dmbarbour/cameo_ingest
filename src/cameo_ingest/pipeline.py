@@ -316,12 +316,12 @@ SKETCH = "re-drawn from layout data, not a Cameo rendering"
 
 def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM, render: bool = True,
                    progress: Progress = QUIET, concurrency: int = 1, image_pixels: int = dg.IMAGE_PIXELS,
-                   modules: tuple[int, int, int] = mod.DEFAULTS) -> ProjectResult:
+                   modules: tuple[int, int, int] = mod.DEFAULTS, chunk_style: str = "markdown") -> ProjectResult:
     ix = parse_project(project, progress)
     annotations: dict[str, list[Annotation]] = {}
     base = Trace(content_sha256=content.sha256)
     layouts = load_layouts(project, ix, progress)
-    writer = ProjectWriter(content, project, ix, root, annotations, layouts, modules)
+    writer = ProjectWriter(content, project, ix, root, annotations, layouts, modules, chunk_style)
     requests: list[_Request] = []
     large: list[tuple[str, mod.Partition, Trace, str]] = []  # described as a whole once their modules are
     truncated = 0  # LLM inputs cut short to fit the prompt

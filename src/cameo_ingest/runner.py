@@ -191,7 +191,8 @@ class Runner:
             result = ingest_project(content, project, work, self.llm, render=self.options["render"],
                                     progress=self.progress, concurrency=self.concurrency,
                                     image_pixels=self.options["image_pixels"],
-                                    modules=tuple(self.options.get("modules", DEFAULTS)))
+                                    modules=tuple(self.options.get("modules", DEFAULTS)),
+                                    chunk_style=self.options.get("chunk_style", "markdown"))
         except Exception as e:  # one bad project must not stop the others (BASE-004)
             log.error("project %s (sha256:%s) failed: %s: %s", content.name, sha[:16], type(e).__name__, e)
             log.debug("traceback for %s", content.name, exc_info=True)
