@@ -188,21 +188,48 @@ def build_parser() -> argparse.ArgumentParser:
     return ap
 
 
-def _candidates(path: Path, out: Path) -> list[Path]:
-    """Files to add for PATH: the file itself, or the ZIP archives and XMI documents
-    under a directory (the output tree excluded)."""
+# Files of these types are never Cameo projects, and are skipped without being opened. Many are
+# ZIP archives (Office and OpenDocument files, Java archives), which would otherwise be taken
+# for candidates and read in full, only to fail.
+NOT_MODELS = frozenset([".doc", ".docx", ".docm", ".dotx", ".xls", ".xlsx", ".xlsm", ".xltx", ".ppt", ".pptx", ".pptm", ".potx", ".vsd", ".vsdx", ".odt", ".ods", ".odp", ".odg", ".pdf", ".epub", ".rtf", ".txt", ".md", ".csv", ".tsv", ".json", ".jsonl", ".html", ".htm", ".msg", ".eml", ".log", ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff", ".svg", ".ico", ".webp", ".mp3", ".wav", ".mp4", ".mov", ".avi", ".mkv", ".jar", ".war", ".ear", ".apk", ".whl", ".nupkg", ".msix", ".exe", ".dll", ".so", ".msi", ".iso", ".class", ".pyc"])
+
+
+def _candidates(path: Path, out: Path, progress: Progress) -> list[Path]:
+    """Files to add for PATH: the file itself, or the ZIP archives and XMI documents under a
+    directory (the output tree, hidden directories and NOT_MODELS types excluded). The walk
+    reports its progress: a directory on a network share can take minutes."""
     if path.is_file():
         return [path.resolve()]
-    found = []
+    found: list[Path] = []
     out = out.resolve()
-    for f in sorted(path.rglob("*")):
-        if not f.is_file() or f.resolve().is_relative_to(out):
-            continue
-        with f.open("rb") as fh:
-            head = fh.read(4096)
-        if head.startswith(ZIP_MAGIC) or sniff_xmi(head):
-            found.append(f.resolve())
-    return found
+    skipped = unreadable = 0
+    log.info("looking for models under %s", path)
+    with progress.phase(f"looking for models under {path.name or path}", unit="file") as ph:
+        for root, dirs, files in os.walk(path):
+            dirs[:] = sorted(d for d in dirs if not d.startswith(".")
+                             and not Path(root, d).resolve().is_relative_to(out))
+            for name in sorted(files):
+                ph.advance()
+                f = Path(root, name)
+                if f.suffix.lower() in NOT_MODELS:
+                    skipped += 1
+                    continue
+                try:
+                    with f.open("rb") as fh:
+                        head = fh.read(4096)
+                except OSError as e:
+                    unreadable += 1
+                    log.warning("cannot read %s: %s", f, e)
+                    continue
+                if head.startswith(ZIP_MAGIC) or sniff_xmi(head):
+                    log.debug("candidate: %s (%s)", f, "ZIP" if head.startswith(ZIP_MAGIC) else "XMI")
+                    found.append(f.resolve())
+                    if len(found) % 50 == 0:
+                        log.info("found %d candidate(s) in %d file(s) so far", len(found), ph.done)
+            log.debug("searched %s", root)
+    log.info("found %d candidate(s) under %s; %d file(s) skipped by type, %d unreadable",
+             len(found), path, skipped, unreadable)
+    return sorted(found)
 
 
 def add_inputs(state: State, args: argparse.Namespace) -> tuple[int, int]:
@@ -212,8 +239,10 @@ def add_inputs(state: State, args: argparse.Namespace) -> tuple[int, int]:
     if missing:
         raise SystemExit(f"error: no such file or directory: {', '.join(map(str, missing))}")
     new = old = 0
+    beat = getattr(args, "heartbeat", 10.0)  # the walk reports at least every 10 s, unless told not to
+    progress = Progress(heartbeat=min(beat, 10.0) if beat else 0)
     for path in args.paths:
-        for f in _candidates(path, args.out):
+        for f in _candidates(path, args.out, progress):
             if state.add_input(f, meta):
                 new += 1
             else:

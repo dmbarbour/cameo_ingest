@@ -373,6 +373,29 @@ def test_contents_and_sightings(tmp_path):
     assert "`copy.mdzip`" in index and "(program=X)" in index
 
 
+def test_adding_a_directory_reports_its_walk(tmp_path, caplog):
+    """Adding a directory walks it with progress lines and a debug line per candidate; Office
+    files (ZIP archives too), other known non-model types and hidden directories are skipped
+    without being read."""
+    import zipfile
+
+    tree = tmp_path / "share"
+    (tree / "deep/er").mkdir(parents=True)
+    (tree / ".git").mkdir()
+    (tree / "deep/er/drone.mdzip").write_bytes(make_mdzip())
+    (tree / ".git/drone.mdzip").write_bytes(make_mdzip())
+    with zipfile.ZipFile(tree / "report.docx", "w") as z:
+        z.writestr("word/document.xml", "<w:document/>")
+    (tree / "notes.txt").write_text("not a model")
+    out = tmp_path / "out"
+    with caplog.at_level(logging.DEBUG, logger="cameo_ingest"):
+        assert main(["add", "-o", str(out), str(tree), "-vv"]) == 0
+    assert "looking for models under" in caplog.text
+    assert "candidate: " in caplog.text and "drone.mdzip (ZIP)" in caplog.text
+    assert "found 1 candidate(s)" in caplog.text and "2 file(s) skipped by type" in caplog.text
+    assert "report.docx" not in caplog.text
+
+
 def test_tree_rules_and_missing_inputs(tmp_path, capsys):
     foreign = tmp_path / "foreign"
     foreign.mkdir()
