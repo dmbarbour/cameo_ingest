@@ -135,14 +135,19 @@ class LedgerWriter:
         parts: list[list[tuple[str, str]]] = [[]]
         size = 0
         style_plain = self.w.chunk_style == "plain"  # parts that fit an embedding window (plan RE-08)
-        limit = pl.BUDGET if style_plain else MAX_CHARS
+        # A plain part fits an embedding window with its header (estimated tokens); a Markdown one
+        # holds MAX_CHARS characters.
+        header_est = pl.tokens(f"{heading} ledger (part 99 of 99) — Cameo project {self.w.content.name}, {where}. "
+                               "Content `sha256:0123456789abcdef`, 9999 entries in this group.")
+        limit = pl.BUDGET - header_est - 4 if style_plain else MAX_CHARS
         for eid, r in items:
             plain = pl.plain(r) if style_plain else md_plain(_MD_LINK.sub(r"\1", r))
-            if parts[-1] and (len(parts[-1]) >= MAX_ROWS or size + len(plain) > limit):
+            n = pl.tokens(plain) + 1 if style_plain else len(plain)
+            if parts[-1] and (len(parts[-1]) >= MAX_ROWS or size + n > limit):
                 parts.append([])
                 size = 0
             parts[-1].append((eid, plain))
-            size += len(plain)
+            size += n
         rows = items
         content = self.w.content
         for i, part in enumerate(parts, 1):

@@ -75,16 +75,20 @@ def test_plain_chunk_text():
                        "Requirement text: [REQ-1-OAD-0468] Tip/tilt error budget\n"
                        "Relationships:\n- Satisfy: Drone satisfies this\n"
                        "Tagged values:\n- «TMT_Requirement» Rationale = [CR163] latest results")] and not details
-    long_values = md.replace("latest results", "latest results " + "y" * 900 + "\n- Note = " + "z" * 900)
+    long_values = md.replace("latest results", "latest results " + "word " * 250 + "\n- Note = " + "word " * 250)
     meaning, details = pl.section(long_values, "Requirement X in P (project p)")
     assert meaning[0].endswith("Drone satisfies this") and len(details) == 2
     assert details[0].startswith("Requirement X in P (project p), details (part 1 of 2)\n\nTagged values:\n")
+    # Parts are budgeted in estimated tokens: ids make more tokens per character than prose.
+    assert pl.tokens("The pump lifts water.") < pl.tokens("_2021x_2_1b400495_1742239490487") < 40
     assert requirement_title(None, "16890", "[REQ-1-OAD-0468] Tip/tilt error budget") == \
         "REQ-1-OAD-0468: Tip/tilt error budget"
     assert requirement_title("Endurance", "R-1", "The drone shall fly.") == "Endurance (R-1)"
-    assert pl.where("A::B::C::D::E", "x.mdzip") == "in B::C::D (project x.mdzip)"
-    long = pl.parts("H", "\n".join(f"line {i} " + "x" * 90 for i in range(40)), budget=1000)
-    assert len(long) == 4 and all(p.startswith("H (part ") and len(p) < 1100 for p in long)
+    assert pl.where("A::B::C::D", "x.mdzip") == "in B::C::D (project x.mdzip)"
+    long = pl.parts("H", "\n".join(f"line {i} " + "word " * 20 for i in range(40)), budget=300)
+    assert len(long) > 2 and all(p.startswith("H (part ") and pl.tokens(p) <= 300 for p in long)
+    cut = pl.parts("H", "x" * 3000, budget=300)  # a line too long for any part is cut into parts that fit
+    assert len(cut) > 1 and all(pl.tokens(p) <= 300 for p in cut) and sum(p.count("x") for p in cut) == 3000
 
 
 def test_panel_consensus():

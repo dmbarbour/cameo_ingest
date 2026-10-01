@@ -142,6 +142,9 @@ out/
   provenance.jsonl       one record per token: every input path, archive chain and --meta
                          value it was found with
   chunks.jsonl           all projects' chunks, with --meta values joined in
+  rag/                   the same chunks as files, for RAG tools that read files but not JSONL:
+                         a folder per project, a .txt file per chunk (see "Using the output
+                         for RAG"); --no-rag-files leaves it out
   run.json               the latest run: times, command, options, LLM calls and outcomes
   .cache/llm.sqlite      LLM answers
   by-sha256/<sha256>/    one project, named by the sha256 of its own bytes:
@@ -207,6 +210,21 @@ emitted as separate `generated:*` chunks, so chunks of extracted text never mix 
 Load the root `chunks.jsonl` into your vector store: embed `text`, and keep `metadata` as
 filterable fields.
 
+**If your RAG tool reads files rather than JSONL,** point it at `rag/` alone, not at the whole
+tree: the tree also holds Markdown pages, JSON indexes and CSV tables, which would be
+ingested beside the chunks.
+- **Folders:** one per project (`TMT-9ffd7a2c`, its name and the start of its token).
+- **Files:** one `.txt` file per chunk, named by its heading (`Requirement REQ-1-OAD-0468
+  Tip-tilt error budget 3f9a2c.txt`), with the projects ledger at the top. With
+  `--chunk-style markdown` the files are `.md`.
+- **Provenance:** such tools keep only a file's text, so each file ends with its provenance:
+  - `Source:` the project and the trace locator (content, archive entry, element and line);
+  - `Found with:` the `--meta` values of the inputs it came from, if any.
+- **One window per file:** plain chunks are split so that a file, its heading and its source
+  line fit in a 512-token embedding window, as estimated for e5 and bge. A tool that cuts files
+  into 512-token windows then keeps the source with the text.
+- **Updates:** a project's files are written again only when its chunks change.
+
 **Chunk text is plain, for embedding** (from version 0.5.0; `--chunk-style markdown` gives the
 old chunks, as on the pages):
 - **A heading on every chunk:** what the item is, its name, where it is and the project. For
@@ -214,9 +232,10 @@ old chunks, as on the pages):
   NIST_M-SysML.mdzip)". An unnamed requirement is titled by its id and the start of its text.
 - **No apparatus:** link labels without their targets, and no trace line (the metadata keeps
   the provenance).
-- **Parts that fit a 512-token window:** text longer than 1,500 characters is split into
-  parts, each repeating the heading, so that a window cut from any part still says whose text
-  it is.
+- **Parts that fit a 512-token window:** text that won't fit is split into parts, each
+  repeating the heading, so that every part says whose text it is. The budget is in tokens, as
+  estimated for e5 and bge (text full of ids makes two or three times more tokens per
+  character than prose), and leaves room for the source line that files in `rag/` end with.
 
 On the samples, plain chunks found answers as well as the Markdown or better, and better for
 requirement ids, relationships and the smaller embedding models, at half the tokens to embed
@@ -342,9 +361,9 @@ runner: inputs ─► archive.discover ─► state (contents, sightings) ─►
   rasterizer such as `cairosvg` or `resvg`.
 - **Attachments** (`BINARY-*` PNG, JPEG or PDF) are listed at project level but not yet
   linked to their owning elements. PDF and Office attachments aren't converted yet.
-- **Chunk sizes.** Chunk text is split into parts of at most 1,500 characters (about 400
-  tokens) under its heading, for 512-token embedding windows; a model with a smaller limit
-  (MiniLM's 256) sees only the start of each. The projects ledger isn't split. Tagged
+- **Chunk sizes.** Plain chunks are split to fit 512-token embedding windows, by an estimate
+  of e5's tokens: 3 of 43,552 files in `rag/` for the samples ran over. A model with a smaller
+  limit (MiniLM's 256) sees only the start of each. Tagged
   values are cut at 4,000 characters on pages, and hex-encoded images are described rather
   than shown.
 - **Sequence diagrams and swimlanes** are split into modules like any other diagram. Bands

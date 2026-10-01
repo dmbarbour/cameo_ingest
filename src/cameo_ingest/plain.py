@@ -11,21 +11,57 @@ production stack cuts long chunks into windows that lose their heading. In the p
   relationships, diagrams) first, its structural detail (members, tagged values) after it, in
   the same chunk when the whole fits in one part, else in a details chunk of its own. (A short
   details chunk is mostly heading, so it outranks the element's meaning for its name: RE-08.)
-- **parts:** text longer than `BUDGET` characters is split at line boundaries, each part
-  repeating the heading, so that every window says whose text it is.
+- **parts:** text that won't fit in one embedding window is split at line boundaries, each part
+  repeating the heading, so that every window says whose text it is. The budget is in tokens,
+  estimated (`tokens`), since text dense with ids makes two or three times more tokens per
+  character than prose; it leaves room for the source line that `rag/` files end with.
 """
 
 from __future__ import annotations
 
+import math
 import re
 
 from .text import md_plain, one_line
 
-BUDGET = 1500  # characters per part: about 400 tokens of plain text, within a 512-token window
+WINDOW = 512  # the embedding window parts are made for (e5, bge, ember-v1)
+SOURCE = 100  # tokens left free for a rag/ file's source line (a trace locator: 70 to 80 tokens)
+BUDGET = WINDOW - SOURCE - 12  # tokens of heading and text per part, as `tokens` estimates them
+_TOKEN = re.compile(r"[A-Za-z]+|[0-9]+|[^\sA-Za-z0-9]")
 _LINK = re.compile(r"\[((?:[^\[\]\\]|\\.)*)\]\([^)]*\)")
 _TRACE = re.compile(r"[ \t]*<sub>trace: `[^`]*`</sub>[ \t]*")
 _BLOCK = re.compile(r"^\*\*([^*]+?)(?: \(([^)]*)\))?:\*\*\s*(.*)$")  # "**Documentation:**", "**Shapes (12), ...:**"
 DETAIL_BLOCKS = ("Members", "Tagged values")
+
+
+def tokens(text: str) -> int:
+    """About how many tokens a 512-token embedding model makes of `text`. Fitted to the
+    tokenizer of multilingual-e5-large on the samples' chunks (words, long words, digits,
+    punctuation), then raised by a fifth, so that it is too low for fewer than 4% of chunks."""
+    n = 0.0
+    for w in _TOKEN.findall(text):
+        if w[0].isalpha():
+            n += 1.07 + 0.415 * max(0, len(w) - 6)
+        elif w[0].isdigit():
+            n += 0.42 + 0.375 * len(w)
+        else:
+            n += 0.95
+    return math.ceil(1.2 * n)
+
+
+def _cut(line: str, room: int) -> tuple[str, str]:
+    """A line too long for a part: as much of it as fits in `room` tokens (at a space where
+    there is one in its second half), and the rest."""
+    lo, hi = 1, len(line)
+    while lo < hi:  # the longest prefix that fits
+        mid = (lo + hi + 1) // 2
+        if tokens(line[:mid]) <= room:
+            lo = mid
+        else:
+            hi = mid - 1
+    space = line.rfind(" ", 0, lo + 1)
+    end = space if space > lo // 2 else lo
+    return line[:end].rstrip(), line[end:].lstrip()
 
 
 def plain(md: str) -> str:
@@ -59,31 +95,33 @@ def blocks(md: str) -> tuple[list[str], list[tuple[str, list[str]]]]:
     return header, out
 
 
-def where(qualified_name: str, project: str) -> str:
-    """'in A::B::C (project X)': the last three packages of the owner's path, and the project."""
-    owner = qualified_name.rsplit("::", 1)[0] if "::" in qualified_name else ""
-    path = "::".join(owner.split("::")[-3:])
+def where(owner: str, project: str) -> str:
+    """'in A::B::C (project X)': the last three packages of the owner's qualified name, and the
+    project."""
+    path = "::".join(owner.split("::")[-3:]) if owner else ""
     return (f"in {path} " if path else "") + f"(project {project})"
 
 
 def parts(heading: str, text: str, budget: int = BUDGET) -> list[str]:
     """`text` under `heading`, split at line boundaries into parts of at most about `budget`
-    characters, each repeating the heading."""
-    body = [line for line in text.splitlines()]
+    tokens with the heading (and its part number), each repeating the heading."""
+    room = max(budget - tokens(heading) - 8, 40)
     out: list[list[str]] = [[]]
     size = 0
-    for line in body:
-        while len(line) > budget:  # a line too long for any part: cut it
+    for line in text.splitlines():
+        while tokens(line) > room:  # a line too long for any part: cut it
+            head, line = _cut(line, room)
             if out[-1]:
                 out.append([])
-            out[-1].append(line[:budget])
+            out[-1].append(head)
             out.append([])
-            line, size = line[budget:], 0
-        if size + len(line) > budget and out[-1]:
+            size = 0
+        n = tokens(line) + 1
+        if size + n > room and out[-1]:
             out.append([])
             size = 0
         out[-1].append(line)
-        size += len(line) + 1
+        size += n
     chunks = ["\n".join(p).strip() for p in out]
     chunks = [c for c in chunks if c]
     if len(chunks) <= 1:
@@ -106,7 +144,7 @@ def section(md: str, heading: str) -> tuple[list[str], list[str]]:
         inline = "\n" not in text and len(text) < 200 and not text.startswith("- ")  # lists keep their lines
         target.append(f"{name}: {one_line(text)}" if inline else f"{name}:\n{text}")
     together = "\n".join(meaning + detail)
-    if len(together) <= BUDGET:
+    if tokens(heading) + tokens(together) + 8 <= BUDGET:
         return parts(heading, together), []
     # Always a meaning chunk: the heading alone (name, kind, place, project) is what a lookup finds.
     return parts(heading, "\n".join(meaning)), parts(f"{heading}, details", "\n".join(detail)) if detail else []

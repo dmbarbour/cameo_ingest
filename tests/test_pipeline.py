@@ -396,6 +396,31 @@ def test_adding_a_directory_reports_its_walk(tmp_path, caplog):
     assert "report.docx" not in caplog.text
 
 
+def test_rag_files(tmp_path):
+    """rag/ holds every chunk as a .txt file (plain chunks), named by its heading and ending with
+    its source and trace, for RAG tools that read files but not JSONL. Unchanged projects are
+    not written again; --no-rag-files removes the folder."""
+    src = tmp_path / "drone.mdzip"
+    src.write_bytes(make_mdzip())
+    out = tmp_path / "out"
+    assert main([str(src), "-o", str(out), "--no-llm", "--no-render", "--meta", "program=X"]) == 0
+    chunks = [json.loads(line) for line in (out / "chunks.jsonl").open()]
+    [folder] = [d for d in (out / "rag").iterdir() if d.is_dir()]
+    assert folder.name.startswith("drone-")
+    files = sorted(folder.glob("*.txt"))
+    assert len(files) == len([c for c in chunks if c["metadata"]["kind"] != "ledger:projects"])
+    assert len(list((out / "rag").glob("*.txt"))) == 1  # the projects ledger
+    drone = next(f for f in files if f.name.startswith("Block Drone "))
+    text = drone.read_text()
+    assert text.startswith("Block Drone in ") and "\n\nSource: drone.mdzip; trace sha256:" in text
+    assert text.endswith("Found with: program=X\n")
+    stamp = drone.stat().st_mtime_ns
+    assert main(["run", "-o", str(out)]) == 0
+    assert drone.stat().st_mtime_ns == stamp  # not written again
+    assert main(["run", "-o", str(out), "--no-rag-files"]) == 0
+    assert not (out / "rag").exists()
+
+
 def test_tree_rules_and_missing_inputs(tmp_path, capsys):
     foreign = tmp_path / "foreign"
     foreign.mkdir()

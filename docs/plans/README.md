@@ -12,6 +12,7 @@ here.
 | [Measuring LLM enrichment quality](llm-quality-2026-09-30.md) | LQ-01 to LQ-03 done; judge panel (LQ-04 to LQ-06) deferred | FU-006R1 (and measures fixes for FU-001, FU-002, FU-004, FU-005) |
 | [Modular views of large diagrams and packages](diagram-views-2026-09-30.md) | Completed 2026-09-30 | FU-011R1, FU-005R1, FU-012R2 |
 | [Retrieval evaluation](retrieval-evaluation-2026-09-30.md) | In progress: plain chunks judged better and made the default (0.5.0); fictional projects with answers by construction (RE-10); the spot check remains | The README's RAG advice; chunk sizes |
+| [Related facts brought together](related-facts-2026-10-01.md) | Proposed; waits on the maintainer's answers | The maintainer's request to bring related facts and requirements together for keyword search, tracing and provenance |
 
 ## Tentative
 
@@ -34,7 +35,8 @@ roadmap in the top-level `README.md`.
 - **Better module boundaries.** Split sequence diagrams into bands along the time axis, and
   activity diagrams along their partitions (swimlanes, from the model's `inPartition`),
   rather than by connectivity alone. Both were found in plan DV's partitioning study.
-- **Keyword search over the corpus, and an export to search without tools.** The retrieval
+- **Keyword search over the corpus, and an export to search without tools.** (The concordance
+  in plan RF, related facts, would cover part of this.) The retrieval
   baseline (`docs/research/retrieval-baseline-2026-10-01.md`) found that embeddings almost never
   find a requirement by its id, where keyword search (BM25) does nine times in ten; but the
   production stack can't take keyword search yet. Investigate:

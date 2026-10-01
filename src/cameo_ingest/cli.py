@@ -43,7 +43,7 @@ An output tree remembers these choices, so later runs need no flags."""
 
 # Run settings an output tree remembers (never secrets: --env names a file).
 SETTINGS = ("env", "text_model", "vision_model", "llm_timeout", "llm_retries", "llm_max_calls",
-            "llm_concurrency", "cache_dir", "image_pixels", "diagram_modules", "chunk_style")
+            "llm_concurrency", "cache_dir", "image_pixels", "diagram_modules", "chunk_style", "rag_files")
 
 PROGRESS_LOGGER = "cameo_ingest.progress"
 _handlers: list[logging.Handler] = []  # ours, replaced when main() runs again (as in tests)
@@ -150,6 +150,11 @@ def build_parser() -> argparse.ArgumentParser:
                    help="chunk text: plain text in parts that fit an embedding window, under a heading that says "
                         "what and where each item is (plain, the default; docs/research/chunk-styles-2026-10-01.md), "
                         "or as on the pages (markdown, as before 0.5.0)")
+    g.add_argument("--rag-files", dest="rag_files", action="store_const", const=True, default=None,
+                   help="write rag/: every chunk as a file, .txt for plain chunks, ending with its source and "
+                        "trace, for RAG tools that read files but not JSONL (the default)")
+    g.add_argument("--no-rag-files", dest="rag_files", action="store_const", const=False,
+                   help="do not write rag/ (chunks.jsonl has the same chunks)")
     g.add_argument("--llm-timeout", type=float, metavar="SECONDS", help="per-request timeout (default 120)")
     g.add_argument("--llm-retries", type=int, metavar="N", help="retries per request (default 2)")
     g.add_argument("--llm-max-calls", type=int, metavar="N", help="stop calling the LLM after N requests in a run "

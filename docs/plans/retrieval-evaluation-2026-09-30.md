@@ -45,6 +45,7 @@ All answered by the maintainer on 2026-09-30.
 | 11 | The changes to try (2026-10-01) | Plainer chunk text, with structural detail kept apart from meaning, perhaps in a separate file; readable titles; the heading repeated in each part of a long section. Judge first, then try them. |
 | 12 | Where structural detail goes (2026-10-01, from the evidence) | After the meaning, in the same chunk when the whole fits in one part, else in a `<kind>:details` chunk in `chunks.jsonl`. A file outside the index lost the natural questions about members, ports and tagged values (e5-large's top 10: 0.92 to 0.81), and short details chunks of their own outranked their element for its name. |
 | 13 | More fictional projects (2026-10-01) | The maintainer can't spot-check much soon, and asked for a few more fictional sample projects, of various subjects, sizes and difficulty (water treatment, city traffic control...), as gold standards: RE-10. |
+| 14 | What the stack reads (2026-10-01) | Files: `.md`, `.txt`, `.pdf`, `.docx`, `.pptx` and `.json`, and nothing else, so not `chunks.jsonl`. Provenance must therefore travel in the text. The chunks are written as files (`rag/`, `.txt` for plain chunks), each ending with a one-line source (project and trace locator), split to fit a 512-token window with it: RE-11. |
 
 ### What these mean for the design
 
@@ -286,6 +287,8 @@ hash of their text, so unchanged chunks cost nothing.
 
 | RE-10 | Fictional projects (decision 13): several invented projects, of rising size and difficulty, with questions answered by construction, so that retrieval can be measured without judges or spot checks. | Done: `cameo_ingest.evaluation.fiction` (a builder and four projects: a library kiosk, a water treatment works, a level crossing in two variants, and a city's traffic signals with about 5,100 XMI ids), 178 questions tagged by difficulty, `scripts/make_fictional_projects.py`, `tests/test_fiction.py`. They found three gaps in the ingest, now fixed: transitions' triggers and flows' guards were dropped (0.5.1), unnamed requirements read "(Class)", and diagram notes appeared only cut short in legends. Retrieval on them (`docs/research/fictional-projects-2026-10-01.md`): plain chunks as good or better again; keyword search fused at equal weight helps literal questions and hurts paraphrases; behaviour is the hardest to find |
 
+| RE-11 | Files for the stack (decision 14): every chunk as a file, with its provenance in its text, fitting one window. | Done: `rag/` (one folder per project, one `.txt` file per chunk, named by its heading, ending with `Source:` project and trace); plain parts budgeted in estimated tokens (`plain.tokens`, fitted to e5's tokenizer), so that 3 of 43,552 files for the samples exceed 512 tokens, against 9% of chunks before. On the fictional questions a source block cost nothing (BM25's MRR rose 0.05; dense models were unchanged) |
+
 **Follow-ups**, not yet scheduled:
 - **A stricter judge prompt** (`eval-relevance-judge@v2`), with the check set's rules: a passage
   about a similar element is 0, and a list that only names the subject is at most 1. Then
@@ -307,9 +310,8 @@ The evaluation will put numbers on these. They are listed here so they can be as
 1. **Which model,** and at what input limit? MiniLM is usually run at 256 tokens, so a 512-token
    chunk would be embedded by half.
 2. **How much overlap** between chunks, and does the splitter respect paragraphs?
-3. **What is ingested:** `chunks.jsonl`, the Markdown pages, or both? And how does the stack
-   carry provenance: from chunk metadata, or from the text (titles, headings)? The maintainer is
-   finding out (2026-10-01). Plain chunks keep the provenance in `metadata` only; the pages keep
-   their trace lines.
+3. **What is ingested:** answered (decision 14): files of a few types, not JSONL, so `rag/`. Still to
+   learn: whether the stack shows a file's name as its source, and how it cuts and overlaps the
+   files (one window per file is assumed).
 4. **For e5 models:** are the `query: ` and `passage: ` prefixes added?
 5. **How many chunks** go into a prompt?

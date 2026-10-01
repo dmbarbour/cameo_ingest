@@ -199,6 +199,18 @@ class ProjectWriter:
 
     def chunk(self, *, kind: str, title: str, text: str, file: str, el: Element | None,
               trace: Trace, extra: dict[str, Any] | None = None, salt: str = "") -> None:
+        if self.chunk_style == "plain" and kind.startswith("generated:") and pl.tokens(text) > pl.BUDGET:
+            # Generated text too long for one embedding window: in parts, each under its heading.
+            first, _, rest = text.partition("\n")
+            pieces = pl.parts(first, rest.strip())
+            for k, piece in enumerate(pieces, 1):
+                self._chunk(kind, title, piece, file, el, trace, {**(extra or {}), "piece": k, "pieces": len(pieces)},
+                            f"{salt}#{k}")
+            return
+        self._chunk(kind, title, text, file, el, trace, extra, salt)
+
+    def _chunk(self, kind: str, title: str, text: str, file: str, el: Element | None, trace: Trace,
+               extra: dict[str, Any] | None, salt: str) -> None:
         cid = sha256_text(f"{self.content.sha256}|{kind}|{el.id if el else file}|{salt}")[:24]
         self.out.chunks.append({
             "id": cid,
@@ -228,7 +240,8 @@ class ProjectWriter:
         else:
             name = el.name or f"(unnamed {el.kind})"
         kind_word = kind_word or (st[0] if st else el.kind)
-        return f"{kind_word} {one_line(name)} {pl.where(ix.qualified_name(el.id), self.content.name)}"
+        owner = ix.qualified_name(el.owner) if el.owner else ""  # not the element's: an unnamed one's ends with its owner
+        return f"{kind_word} {one_line(name)} {pl.where(owner, self.content.name)}"
 
     def section_chunks(self, kind: str, el: Element, md: str, file: str, trace: Trace,
                        heading: str | None = None, extra: dict[str, Any] | None = None) -> None:
