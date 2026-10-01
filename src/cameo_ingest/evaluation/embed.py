@@ -39,6 +39,7 @@ class EmbeddingModel:
     passage_prefix: str = ""
     batch: int = 32  # texts per request
     key_env: str | None = None  # environment variable holding the API key
+    cut_here: bool = False  # the endpoint rejects inputs over the limit, rather than cutting them
 
     def prefixed(self, text: str, role: Role) -> str:
         return (self.query_prefix if role == "query" else self.passage_prefix) + text
@@ -52,7 +53,7 @@ MODELS = {
     "e5-large": EmbeddingModel("intfloat/multilingual-e5-large", DEEPINFRA, 512, "query: ", "passage: ",
                                key_env="OPENAI_API_KEY"),
     "e5-large-bare": EmbeddingModel("intfloat/multilingual-e5-large", DEEPINFRA, 512, key_env="OPENAI_API_KEY"),
-    "bge-large": EmbeddingModel("BAAI/bge-large-en-v1.5", DEEPINFRA, 512, key_env="OPENAI_API_KEY"),
+    "bge-large": EmbeddingModel("BAAI/bge-large-en-v1.5", DEEPINFRA, 512, key_env="OPENAI_API_KEY", cut_here=True),
     "mpnet": EmbeddingModel("sentence-transformers/all-mpnet-base-v2", DEEPINFRA, 384, key_env="OPENAI_API_KEY"),
     "minilm": EmbeddingModel("sentence-transformers/all-MiniLM-L6-v2", DEEPINFRA, 256, key_env="OPENAI_API_KEY"),
 }
@@ -64,6 +65,15 @@ def tokenizer(model_name: str):
     from tokenizers import Tokenizer
 
     return Tokenizer.from_pretrained(model_name)
+
+
+def cut(model_name: str, text: str, limit: int) -> str:
+    """`text` cut to what fits in `limit` tokens with the model's two special tokens, as an
+    endpoint that cuts long inputs would."""
+    tok = tokenizer(model_name)
+    tok.no_truncation()
+    offsets = tok.encode(text, add_special_tokens=False).offsets
+    return text if len(offsets) <= limit - 2 else text[:offsets[limit - 3][1]]
 
 
 def count_tokens(model_name: str, texts: list[str]) -> list[int]:
@@ -144,6 +154,12 @@ class Embedder:
                 self.calls += 1
                 self.tokens += (r.get("usage") or {}).get("prompt_tokens", 0)
                 return [d["embedding"] for d in sorted(r["data"], key=lambda d: d["index"])]
+            except urllib.error.HTTPError as e:
+                detail = e.read()[:300].decode("utf-8", "replace")
+                if e.code != 429 and e.code < 500 or attempt == self.retries:  # retrying won't fix a bad request
+                    raise RuntimeError(f"{m.name}: HTTP {e.code}: {detail}") from e
+                log.debug("embedding request failed (HTTP %s); retrying", e.code)
+                time.sleep(2 ** attempt)
             except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
                 if attempt == self.retries:
                     raise
@@ -161,7 +177,10 @@ class Embedder:
             batches = [todo[i:i + self.model.batch] for i in range(0, len(todo), self.model.batch)]
 
             def run(batch: list[str]) -> None:
-                vectors = self._post([self.model.prefixed(text_of[k], role) for k in batch])  # text_of: unprefixed
+                sent = [self.model.prefixed(text_of[k], role) for k in batch]  # text_of: unprefixed
+                if self.model.cut_here:  # keyed on the whole text, sent cut
+                    sent = [cut(self.model.name, s, self.model.limit) for s in sent]
+                vectors = self._post(sent)
                 items = [(k, np.asarray(v, dtype=np.float32)) for k, v in zip(batch, vectors, strict=True)]
                 self.cache.put(self.model, role, items)
                 known.update(items)
