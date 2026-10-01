@@ -5,11 +5,13 @@ come back (plan RE-05).
     uv run --group eval python scripts/retrieval_eval.py out/all --env .env --models e5-large minilm \\
         --out out/eval/retrieval/synthetic
 
-The questions are the synthetic project's (`cameo_ingest.evaluation.synthetic`), graded by
-construction:
+The questions (`--questions`) are the synthetic project's (`cameo_ingest.evaluation.synthetic`),
+the structural ones about the samples (`cameo_ingest.evaluation.questions`), or a JSONL file of
+any form, such as written questions (`scripts/write_questions.py`). All are graded by
+construction (written questions only for their source chunk, until the judges grade the rest):
 - **2:** a window of a chunk about an answering element;
-- **1:** a window of a chunk about a related element, or a window of the synthetic project that
-  holds the planted fact (a package summary quoting it, say).
+- **1:** a window of a chunk about a related element, or, for the synthetic project, a window of
+  it that holds the planted fact (a package summary quoting it, say).
 
 Each model's windows are embedded through the cache (`--cache`), so a rerun, or a run cut off,
 costs only what is missing. Writes OUT/report.md and OUT/rankings.jsonl (each question's top 10
@@ -21,12 +23,13 @@ from __future__ import annotations
 import argparse
 import json
 import time
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 from cameo_ingest.cli import load_env
 from cameo_ingest.evaluation.embed import MODELS, Embedder, EmbeddingCache
 from cameo_ingest.evaluation.harness import BM25, Unit, chunk_units, fuse, mean_ci, measures, top, windowed
+from cameo_ingest.evaluation.questions import _plain, structural
 from cameo_ingest.evaluation.synthetic import QUESTIONS
 
 SYNTHETIC = "_kois_"  # the synthetic project's element ids start so
@@ -35,11 +38,14 @@ MEASURES = ("hit@1", "hit@5", "hit@10", "hit@20", "mrr@10", "ndcg@10")
 
 def grades(q: dict, units: list[Unit]) -> dict[int, int]:
     out = {}
+    quote = " ".join(q.get("quote", "").split())
     for i, u in enumerate(units):
-        if u.element_id in q["answers"]:
+        if u.id.split("#w")[0] in q.get("answer_chunks", ()):  # a written question's source chunk
+            out[i] = 2 if quote in " ".join(_plain(u.text).split()) else 1  # the window with the quote
+        elif u.element_id in q["answers"]:
             out[i] = 2
         elif u.element_id in q["related"] or (
-                (u.element_id or "").startswith(SYNTHETIC) and q["evidence"] in u.text):
+                "evidence" in q and (u.element_id or "").startswith(SYNTHETIC) and q["evidence"] in u.text):
             out[i] = 1
     return out
 
@@ -58,6 +64,7 @@ def main() -> int:
                          "the same candidates (models with smaller limits are cut by the endpoint)")
     ap.add_argument("--concurrency", type=int, default=8)
     ap.add_argument("--project", help="only the chunks of projects whose element ids start so (a smoke test)")
+    ap.add_argument("--questions", default="synthetic", help="synthetic, structural, or a JSONL file of questions")
     args = ap.parse_args()
     if args.env:
         load_env(args.env)
@@ -65,7 +72,12 @@ def main() -> int:
     if args.project:
         units = [u for u in units if (u.element_id or "").startswith(args.project)]
     cache = EmbeddingCache(args.cache)
-    questions = QUESTIONS
+    if args.questions == "synthetic":
+        questions = QUESTIONS
+    elif args.questions == "structural":
+        questions = structural(args.tree)
+    else:
+        questions = [json.loads(line) for line in Path(args.questions).read_text(encoding="utf-8").splitlines()]
     print(f"{len(units):,} chunks from {args.tree}; {len(questions)} questions")
 
     results: dict[str, list[dict]] = {}  # system -> per-question measures
@@ -100,10 +112,11 @@ def main() -> int:
     with (args.out / "rankings.jsonl").open("w", encoding="utf-8") as f:
         for r in rankings:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
-    lines = [f"# Retrieval: synthetic questions on {args.tree}", "",
+    styles = Counter(q["style"] for q in questions)
+    lines = [f"# Retrieval: {args.questions} questions on {args.tree}", "",
              (f"{len(units):,} chunks, windows of {args.window} tokens with {args.overlap} of overlap; "
-              f"{len(questions)} questions ({len(questions) // 2} literal, {len(questions) // 2} paraphrased)."), ""]
-    for style in ("all", "literal", "paraphrase"):
+              f"{len(questions)} questions ({', '.join(f'{n} {s}' for s, n in sorted(styles.items()))})."), ""]
+    for style in ["all", *sorted(styles)] if len(styles) > 1 else ["all"]:
         lines += [f"## {style.capitalize()} questions", "",
                   "| System | " + " | ".join(MEASURES) + " |", "|---|" + "---|" * len(MEASURES)]
         for name, per_q in results.items():
