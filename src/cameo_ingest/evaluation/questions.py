@@ -178,7 +178,8 @@ def natural(tree: Path, llm: LLM, per_project: int = 6, seed: int = 1, concurren
         meta = c["metadata"]
         return {"id": f"llm:{c['id']}", "template": "llm", "category": meta["kind"], "style": "natural",
                 "project": meta["content"], "question": question, "quote": quote,
-                "answers": [], "related": [], "answer_chunks": [c["id"]], "source_kind": meta["kind"]}
+                "answers": [], "related": [], "answer_chunks": [c["id"]], "source_kind": meta["kind"],
+                "source_element": meta.get("element_id")}  # for corpora whose chunks differ (another chunk style)
 
     with ThreadPoolExecutor(concurrency) as pool:
         return [q for q in pool.map(ask, chunks) if q is not None]

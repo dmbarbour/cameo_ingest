@@ -72,3 +72,21 @@ def kappa(a: list[int], b: list[int], categories: tuple[int, ...] = (0, 1, 2)) -
     observed = sum(x == y for x, y in zip(a, b, strict=True)) / n
     expected = sum((a.count(c) / n) * (b.count(c) / n) for c in categories)
     return (observed - expected) / (1 - expected) if expected < 1 else 1.0
+
+
+def consensus(judgments: list[dict], main: tuple[str, str], tiebreak: str | None = None) -> dict[tuple, int]:
+    """The panel's grade per (set, question, unit): the two main judges' when they agree; else the
+    tie-breaker's, or without one, the lower of theirs. A pair judged by one main judge only
+    takes that judge's grade."""
+    by_pair: dict[tuple, dict[str, int]] = {}
+    for j in judgments:
+        if j.get("grade") is not None:
+            by_pair.setdefault((j["set"], j["qid"], j["unit"]), {})[j["judge"]] = j["grade"]
+    out = {}
+    for key, g in by_pair.items():
+        a, b = g.get(main[0]), g.get(main[1])
+        if a is not None and b is not None:
+            out[key] = a if a == b else g.get(tiebreak, min(a, b)) if tiebreak else min(a, b)
+        elif a is not None or b is not None:
+            out[key] = a if a is not None else b  # type: ignore[assignment]
+    return out

@@ -81,3 +81,15 @@ def test_plain_chunk_text():
     assert pl.where("A::B::C::D::E", "x.mdzip") == "in B::C::D (project x.mdzip)"
     long = pl.parts("H", "\n".join(f"line {i} " + "x" * 90 for i in range(40)), budget=1000)
     assert len(long) == 4 and all(p.startswith("H (part ") and len(p) < 1100 for p in long)
+
+
+def test_panel_consensus():
+    """Two judges' grade where they agree; the tie-breaker's where they don't, or the lower."""
+    from cameo_ingest.evaluation.judge import consensus, kappa
+
+    js = [{"set": "s", "qid": q, "unit": "u", "judge": j, "grade": g}
+          for q, j, g in [("q1", "A", 2), ("q1", "B", 2), ("q2", "A", 2), ("q2", "B", 0), ("q2", "C", 1),
+                          ("q3", "A", 1), ("q3", "B", 2), ("q4", "A", 0)]]
+    assert consensus(js, ("A", "B"), "C") == {("s", "q1", "u"): 2, ("s", "q2", "u"): 1, ("s", "q3", "u"): 1,
+                                              ("s", "q4", "u"): 0}
+    assert kappa([0, 1, 2, 2], [0, 1, 2, 2]) == 1.0 and kappa([0, 0], [1, 1]) == 0.0

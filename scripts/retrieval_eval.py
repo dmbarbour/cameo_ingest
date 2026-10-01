@@ -29,6 +29,7 @@ from pathlib import Path
 from cameo_ingest.cli import load_env
 from cameo_ingest.evaluation.embed import MODELS, Embedder, EmbeddingCache
 from cameo_ingest.evaluation.harness import BM25, Unit, chunk_units, fuse, mean_ci, measures, top, windowed
+from cameo_ingest.evaluation.judge import consensus
 from cameo_ingest.evaluation.questions import _plain, structural
 from cameo_ingest.evaluation.synthetic import QUESTIONS, holds
 
@@ -36,17 +37,29 @@ SYNTHETIC = "_kois_"  # the synthetic project's element ids start so
 MEASURES = ("hit@1", "hit@5", "hit@10", "hit@20", "mrr@10", "ndcg@10")
 
 
-def grades(q: dict, units: list[Unit]) -> dict[int, int]:
+def grades(q: dict, units: list[Unit], judged: dict[str, int] | None = None) -> dict[int, int]:
+    """Grades by construction, overridden by the judge panel's where it judged (`judged`: unit ->
+    grade, for this question)."""
     out = {}
     quote = " ".join(q.get("quote", "").split())
+    sources = set(q.get("answer_chunks", ()))
+    if sources and not any(u.id.split("#w")[0] in sources for u in units):
+        # Another corpus (another chunk style): the source element's chunks stand in for the source chunk.
+        sources = {u.id.split("#w")[0] for u in units if u.element_id and u.element_id == q.get("source_element")}
     for i, u in enumerate(units):
-        if u.id.split("#w")[0] in q.get("answer_chunks", ()):  # a written question's source chunk
+        if u.id.split("#w")[0] in sources:  # a written question's source chunk
             out[i] = 2 if quote in " ".join(_plain(u.text).split()) else 1  # the window with the quote
         elif u.element_id in q["answers"] or (
                 "evidence" in q and (u.element_id or "").startswith(SYNTHETIC) and holds(q["evidence"], u.text)):
             out[i] = 2  # about an answering element, or holding the planted fact (a ledger quoting it, say)
         elif u.element_id in q["related"]:
             out[i] = 1
+    if judged:
+        for i, u in enumerate(units):
+            if u.id in judged:
+                out[i] = judged[u.id]
+                if not out[i]:
+                    del out[i]
     return out
 
 
@@ -65,6 +78,10 @@ def main() -> int:
     ap.add_argument("--concurrency", type=int, default=8)
     ap.add_argument("--project", help="only the chunks of projects whose element ids start so (a smoke test)")
     ap.add_argument("--questions", default="synthetic", help="synthetic, structural, or a JSONL file of questions")
+    ap.add_argument("--judgments", type=Path, help="the judge panel's grades (scripts/judge_pools.py), which override "
+                                                   "construction except for the synthetic questions")
+    ap.add_argument("--judges", nargs=2, default=["deepseek-ai/DeepSeek-V3.2", "Qwen/Qwen3-235B-A22B-Instruct-2507"])
+    ap.add_argument("--tiebreak", default="moonshotai/Kimi-K2.5")
     args = ap.parse_args()
     if args.env:
         load_env(args.env)
@@ -79,6 +96,15 @@ def main() -> int:
     else:
         questions = [json.loads(line) for line in Path(args.questions).read_text(encoding="utf-8").splitlines()]
     print(f"{len(units):,} chunks from {args.tree}; {len(questions)} questions")
+    judged_of: dict[str, dict[str, int]] = defaultdict(dict)  # question -> unit -> grade
+    if args.judgments and args.questions != "synthetic":
+        name = Path(args.questions).stem if args.questions != "structural" else "structural"
+        panel = consensus([json.loads(line) for line in args.judgments.read_text(encoding="utf-8").splitlines()],
+                          tuple(args.judges), args.tiebreak)
+        for (s, qid, unit), grade in panel.items():
+            if s == name:
+                judged_of[qid][unit] = grade
+        print(f"judged grades for {len(judged_of)} questions")
 
     results: dict[str, list[dict]] = {}  # system -> per-question measures
     rankings = []
@@ -101,7 +127,7 @@ def main() -> int:
         for name, ranked in systems.items():
             per_q = []
             for q, ranking in zip(questions, ranked, strict=True):
-                g = grades(q, ws)
+                g = grades(q, ws, judged_of.get(q["id"]))
                 per_q.append({"id": q["id"], "style": q["style"], **measures(ranking, g)})
                 rankings.append({"system": name, "question": q["id"], "text": q["question"],
                                  "top": [{"unit": ws[j].id, "kind": ws[j].kind, "grade": g.get(j, 0),
