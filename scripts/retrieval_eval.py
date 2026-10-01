@@ -9,9 +9,9 @@ The questions (`--questions`) are the synthetic project's (`cameo_ingest.evaluat
 the structural ones about the samples (`cameo_ingest.evaluation.questions`), or a JSONL file of
 any form, such as written questions (`scripts/write_questions.py`). All are graded by
 construction (written questions only for their source chunk, until the judges grade the rest):
-- **2:** a window of a chunk about an answering element;
-- **1:** a window of a chunk about a related element, or, for the synthetic project, a window of
-  it that holds the planted fact (a package summary quoting it, say).
+- **2:** a window of a chunk about an answering element, or, for the synthetic project, a window
+  of it that holds the planted fact (a ledger or summary quoting it, say): what RAG needs;
+- **1:** a window of a chunk about a related element.
 
 Each model's windows are embedded through the cache (`--cache`), so a rerun, or a run cut off,
 costs only what is missing. Writes OUT/report.md and OUT/rankings.jsonl (each question's top 10
@@ -30,7 +30,7 @@ from cameo_ingest.cli import load_env
 from cameo_ingest.evaluation.embed import MODELS, Embedder, EmbeddingCache
 from cameo_ingest.evaluation.harness import BM25, Unit, chunk_units, fuse, mean_ci, measures, top, windowed
 from cameo_ingest.evaluation.questions import _plain, structural
-from cameo_ingest.evaluation.synthetic import QUESTIONS
+from cameo_ingest.evaluation.synthetic import QUESTIONS, holds
 
 SYNTHETIC = "_kois_"  # the synthetic project's element ids start so
 MEASURES = ("hit@1", "hit@5", "hit@10", "hit@20", "mrr@10", "ndcg@10")
@@ -42,10 +42,10 @@ def grades(q: dict, units: list[Unit]) -> dict[int, int]:
     for i, u in enumerate(units):
         if u.id.split("#w")[0] in q.get("answer_chunks", ()):  # a written question's source chunk
             out[i] = 2 if quote in " ".join(_plain(u.text).split()) else 1  # the window with the quote
-        elif u.element_id in q["answers"]:
-            out[i] = 2
-        elif u.element_id in q["related"] or (
-                "evidence" in q and (u.element_id or "").startswith(SYNTHETIC) and q["evidence"] in u.text):
+        elif u.element_id in q["answers"] or (
+                "evidence" in q and (u.element_id or "").startswith(SYNTHETIC) and holds(q["evidence"], u.text)):
+            out[i] = 2  # about an answering element, or holding the planted fact (a ledger quoting it, say)
+        elif u.element_id in q["related"]:
             out[i] = 1
     return out
 

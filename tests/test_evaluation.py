@@ -30,7 +30,7 @@ def test_synthetic_project_answers_its_questions(tmp_path):
     import json
 
     from cameo_ingest.cli import main
-    from cameo_ingest.evaluation.synthetic import QUESTIONS, make_mdzip
+    from cameo_ingest.evaluation.synthetic import QUESTIONS, holds, make_mdzip
 
     src = tmp_path / "kois.mdzip"
     src.write_bytes(make_mdzip())
@@ -39,7 +39,7 @@ def test_synthetic_project_answers_its_questions(tmp_path):
     assert len({q["fact"] for q in QUESTIONS}) == 14 and len(QUESTIONS) == 28
     for q in QUESTIONS:
         texts = [c["text"] for c in chunks if c["metadata"].get("element_id") in q["answers"]]
-        assert any(q["evidence"] in t for t in texts), (q["id"], q["evidence"])
+        assert any(holds(q["evidence"], t) for t in texts), (q["id"], q["evidence"])
 
 
 def test_search_and_measures():

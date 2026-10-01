@@ -87,8 +87,9 @@ ACTIVITIES = [
 ]
 
 # Questions: id, category, literal question, paraphrase, answers, related, and the evidence: a
-# phrase that the chunks of the answering elements must contain (tested), so that the answer
-# key can't drift from the model.
+# phrase (or alternatives) that the chunks of the answering elements must contain (tested), so
+# that the answer key can't drift from the model. Any chunk of the project holding it also
+# answers the question (a ledger or summary quoting the fact, say).
 _QUESTIONS = [
     ("q01", "lookup", "What is the Moisture Lattice made of?",
      "How is the wetness of the soil sensed across the orchard?", ["lat"], ["r1"], "48 capacitive probes"),
@@ -105,9 +106,11 @@ _QUESTIONS = [
     ("q07", "lookup", "What are the pumps in the Pump Station called?",
      "What names were given to the two water pumps?", ["pmp"], [], "Otter and Heron"),
     ("q08", "trace", "Which requirement is KOIS-R2 derived from?",
-     "Which broader safety need does the valve's closing time come from?", ["r5", "r2"], [], "is derived from"),
+     "Which broader safety need does the valve's closing time come from?", ["r5", "r2"], [],
+     ["is derived from [Leak Shutdown]", "derived from Leak Shutdown", "derived from the Leak Shutdown"]),
     ("q09", "trace", "Which block satisfies KOIS-R3, Frost Protection?",
-     "Which component is responsible for keeping blossoms from freezing?", ["frs", "r3"], [], "satisfies"),
+     "Which component is responsible for keeping blossoms from freezing?", ["frs", "r3"], [],
+     ["[Frost Shield] satisfies this", "satisfies [Frost Protection]", "Frost Shield satisfies"]),
     ("q10", "parameter", "What soil moisture range must KOIS keep in every orchard row?",
      "How damp should the ground under the apple trees be kept?", ["r1"], ["lat"], "between 18% and 26%"),
     ("q11", "parameter", "How long must the KOIS Controller keep its watering cycle log?",
@@ -121,13 +124,20 @@ _QUESTIONS = [
 ]
 
 
+def holds(evidence: list[str], text: str) -> bool:
+    """Whether `text` holds the planted fact: one of the evidence phrases, in any case."""
+    low = text.lower()
+    return any(e.lower() in low for e in evidence)
+
+
 def _id(key: str) -> str:
     return f"_kois_{key}"
 
 
 QUESTIONS = [
     {"id": f"{qid}-{style}", "fact": qid, "style": style, "category": cat, "question": text,
-     "answers": [_id(a) for a in answers], "related": [_id(r) for r in related], "evidence": evidence}
+     "answers": [_id(a) for a in answers], "related": [_id(r) for r in related],
+     "evidence": [evidence] if isinstance(evidence, str) else evidence}
     for qid, cat, literal, paraphrase, answers, related, evidence in _QUESTIONS
     for style, text in (("literal", literal), ("paraphrase", paraphrase))
 ]
