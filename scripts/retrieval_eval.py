@@ -29,13 +29,24 @@ from pathlib import Path
 
 from cameo_ingest.cli import load_env
 from cameo_ingest.evaluation.embed import MODELS, Embedder, EmbeddingCache
-from cameo_ingest.evaluation.harness import BM25, Unit, chunk_units, fuse, mean_ci, measures, top, windowed
+from cameo_ingest.evaluation.harness import (
+    BM25,
+    Unit,
+    chunk_units,
+    fuse,
+    group_measures,
+    mean_ci,
+    measures,
+    top,
+    windowed,
+)
 from cameo_ingest.evaluation.judge import consensus
 from cameo_ingest.evaluation.questions import _plain, structural
+from cameo_ingest.evaluation.rerank import RERANKERS, Reranker
 from cameo_ingest.evaluation.synthetic import QUESTIONS, holds
 
 SYNTHETIC = "_kois_"  # the synthetic project's element ids start so
-MEASURES = ("hit@1", "hit@5", "hit@10", "hit@20", "mrr@10", "ndcg@10")
+MEASURES = ("hit@1", "hit@5", "hit@10", "hit@20", "mrr@10", "ndcg@10", "coverage@10", "complete@10")
 
 
 def _norm(text: str) -> str:
@@ -56,6 +67,9 @@ def grades(q: dict, units: list[Unit], judged: dict[str, int] | None = None) -> 
     for i, u in enumerate(units):
         if u.id.split("#w")[0] in sources:  # a written question's source chunk
             out[i] = 2 if quote and quote in _norm(_plain(u.text)) else 1  # the window with the quote
+        elif "evidence_groups" in q:  # an answer in parts (one per model): a window with any part answers
+            if any(holds(g, u.text) for g in q["evidence_groups"]):
+                out[i] = 2
         elif "prefix" in q:  # a fictional project's: only a window that holds the fact answers
             if (u.element_id or "").startswith(q["prefix"]) and (
                     holds(q["evidence"], u.text)
@@ -91,6 +105,12 @@ def main() -> int:
                          "the same candidates (models with smaller limits are cut by the endpoint)")
     ap.add_argument("--concurrency", type=int, default=8)
     ap.add_argument("--project", help="only the chunks of projects whose element ids start so (a smoke test)")
+    ap.add_argument("--bm25-weights", nargs="*", type=float, default=[],
+                    help="also fuse each dense model with BM25 at these weights (1 is the plain hybrid)")
+    ap.add_argument("--rerank", choices=list(RERANKERS), help="also rerank every system's top --rerank-depth with "
+                                                               "this reranker on DeepInfra (plan RF-02)")
+    ap.add_argument("--rerank-depth", type=int, default=30)
+    ap.add_argument("--rerank-cache", type=Path, default=Path("out/eval/rerank.sqlite"))
     ap.add_argument("--without-details", action="store_true",
                     help="leave the plain style's details chunks out of the index, as if they were in a file apart")
     ap.add_argument("--questions", default="synthetic", help="synthetic, structural, or a JSONL file of questions")
@@ -131,6 +151,7 @@ def main() -> int:
     bm25 = BM25([u.text for u in ws])
     lexical = [top(bm25.scores(q["question"]), 100) for q in questions]
     print(f"{len(ws):,} windows", flush=True)
+    systems: dict[str, list[list[int]]] = {"bm25": lexical}
     for key in args.models:
         m = MODELS[key]
         t0 = time.perf_counter()
@@ -140,19 +161,38 @@ def main() -> int:
         print(f"{key}: embedded in {time.perf_counter() - t0:.0f} s "
               f"({e.calls} requests, {e.tokens:,} tokens)", flush=True)
         dense = [top(docs @ qv[i], 100) for i in range(len(questions))]
-        systems = {key: dense, f"{key} + bm25": [fuse([d, w]) for d, w in zip(dense, lexical, strict=True)]}
-        if "bm25" not in results:
-            systems["bm25"] = lexical
-        for name, ranked in systems.items():
-            per_q = []
-            for q, ranking in zip(questions, ranked, strict=True):
-                g = grades(q, ws, judged_of.get(q["id"]))
-                per_q.append({"id": q["id"], "style": q["style"], "difficulty": q.get("difficulty"),
-                              "project_name": q.get("project_name"), **measures(ranking, g)})
-                rankings.append({"system": name, "question": q["id"], "text": q["question"],
-                                 "top": [{"unit": ws[j].id, "kind": ws[j].kind, "grade": g.get(j, 0),
-                                          "text": ws[j].text[:200]} for j in ranking[:10]]})
-            results[name] = per_q
+        systems[key] = dense
+        systems[f"{key} + bm25"] = [fuse([d, w]) for d, w in zip(dense, lexical, strict=True)]
+        for weight in args.bm25_weights:
+            systems[f"{key} + bm25×{weight:g}"] = [fuse([d, w], weights=[1.0, weight])
+                                                   for d, w in zip(dense, lexical, strict=True)]
+    if args.rerank:
+        t0 = time.perf_counter()
+        reranker = Reranker(args.rerank, args.rerank_cache, concurrency=args.concurrency)
+        texts = [u.text for u in ws]
+        reranker.scores(list({(q["question"], texts[j]) for ranked in systems.values()  # every pair at once
+                              for q, r in zip(questions, ranked, strict=True) for j in r[:args.rerank_depth]}))
+        for name in list(systems):
+            systems[f"{name} → {args.rerank}"] = [reranker.rerank(q["question"], r, texts, args.rerank_depth)
+                                                  for q, r in zip(questions, systems[name], strict=True)]
+        print(f"{reranker.model}: {reranker.calls} requests, {reranker.tokens:,} tokens, "
+              f"{time.perf_counter() - t0:.0f} s", flush=True)
+    for name, ranked in systems.items():
+        per_q = []
+        for q, ranking in zip(questions, ranked, strict=True):
+            g = grades(q, ws, judged_of.get(q["id"]))
+            if "evidence_groups" in q:
+                parts = q["evidence_groups"]
+                covers = {i: frozenset(k for k, grp in enumerate(parts) if holds(grp, ws[i].text)) for i in g}
+            else:
+                parts, covers = [[]], {i: frozenset([0]) for i, v in g.items() if v == 2}
+            per_q.append({"id": q["id"], "style": q["style"], "difficulty": q.get("difficulty"),
+                          "project_name": q.get("project_name"), **measures(ranking, g),
+                          **group_measures(ranking, covers, len(parts))})
+            rankings.append({"system": name, "question": q["id"], "text": q["question"],
+                             "top": [{"unit": ws[j].id, "kind": ws[j].kind, "grade": g.get(j, 0),
+                                      "text": ws[j].text[:200]} for j in ranking[:10]]})
+        results[name] = per_q
 
     args.out.mkdir(parents=True, exist_ok=True)
     with (args.out / "rankings.jsonl").open("w", encoding="utf-8") as f:

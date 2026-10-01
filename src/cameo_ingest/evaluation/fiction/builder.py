@@ -84,9 +84,10 @@ class _Shape:
 class Project:
     """A fictional project: packages, elements, relationships, diagrams and questions."""
 
-    def __init__(self, name: str, prefix: str, file_name: str | None = None):
+    def __init__(self, name: str, prefix: str, file_name: str | None = None, folder: str = ""):
         self.name, self.prefix = name, prefix
         self.file_name = file_name or re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_") + ".mdzip"
+        self.folder = folder  # where the file goes, apart from others of the same name
         self.namespaces = dict(NAMESPACES)
         self.model = _Node(f"<uml:Model xmi:type='uml:Model' xmi:id='{self.id('model')}' name={quoteattr(name)}>",
                            "</uml:Model>")
@@ -551,6 +552,11 @@ class Project:
                 z.writestr(entry(stream), text)
             z.writestr(entry("Records.properties"), "#Compatibility entry\n")
         return buf.getvalue()
+
+    @property
+    def path(self) -> str:
+        """The file's path among the fictional projects."""
+        return f"{self.folder}/{self.file_name}" if self.folder else self.file_name
 
     def questions(self) -> list[dict]:
         token = "sha256:" + hashlib.sha256(self.mdzip()).hexdigest()

@@ -15,7 +15,7 @@ import json
 from collections import Counter
 from pathlib import Path
 
-from cameo_ingest.evaluation.fiction import PROJECTS
+from cameo_ingest.evaluation.fiction import ACROSS, PROJECTS
 
 
 def main() -> int:
@@ -27,12 +27,15 @@ def main() -> int:
     questions = []
     for prefix in args.only or PROJECTS:
         project = PROJECTS[prefix]()
-        (args.dir / project.file_name).write_bytes(project.mdzip())
+        (args.dir / project.path).parent.mkdir(parents=True, exist_ok=True)  # same-named files, in folders
+        (args.dir / project.path).write_bytes(project.mdzip())
         qs = project.questions()
         questions += qs
         levels = Counter(q["difficulty"] for q in qs if q["style"] == "literal")
-        print(f"{project.file_name}: {len(project.mdzip()) // 1024} KB, {len(project.layouts)} diagrams, "
+        print(f"{project.path}: {len(project.mdzip()) // 1024} KB, {len(project.layouts)} diagrams, "
               f"{len(qs)} questions ({', '.join(f'{n} {d}' for d, n in sorted(levels.items()))} facts)")
+    if not args.only:
+        questions += ACROSS()
     with (args.dir / "questions.jsonl").open("w", encoding="utf-8") as f:
         for q in questions:
             f.write(json.dumps(q, ensure_ascii=False) + "\n")

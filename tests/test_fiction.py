@@ -9,7 +9,7 @@ from cameo_ingest.evaluation.fiction import PROJECTS
 from cameo_ingest.evaluation.synthetic import holds
 
 # Kinds that may quote a fact without being about it: listings, summaries, diagrams.
-QUOTING = ("ledger", "generated", "project", "diagram", "package")
+QUOTING = ("ledger", "generated", "project", "diagram", "package", "index", "trace")
 
 
 @pytest.mark.parametrize("prefix", sorted(PROJECTS))
@@ -62,3 +62,34 @@ def test_fiction_renders_what_cameo_models_hold(tmp_path):
     chunk = next(c for c in map(json.loads, (tmp_path / "fvx" / "chunks.jsonl").open())
                  if c["metadata"].get("element_id") == "_fvx_audio_b")
     assert "Notes:\n- Willow Lane: under the noise agreement" in chunk["text"]
+
+
+def test_questions_across_the_rival_proposals(tmp_path):
+    """The three Riverbend proposals share a file name, in different folders. Each question across
+    them has a part of its answer in each model, and the index across models (CROSSREF.md, index:id
+    chunks) gathers the parts of an id-led question in one entry."""
+    from cameo_ingest.evaluation.fiction import ACROSS
+
+    srcs = []
+    for prefix in ("rwt", "hal", "aqu", "fvx"):
+        project = PROJECTS[prefix]()
+        src = tmp_path / "in" / project.path
+        src.parent.mkdir(parents=True, exist_ok=True)
+        src.write_bytes(project.mdzip())
+        srcs.append(str(src))
+    out = tmp_path / "out"
+    assert main([*srcs, "-o", str(out), "--no-llm", "--no-render"]) == 0
+    chunks = [json.loads(line) for line in (out / "chunks.jsonl").open()]
+    names = {c["metadata"]["content"]: c["metadata"]["project"] for c in chunks if c["metadata"].get("project")}
+    assert list(names.values()).count("Riverbend_Water_Treatment_Works.mdzip") == 3  # three projects, one file name
+    for q in ACROSS():
+        for group in q["evidence_groups"]:
+            assert any(holds(group, c["text"]) for c in chunks if c["metadata"]["kind"] != "index:id"), (q["id"], group)
+    entry = [c for c in chunks if c["metadata"]["kind"] == "index:id" and c["metadata"]["term"] == "RWT-REG-003"]
+    q = next(q for q in ACROSS() if q["id"] == "across-x02-literal")
+    assert entry and all(any(holds(g, c["text"]) for c in entry) for g in q["evidence_groups"])
+    assert "## RWT-REG-003, in 3 models" in (out / "CROSSREF.md").read_text()
+    # A thread holds an answer along a derivation, whole: here, Halvorsen's requirement and its test.
+    q = next(q for q in ACROSS() if q["id"] == "within-w03-literal")
+    threads = [c for c in chunks if c["metadata"]["kind"] == "trace:thread"]
+    assert any(all(holds(g, c["text"]) for g in q["evidence_groups"]) for c in threads)

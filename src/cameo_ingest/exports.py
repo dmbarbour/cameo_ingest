@@ -7,6 +7,9 @@
                       chains and --meta values (the lookup behind a project's token)
     chunks.jsonl      all projects' chunks, with each project's --meta values joined in
                       (`metadata.source_metadata`: key -> sorted list of values)
+    CROSSREF.md       identifiers (requirement ids, ids in text) held by two elements or more,
+                      across every model, with each place (plan RF-03); also as index:id chunks,
+                      and, as trace:thread chunks, each model's derivation trees (RF-05)
     rag/              the same chunks as files, for RAG tools that read files rather than
                       JSONL: text/<project>/<sha256>.txt (.md for Markdown chunks), each
                       ending with a source line (project and trace), and meta/<project>/
@@ -20,13 +23,15 @@ from __future__ import annotations
 import json
 import re
 import shutil
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from . import crossref
 from . import plain as pl
 from .ledger import _MD_LINK, MAX_CHARS, MAX_ROWS
-from .provenance import TOOL, sha256_bytes, sha256_text
+from .provenance import TOOL, ContentInfo, sha256_bytes, sha256_text
 from .state import State
 from .text import front_matter, md_inline, md_plain
 
@@ -104,6 +109,26 @@ def rebuild(state: State, out: Path) -> None:
                        "provenance": {"tool": TOOL, "state": "state.sqlite", "projects": len(written)}})
     (out / INDEX).write_text(fm + "\n".join(lines) + "\n", encoding="utf-8")
 
+    settings = state.settings()
+    tree_chunks = _projects_ledger(index_rows)
+    if settings.get("cross_index", True):  # identifiers across the models (plan RF-03)
+        merged: dict[str, list[crossref.Place]] = defaultdict(list)
+        for sha, p in written.items():
+            for term, ps in crossref.places(out / PROJECTS / sha, ContentInfo(sha, p["name"])).items():
+                merged[term] += ps
+        tree_chunks += crossref.entries(merged, refs=settings.get("line_refs", True))
+    if settings.get("threads", True):  # derivation trees within each model (plan RF-05)
+        for sha, p in written.items():
+            for c in crossref.threads(out / PROJECTS / sha, ContentInfo(sha, p["name"]),
+                                      refs=settings.get("line_refs", True)):
+                c["metadata"]["source_metadata"] = _merged_metadata(seen[sha])
+                tree_chunks.append(c)
+        fm = front_matter({"title": "Identifiers across the models in this tree", "kind": "crossref",
+                           "provenance": {"tool": TOOL, "derivation": "assembled", "projects": len(written)}})
+        (out / crossref.FILE).write_text(fm + crossref.page(merged), encoding="utf-8")
+    elif (out / crossref.FILE).exists():
+        (out / crossref.FILE).unlink()
+
     with (out / "chunks.jsonl").open("w", encoding="utf-8") as f:
         for sha in written:
             meta = _merged_metadata(seen[sha])
@@ -113,15 +138,14 @@ def rebuild(state: State, out: Path) -> None:
                     c["metadata"]["file"] = f"{PROJECTS}/{sha}/{c['metadata']['file']}"
                     c["metadata"]["source_metadata"] = meta
                     f.write(json.dumps(c, ensure_ascii=False) + "\n")
-        for c in _projects_ledger(index_rows):
+        for c in tree_chunks:
             f.write(json.dumps(c, ensure_ascii=False) + "\n")
 
-    settings = state.settings()
     if settings.get("rag_files", True):
         projects = [RagProject(sha, p["name"], _merged_metadata(seen[sha]),
                                [_file_ref(s) for s in seen[sha] if not s["missing"]] or [_file_ref(s) for s in seen[sha]])
                     for sha, p in written.items()]
-        write_rag(out, projects, _projects_ledger(index_rows), ".md" if settings.get("chunk_style") == "markdown" else ".txt",
+        write_rag(out, projects, tree_chunks, ".md" if settings.get("chunk_style") == "markdown" else ".txt",
                   settings.get("rag_source") or "trace")
     elif (out / RAG).exists():
         shutil.rmtree(out / RAG)

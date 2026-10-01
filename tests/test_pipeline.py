@@ -269,7 +269,7 @@ def test_provenance_everywhere(tmp_path):
                                     "chain": [], "metadata": {"program": "test"}, "missing": False}]
     chunks = [json.loads(line) for line in (out / "chunks.jsonl").open()]
     for c in chunks:
-        if c["metadata"]["kind"] != "ledger:projects":
+        if c["metadata"]["kind"] not in ("ledger:projects", "index:id"):  # the tree's own chunks span projects
             assert c["metadata"]["content"] == token
             assert c["metadata"]["provenance"]["content_sha256"] == proj.name
             assert c["metadata"]["source_metadata"] == {"program": ["test"]}
@@ -413,8 +413,10 @@ def test_rag_files(tmp_path):
     [folder] = [d.name for d in (rag / "text").iterdir() if d.name != "_tree"]
     assert folder.startswith("drone-")
     files = sorted((rag / "text" / folder).glob("*.txt"))
-    assert len(files) == len([c for c in chunks if c["metadata"]["kind"] != "ledger:projects"])
-    assert len(list((rag / "text" / "_tree").glob("*.txt"))) == 1  # the projects ledger
+    tree_kinds = ("ledger:projects", "index:id", "trace:thread")  # assembled over the tree, in _tree
+    assert len(files) == len([c for c in chunks if c["metadata"]["kind"] not in tree_kinds])
+    assert len(list((rag / "text" / "_tree").glob("*.txt"))) == len([c for c in chunks
+                                                                      if c["metadata"]["kind"] in tree_kinds])
     for f in files:
         assert f.stem == hashlib.sha256(f.read_bytes()).hexdigest()
         meta = json.loads((rag / "meta" / folder / f"{f.stem}.json").read_text())

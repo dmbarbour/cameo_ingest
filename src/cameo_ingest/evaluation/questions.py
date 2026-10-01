@@ -25,7 +25,7 @@ from ..prompts import Slot, Template
 
 csv.field_size_limit(1 << 30)
 # The synthetic and fictional projects' element ids start so: they have questions of their own.
-FICTIONAL = ("_kois_", "_abk_", "_rwt_", "_fvx_", "_pct_")
+FICTIONAL = ("_kois_", "_abk_", "_rwt_", "_fvx_", "_pct_", "_hal_", "_aqu_")
 _BRACKET_ID = re.compile(r"^\s*\[([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+)\]")  # "[REQ-1-OAD-0468] ..." in DOORS text
 
 

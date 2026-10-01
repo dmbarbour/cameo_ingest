@@ -100,16 +100,30 @@ def top(scores: np.ndarray, k: int) -> list[int]:
     return sorted(idx.tolist(), key=lambda i: (-scores[i], i))
 
 
-def fuse(rankings: list[list[int]], k: int = 60, depth: int = 100) -> list[int]:
-    """Reciprocal rank fusion of several rankings."""
+def fuse(rankings: list[list[int]], k: int = 60, depth: int = 100, weights: list[float] | None = None) -> list[int]:
+    """Reciprocal rank fusion of several rankings, each weighted (by default equally)."""
     score: dict[int, float] = defaultdict(float)
-    for ranking in rankings:
+    for ranking, w in zip(rankings, weights or [1.0] * len(rankings), strict=True):
         for r, i in enumerate(ranking[:depth]):
-            score[i] += 1 / (k + r + 1)
+            score[i] += w / (k + r + 1)
     return sorted(score, key=lambda i: (-score[i], i))
 
 
 # -- measures -------------------------------------------------------------------------------------
+def group_measures(ranking: list[int], covers: dict[int, frozenset[int]], groups: int) -> dict[str, float]:
+    """For a question whose answer has several parts (`groups`; one per model, say): the share of
+    the parts that the top 10 hold between them, and whether one unit of the top 10 holds them
+    all. `covers`: unit -> the parts it holds."""
+    seen: set[int] = set()
+    complete = 0.0
+    for i in ranking[:10]:
+        got = covers.get(i, frozenset())
+        seen |= got
+        complete = max(complete, float(len(got) == groups))
+    return {"coverage@10": len(seen) / groups if groups else 0.0, "complete@10": complete}
+
+
+
 def measures(ranking: list[int], grades: dict[int, int]) -> dict[str, float]:
     """For one question: whether an answering unit (grade 2) is in the top 1, 5, 10 and 20; the
     reciprocal rank of the first within 10; and nDCG at 10 over all grades."""

@@ -5,6 +5,11 @@
 
 from __future__ import annotations
 
-from . import crossing, kiosk, traffic, water
+from . import crossing, kiosk, rivals, traffic, water
 
-PROJECTS = {"abk": kiosk.build, "rwt": water.build, "fvx": crossing.build, "pct": traffic.build}
+PROJECTS = {"abk": kiosk.build, "rwt": water.build, "fvx": crossing.build, "pct": traffic.build,
+            "hal": rivals.halvorsen, "aqu": rivals.aquila}
+def ACROSS() -> list[dict]:
+    """Questions with answers in parts: across the three Riverbend proposals (rwt, hal, aqu), and
+    along derivations within a model."""
+    return rivals.across() + rivals.within()

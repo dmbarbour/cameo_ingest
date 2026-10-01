@@ -44,7 +44,7 @@ An output tree remembers these choices, so later runs need no flags."""
 # Run settings an output tree remembers (never secrets: --env names a file).
 SETTINGS = ("env", "text_model", "vision_model", "llm_timeout", "llm_retries", "llm_max_calls",
             "llm_concurrency", "cache_dir", "image_pixels", "diagram_modules", "chunk_style", "rag_files",
-            "rag_source")
+            "rag_source", "cross_index", "line_refs", "threads")
 
 PROGRESS_LOGGER = "cameo_ingest.progress"
 _handlers: list[logging.Handler] = []  # ours, replaced when main() runs again (as in tests)
@@ -157,6 +157,20 @@ def build_parser() -> argparse.ArgumentParser:
                         "trace, for RAG tools that read files but not JSONL (the default)")
     g.add_argument("--no-rag-files", dest="rag_files", action="store_const", const=False,
                    help="do not write rag/ (chunks.jsonl has the same chunks)")
+    g.add_argument("--cross-index", dest="cross_index", action="store_const", const=True, default=None,
+                   help="index identifiers across every model in the tree: CROSSREF.md and index:id chunks "
+                        "(the default)")
+    g.add_argument("--no-cross-index", dest="cross_index", action="store_const", const=False,
+                   help="no index across the models")
+    g.add_argument("--threads", dest="threads", action="store_const", const=True, default=None,
+                   help="write each model's derivation trees of requirements, with what satisfies and verifies "
+                        "them, as trace:thread chunks (the default)")
+    g.add_argument("--no-threads", dest="threads", action="store_const", const=False, help="no derivation threads")
+    g.add_argument("--line-refs", dest="line_refs", action="store_const", const=True, default=None,
+                   help="end each line of an assembled chunk (an index entry, a thread) with a short reference "
+                        "to its source chunk, [project:chunk] (the default)")
+    g.add_argument("--no-line-refs", dest="line_refs", action="store_const", const=False,
+                   help="no references on the lines of assembled chunks")
     g.add_argument("--rag-source", choices=("trace", "id"),
                    help="what the source line of every file in rag/ says: the project and trace locator (trace, the "
                         "default), or short ids that rag/meta/_sources.json and chunks.jsonl resolve to files and "
