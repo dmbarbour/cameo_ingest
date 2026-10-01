@@ -142,9 +142,10 @@ out/
   provenance.jsonl       one record per token: every input path, archive chain and --meta
                          value it was found with
   chunks.jsonl           all projects' chunks, with --meta values joined in
-  rag/                   the same chunks as files, for RAG tools that read files but not JSONL:
-                         a folder per project, a .txt file per chunk (see "Using the output
-                         for RAG"); --no-rag-files leaves it out
+  rag/                   the same chunks as files, for RAG tools that read files but not JSONL
+                         (see "Using the output for RAG"); --no-rag-files leaves it out
+    text/<project>/      a .txt file per chunk, named <sha256 of its text>.txt
+    meta/<project>/      each file's metadata, <sha256>.json, at the same path
   run.json               the latest run: times, command, options, LLM calls and outcomes
   .cache/llm.sqlite      LLM answers
   by-sha256/<sha256>/    one project, named by the sha256 of its own bytes:
@@ -210,14 +211,23 @@ emitted as separate `generated:*` chunks, so chunks of extracted text never mix 
 Load the root `chunks.jsonl` into your vector store: embed `text`, and keep `metadata` as
 filterable fields.
 
-**If your RAG tool reads files rather than JSONL,** point it at `rag/` alone, not at the whole
-tree: the tree also holds Markdown pages, JSON indexes and CSV tables, which would be
+**If your RAG tool reads files rather than JSONL,** point it at `rag/text/` alone, not at the
+whole tree: the tree also holds Markdown pages, JSON indexes and CSV tables, which would be
 ingested beside the chunks.
-- **Folders:** one per project (`TMT-9ffd7a2c`, its name and the start of its token).
-- **Files:** one `.txt` file per chunk, named by its heading (`Requirement REQ-1-OAD-0468
-  Tip-tilt error budget 3f9a2c.txt`), with the projects ledger at the top. With
-  `--chunk-style markdown` the files are `.md`.
-- **Provenance:** such tools keep only a file's text, so each file ends with its provenance:
+- **Folders:** one per project (`TMT-9ffd7a2c`, its name and the start of its token), and
+  `_tree` for the projects ledger.
+- **Files:** one `.txt` file per chunk, named by the sha256 of its text, so names never clash
+  and change only when the text does. With `--chunk-style markdown` the files are `.md`.
+- **Metadata:** `rag/meta/` has the same folders, with each file's metadata as `<sha256>.json`,
+  for tools that take metadata per file. It is flat:
+  - `title` (the chunk's heading), `kind` and `chunk_id`, which joins it to `chunks.jsonl`;
+  - `project` and `project_token`;
+  - `element_id`, `element_type`, `qualified_name` and `stereotypes`;
+  - `page` (the Markdown page and anchor, in the tree) and `trace` (the locator);
+  - `derivation` and, for generated text, `generated_by`;
+  - `found_with` (the `--meta` values).
+- **Provenance in the text too:** a tool may keep only a file's text, so each file also ends
+  with its provenance:
   - `Source:` the project and the trace locator (content, archive entry, element and line);
   - `Found with:` the `--meta` values of the inputs it came from, if any.
 - **One window per file:** plain chunks are split so that a file, its heading and its source

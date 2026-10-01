@@ -7,10 +7,10 @@
                       chains and --meta values (the lookup behind a project's token)
     chunks.jsonl      all projects' chunks, with each project's --meta values joined in
                       (`metadata.source_metadata`: key -> sorted list of values)
-    rag/              the same chunks as files, one per chunk, for RAG tools that read files
-                      rather than JSONL: .txt for plain chunks (.md for Markdown ones), each
-                      ending with a source line (project and trace), since such tools keep
-                      only the text
+    rag/              the same chunks as files, for RAG tools that read files rather than
+                      JSONL: text/<project>/<sha256>.txt (.md for Markdown chunks), each
+                      ending with a source line (project and trace), and meta/<project>/
+                      <sha256>.json, each file's metadata
 
 Only provenance.jsonl names local paths; the others name inputs by file name.
 """
@@ -33,7 +33,6 @@ PROJECTS = "by-sha256"
 INDEX = "INDEX.md"
 RAG = "rag"
 _UNSAFE = re.compile(r'[<>:"/\\|?*\x00-\x1f`]+')  # not in file names, on Windows or elsewhere
-_WHERE = re.compile(r"^(.*?) in [^\n]*?\(project [^)\n]*\)(.*)$")  # a plain heading's place, dropped
 
 
 def sightings(state: State, sha256: str) -> list[dict[str, Any]]:
@@ -130,21 +129,12 @@ def _safe(name: str, limit: int = 80) -> str:
     return name if len(name) <= limit else name[:limit].rsplit(" ", 1)[0].rstrip(" .")
 
 
-def rag_name(chunk: dict[str, Any]) -> str:
-    """A chunk's file name: its heading without the place ("Block Drop Slot", "Requirement
-    RWT-REG-002: The works shall ..."), and the start of its id, which keeps names unique."""
-    first = chunk["text"].split("\n", 1)[0].lstrip("# ")
-    m = _WHERE.match(first)
-    name = _safe(md_plain(m.group(1) + m.group(2) if m else first)) or chunk["metadata"]["kind"]
-    return f"{name} {chunk['id'][:6]}"
-
-
 def rag_text(chunk: dict[str, Any], project: str | None, found_with: dict[str, list[str]]) -> str:
-    """A chunk as a file: its text, then where it came from. A RAG tool that reads files keeps
-    only their text, so the provenance goes in it: the project and the trace locator (which
-    names the content, archive entry, element and line), and the --meta values of the inputs it
-    was found in. One short line, since every token of it is one fewer for the text: the plain
-    style leaves room for it within a 512-token window."""
+    """A chunk as a file: its text, then where it came from. A RAG tool that reads files may
+    keep only their text, so the provenance goes in it as well as in the metadata file: the
+    project and the trace locator (which names the content, archive entry, element and line),
+    and the --meta values of the inputs it was found in. One short line, since every token of
+    it is one fewer for the text: the plain style leaves room for it within a 512-token window."""
     meta = chunk["metadata"]
     locator = (meta.get("provenance") or {}).get("locator")
     source = "; ".join(x for x in (project, f"trace {locator}" if locator else None) if x)
@@ -154,37 +144,82 @@ def rag_text(chunk: dict[str, Any], project: str | None, found_with: dict[str, l
     return "\n".join(lines) + "\n"
 
 
+def rag_meta(chunk: dict[str, Any], file: str, sha: str | None, project: str | None,
+             found_with: dict[str, list[str]]) -> dict[str, Any]:
+    """The metadata file of a chunk's file: flat, for tools that take metadata per file. The
+    chunk's id joins it to chunks.jsonl, which has the rest."""
+    m = chunk["metadata"]
+    prov = m.get("provenance") or {}
+    d = prov.get("derivation") or {}
+    page = m.get("file")
+    out: dict[str, Any] = {
+        "file": file, "title": md_plain(chunk["text"].split("\n", 1)[0].lstrip("# ")), "chunk_id": chunk["id"],
+        "kind": m.get("kind"), "project": project, "project_token": m.get("content"),
+        "element_id": m.get("element_id"), "element_type": m.get("element_type"),
+        "qualified_name": m.get("qualified_name"), "stereotypes": m.get("stereotypes") or None,
+        "page": f"{PROJECTS}/{sha}/{page}" if sha and page else page, "trace": prov.get("locator"),
+        "derivation": d.get("method"), "generated_by": d.get("model"), "tool": d.get("tool"),
+        "found_with": found_with or None,
+    }
+    for k in ("part", "parts", "piece", "pieces", "diagram_type"):
+        if isinstance(m.get(k), (str, int)):
+            out[k] = m[k]
+    return {k: v for k, v in out.items() if v is not None}
+
+
+def _write_files(folder: str, root: Path, chunks: list[dict[str, Any]], sha: str | None, project: str | None,
+                 found_with: dict[str, list[str]], ext: str) -> None:
+    """A folder of chunk files under text/, named by the sha256 of their text, and their
+    metadata under meta/, at the same path. Two chunks with the same text share a file, and its
+    metadata lists both."""
+    text_dir, meta_dir = root / "text" / folder, root / "meta" / folder
+    for d in (text_dir, meta_dir):
+        if d.exists():
+            shutil.rmtree(d)
+        d.mkdir(parents=True)
+    metas: dict[str, dict[str, Any]] = {}
+    for c in chunks:
+        data = rag_text(c, project, found_with).encode("utf-8")
+        name = sha256_bytes(data)
+        if name in metas:
+            metas[name].setdefault("same_text_chunk_ids", []).append(c["id"])
+            continue
+        (text_dir / f"{name}{ext}").write_bytes(data)
+        metas[name] = rag_meta(c, f"{name}{ext}", sha, project, found_with)
+    for name, record in metas.items():
+        (meta_dir / f"{name}.json").write_text(json.dumps(record, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
 def write_rag(out: Path, names: dict[str, str], found_with: dict[str, dict[str, list[str]]],
               tree_chunks: list[dict[str, Any]], ext: str) -> None:
-    """The rag/ folder: a subfolder per project (its name and token, `TMT-9ffd7a2c`), a file per
-    chunk, and the projects ledger at the top. A project's files are written again only when
-    its chunks or --meta values change; folders of projects no longer in the tree go."""
+    """rag/: the chunks as files, for RAG tools that read files. Under text/, a folder per
+    project (its name and token, `TMT-9ffd7a2c`) of files named by the sha256 of their text;
+    under meta/, the same folders, with each file's metadata as `<sha256>.json`; the projects
+    ledger in `_tree`. Point a RAG tool at text/ alone. A project's files are written again only
+    when its chunks or --meta values change; folders of projects no longer in the tree go."""
     root = out / RAG
-    root.mkdir(exist_ok=True)
-    keep = set()
+    for d in (root, root / "text", root / "meta"):
+        d.mkdir(exist_ok=True)
+    for old in root.iterdir():  # anything else is from an earlier layout
+        if old.name not in ("text", "meta"):
+            shutil.rmtree(old) if old.is_dir() else old.unlink()
+    keep = {"_tree"}
     for sha, name in names.items():
         src = out / PROJECTS / sha / "index" / "chunks.jsonl"
-        stamp = json.dumps([sha256_bytes(src.read_bytes()), found_with[sha], ext])
-        folder = root / f"{_safe(PurePosixPath(name).stem, 40)}-{sha[:8]}"
-        keep.add(folder.name)
-        marker = folder / ".chunks"  # no extension: RAG tools skip it
-        if marker.is_file() and marker.read_text(encoding="utf-8") == stamp:
+        stamp = json.dumps([sha256_bytes(src.read_bytes()), found_with[sha], ext, TOOL])
+        folder = f"{_safe(PurePosixPath(name).stem, 40)}-{sha[:8]}"
+        keep.add(folder)
+        marker = root / "meta" / folder / ".stamp"
+        if marker.is_file() and marker.read_text(encoding="utf-8") == stamp and (root / "text" / folder).is_dir():
             continue
-        if folder.exists():
-            shutil.rmtree(folder)
-        folder.mkdir()
         with src.open(encoding="utf-8") as f:
-            for line in f:
-                c = json.loads(line)
-                (folder / (rag_name(c) + ext)).write_text(rag_text(c, name, found_with[sha]), encoding="utf-8")
+            _write_files(folder, root, [json.loads(line) for line in f], sha, name, found_with[sha], ext)
         marker.write_text(stamp, encoding="utf-8")
-    for old in root.iterdir():
-        if old.is_dir() and old.name not in keep:
-            shutil.rmtree(old)
-        elif old.is_file():
-            old.unlink()
-    for c in tree_chunks:
-        (root / (rag_name(c) + ext)).write_text(rag_text(c, None, {}), encoding="utf-8")
+    for top in (root / "text", root / "meta"):
+        for old in top.iterdir():
+            if old.name not in keep:
+                shutil.rmtree(old) if old.is_dir() else old.unlink()
+    _write_files("_tree", root, tree_chunks, None, None, {}, ext)
 
 
 def _projects_ledger(index_rows: list[tuple[str, str]]) -> list[dict[str, Any]]:

@@ -397,28 +397,38 @@ def test_adding_a_directory_reports_its_walk(tmp_path, caplog):
 
 
 def test_rag_files(tmp_path):
-    """rag/ holds every chunk as a .txt file (plain chunks), named by its heading and ending with
-    its source and trace, for RAG tools that read files but not JSONL. Unchanged projects are
-    not written again; --no-rag-files removes the folder."""
+    """rag/text holds every chunk as a .txt file (plain chunks) named by the sha256 of its text,
+    ending with its source; rag/meta holds each file's metadata at the same path. Unchanged
+    projects are not written again; --no-rag-files removes the folder."""
+    import hashlib
+
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     out = tmp_path / "out"
     assert main([str(src), "-o", str(out), "--no-llm", "--no-render", "--meta", "program=X"]) == 0
     chunks = [json.loads(line) for line in (out / "chunks.jsonl").open()]
-    [folder] = [d for d in (out / "rag").iterdir() if d.is_dir()]
-    assert folder.name.startswith("drone-")
-    files = sorted(folder.glob("*.txt"))
+    rag = out / "rag"
+    assert sorted(p.name for p in rag.iterdir()) == ["meta", "text"]
+    [folder] = [d.name for d in (rag / "text").iterdir() if d.name != "_tree"]
+    assert folder.startswith("drone-")
+    files = sorted((rag / "text" / folder).glob("*.txt"))
     assert len(files) == len([c for c in chunks if c["metadata"]["kind"] != "ledger:projects"])
-    assert len(list((out / "rag").glob("*.txt"))) == 1  # the projects ledger
-    drone = next(f for f in files if f.name.startswith("Block Drone "))
-    text = drone.read_text()
-    assert text.startswith("Block Drone in ") and "\n\nSource: drone.mdzip; trace sha256:" in text
-    assert text.endswith("Found with: program=X\n")
+    assert len(list((rag / "text" / "_tree").glob("*.txt"))) == 1  # the projects ledger
+    for f in files:
+        assert f.stem == hashlib.sha256(f.read_bytes()).hexdigest()
+        meta = json.loads((rag / "meta" / folder / f"{f.stem}.json").read_text())
+        assert meta["file"] == f.name and meta["trace"] in f.read_text()
+    drone = next(f for f in files if f.read_text().startswith("Block Drone in "))
+    meta = json.loads((rag / "meta" / folder / f"{drone.stem}.json").read_text())
+    assert meta["kind"] == "element" and meta["title"].startswith("Block Drone in ")
+    assert meta["page"].startswith("by-sha256/") and meta["found_with"] == {"program": ["X"]}
+    assert "\n\nSource: drone.mdzip; trace sha256:" in drone.read_text()
+    assert drone.read_text().endswith("Found with: program=X\n")
     stamp = drone.stat().st_mtime_ns
     assert main(["run", "-o", str(out)]) == 0
     assert drone.stat().st_mtime_ns == stamp  # not written again
     assert main(["run", "-o", str(out), "--no-rag-files"]) == 0
-    assert not (out / "rag").exists()
+    assert not rag.exists()
 
 
 def test_tree_rules_and_missing_inputs(tmp_path, capsys):
