@@ -36,8 +36,10 @@ RUN_RECORDS = {"run.json", "provenance.jsonl", "state.sqlite", "state.sqlite-wal
 
 
 def tree(out: Path) -> dict[str, bytes]:
+    """Every file of a tree but those that name local paths or times."""
     return {str(f.relative_to(out)): f.read_bytes() for f in out.rglob("*")
-            if f.is_file() and f.name not in RUN_RECORDS and ".cache" not in f.parts}
+            if f.is_file() and f.name not in RUN_RECORDS and ".cache" not in f.parts
+            and f.relative_to(out).parts[:2] != ("rag", "meta")}
 
 
 def project_dir(out: Path, name: str | None = None) -> Path:
@@ -398,10 +400,9 @@ def test_adding_a_directory_reports_its_walk(tmp_path, caplog):
 
 def test_rag_files(tmp_path):
     """rag/text holds every chunk as a .txt file (plain chunks) named by the sha256 of its text,
-    ending with its source; rag/meta holds each file's metadata at the same path. Unchanged
-    projects are not written again; --no-rag-files removes the folder."""
-    import hashlib
-
+    ending with its source; rag/meta holds each file's metadata at the same path, with the input
+    files, and _sources.json resolves each project's short id to them. --rag-source is set for
+    the whole tree; unchanged projects are not written again; --no-rag-files removes the folder."""
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     out = tmp_path / "out"
@@ -424,11 +425,42 @@ def test_rag_files(tmp_path):
     assert meta["page"].startswith("by-sha256/") and meta["found_with"] == {"program": ["X"]}
     assert "\n\nSource: drone.mdzip; trace sha256:" in drone.read_text()
     assert drone.read_text().endswith("Found with: program=X\n")
+    # Input files: in the metadata, and in _sources.json under the project's short id; never in the text.
+    assert meta["source_file"] == str(src.resolve()) and meta["source_files"] == [str(src.resolve())]
+    sources = json.loads((rag / "meta" / "_sources.json").read_text())
+    assert sources[meta["source_id"]]["files"] == [str(src.resolve())] and folder.endswith(meta["source_id"])
+    assert str(tmp_path) not in drone.read_text()
     stamp = drone.stat().st_mtime_ns
     assert main(["run", "-o", str(out)]) == 0
     assert drone.stat().st_mtime_ns == stamp  # not written again
+    # --rag-source is set for the whole tree: a run rewrites every file in the new form.
+    assert main(["run", "-o", str(out), "--rag-source", "id"]) == 0
+    texts = [f.read_text() for f in (rag / "text" / folder).glob("*.txt")]
+    assert any(f"Source: drone.mdzip [{meta['source_id']}:{meta['chunk_id'][:12]}]" in t for t in texts)
+    assert not any("trace sha256:" in t for t in texts)
     assert main(["run", "-o", str(out), "--no-rag-files"]) == 0
     assert not rag.exists()
+
+
+def test_destination_from_the_environment(tmp_path, monkeypatch, capsys):
+    """Without -o, the output tree is $CAMEO_INGEST_DEST, which may come from an --env file."""
+    src = tmp_path / "drone.mdzip"
+    src.write_bytes(make_mdzip())
+    monkeypatch.delenv("CAMEO_INGEST_DEST", raising=False)
+    assert main([str(src), "--no-llm", "--no-render"]) == 2
+    assert "CAMEO_INGEST_DEST" in capsys.readouterr().err
+    monkeypatch.setenv("CAMEO_INGEST_DEST", str(tmp_path / "dest"))
+    assert main([str(src), "--no-llm", "--no-render"]) == 0
+    assert (tmp_path / "dest" / "manifest.json").is_file()
+    assert main(["status"]) == 0
+    monkeypatch.delenv("CAMEO_INGEST_DEST")
+    env = tmp_path / "settings.env"
+    env.write_text(f"CAMEO_INGEST_DEST={tmp_path / 'from-env'}\n")
+    try:
+        assert main([str(src), "--env", str(env), "--no-llm", "--no-render"]) == 0
+        assert (tmp_path / "from-env" / "manifest.json").is_file()
+    finally:
+        os.environ.pop("CAMEO_INGEST_DEST", None)  # set by the --env file, not by monkeypatch
 
 
 def test_tree_rules_and_missing_inputs(tmp_path, capsys):

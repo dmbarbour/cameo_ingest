@@ -1,7 +1,7 @@
 # Plan: related facts brought together, 2026-10-01
 
-- **Status:** Proposed on 2026-10-01. It waits on the maintainer's answers to the questions at
-  the end.
+- **Status:** Proposed on 2026-10-01, and revised the same day with the maintainer's answers
+  (Decisions). In progress.
 - **Step prefix:** `RF`, so steps are `RF-01`, `RF-02` and so on
 - **Addresses:** the maintainer's request of 2026-10-01. The maintainer leans towards keyword
   search (BM25) to find related facts, since requirements and other items are named and looked
@@ -11,6 +11,28 @@
 - **Related:** plan RE (retrieval evaluation), whose fictional projects (RE-10) measure this
   without judges. The tentative plan for keyword search and a workbook export (plan index)
   overlaps with the concordance below.
+
+## Decisions
+
+All answered by the maintainer on 2026-10-01.
+
+| # | Question | Decision |
+|---|---|---|
+| 1 | Which tracing matters most | From whatever the RAG returns back to the source file: "requirements to source files". The RAG holds thousands of files, not only models, and locating things in it is troublesome. Fine-grained tracing within a model is an opportunistic convenience, used where it makes sense. |
+| 2 | How requirements are structured | Unknown, and not consistent: the models come from several companies competing for one contract, with little guidance beyond "provide models in Cameo". Nothing may assume one structure. |
+| 3 | Rerankers | Stand-ins on DeepInfra. No local models: the maintainer's machine can't take the load (plan RE, decision 8). |
+| 4 | Size | Repetition is welcome where it helps comprehension. |
+| 5 | Provenance in assembled chunks | A trace on every line is too long. Short logical ids on each line, resolved elsewhere (to file paths, locators and so on), are worth trying as an experiment, behind a switch. |
+
+**What follows for the design:**
+- **Source files first:** every chunk file says which input file it came from: by full path in
+  its metadata, and by a short id in its text, which a table resolves to the paths. Paths
+  themselves stay out of the text, since some are longer than a whole window.
+- **Across models:** a requirement asked about may be answered in several companies' models, so
+  an index from requirement ids and names to every model, element and file that mentions them
+  serves "requirements to source files" across the corpus, whatever each model's structure.
+- **Within a model:** trace cards and threads come after, where a model's relationships make
+  them worthwhile.
 
 ## Why
 
@@ -140,22 +162,15 @@ source.
 
 | Step | Work | Status |
 |---|---|---|
-| RF-01 | Inventory: every source of relatedness in each sample (relationships, nesting, facets, citations, structure, diagrams), and the sizes the forms would have. | Started: the table above |
-| RF-02 | Questions: DOORS-like structure in the traffic project; multi-fact questions in all four projects; grading that wants every evidence phrase; the new measures. | Not started |
-| RF-03 | Forms A to D, as chunk kinds (`trace:card`, `trace:thread`, `facet`, `index:term`), behind an option, in `chunks.jsonl` and `rag/`. | Not started |
-| RF-04 | Evaluation: the forms against plain chunks alone, with each system; fictional first, real samples by eye. | Not started |
-| RF-05 | Adopt what helps (the default, the README's advice, a version bump). | Not started |
+| RF-01 | Source files in every chunk file: the input paths (with archive chains) in each file's metadata, a table from each project's short id to its files, and short ids in the text's source line behind a switch. | Done: `source_id`, `source_file` and `source_files` in `rag/meta/<project>/<sha256>.json`; `rag/meta/_sources.json`; `--rag-source trace|id`, set for the whole tree. Paths never go in the text: some are longer than a window (the maintainer, 2026-10-01). Also `CAMEO_INGEST_DEST` for the output tree, in place of `-o` |
+| RF-02 | Rerankers: Qwen3-Reranker on DeepInfra (decision 3) in the harness, reordering the top candidates of BM25, dense and hybrid search; measured on the fictional questions. | Not started |
+| RF-03 | An index across models: requirement ids and names (and other ids) to every model, element and source file that mentions them. Fictional: two companies' models answering one set of requirements. | Not started |
+| RF-04 | Questions and measures: cross-model and multi-fact questions in the fictional projects; DOORS-like structure in one of them; grading that wants every evidence phrase. | Not started |
+| RF-05 | Within-model forms (trace cards, threads, facet lists) where relationships make them worthwhile, with short logical ids per line behind a switch (decision 5). | Not started |
+| RF-06 | Evaluate and adopt what helps (defaults, the README's advice, a version bump). | Not started |
+
+RF-01's inventory of relatedness (the table under "Why") is done for requirements.
 
 ## Questions for the maintainer
 
-1. **Which tracing questions matter most?** For example:
-   - from a requirement down to the design and the tests;
-   - from a component up to the needs it serves;
-   - everything about one subsystem;
-   - what a change to one requirement would touch.
-2. **How are requirements structured in your models?** Mostly modelled relationships, as in the
-   Drone sample, or imported from DOORS, as TMT is (nesting, tags, ids in text)?
-3. **Rerankers:** a stand-in on DeepInfra, or the TinyBERT cross-encoder run locally?
-4. **Size:** assembled chunks repeat facts. Is an index perhaps a third to two-thirds larger
-   acceptable, if it finds traces better?
-5. **Provenance in assembled chunks:** numbered sources at the end, or a trace on every line?
+Answered on 2026-10-01: see Decisions.

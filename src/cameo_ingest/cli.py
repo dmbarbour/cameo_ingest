@@ -43,7 +43,8 @@ An output tree remembers these choices, so later runs need no flags."""
 
 # Run settings an output tree remembers (never secrets: --env names a file).
 SETTINGS = ("env", "text_model", "vision_model", "llm_timeout", "llm_retries", "llm_max_calls",
-            "llm_concurrency", "cache_dir", "image_pixels", "diagram_modules", "chunk_style", "rag_files")
+            "llm_concurrency", "cache_dir", "image_pixels", "diagram_modules", "chunk_style", "rag_files",
+            "rag_source")
 
 PROGRESS_LOGGER = "cameo_ingest.progress"
 _handlers: list[logging.Handler] = []  # ours, replaced when main() runs again (as in tests)
@@ -116,7 +117,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ap.add_argument("--version", action="version", version=f"cameo-ingest {__version__}")
     common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("-o", "--out", type=Path, required=True, help="output tree (created if missing)")
+    common.add_argument("-o", "--out", type=Path,
+                        help="output tree (created if missing; default: $CAMEO_INGEST_DEST)")
     common.add_argument("-v", "--verbose", action="count", default=0, help="-v: phases; -vv: debug")
     common.add_argument("--log-file", type=Path, metavar="FILE", help="also write a detailed (DEBUG) log to FILE")
 
@@ -155,6 +157,11 @@ def build_parser() -> argparse.ArgumentParser:
                         "trace, for RAG tools that read files but not JSONL (the default)")
     g.add_argument("--no-rag-files", dest="rag_files", action="store_const", const=False,
                    help="do not write rag/ (chunks.jsonl has the same chunks)")
+    g.add_argument("--rag-source", choices=("trace", "id"),
+                   help="what the source line of every file in rag/ says: the project and trace locator (trace, the "
+                        "default), or short ids that rag/meta/_sources.json and chunks.jsonl resolve to files and "
+                        "locators (id). Set for the whole tree: a run rewrites rag/ in the new form, without "
+                        "ingesting again")
     g.add_argument("--llm-timeout", type=float, metavar="SECONDS", help="per-request timeout (default 120)")
     g.add_argument("--llm-retries", type=int, metavar="N", help="retries per request (default 2)")
     g.add_argument("--llm-max-calls", type=int, metavar="N", help="stop calling the LLM after N requests in a run "
@@ -374,6 +381,13 @@ def main(argv: list[str] | None = None) -> int:
         argv.insert(0, "ingest")  # `cameo-ingest FILE -o OUT` keeps working
     args = build_parser().parse_args(argv)
     setup_logging(args.verbose, args.log_file)
+    if args.out is None:  # the tree from the environment, or from an --env file given here
+        if getattr(args, "env", None) and args.env.is_file() and "CAMEO_INGEST_DEST" not in os.environ:
+            load_env(args.env)
+        if not os.environ.get("CAMEO_INGEST_DEST"):
+            print("error: no output tree: give -o DIR, or set CAMEO_INGEST_DEST", file=sys.stderr)
+            return 2
+        args.out = Path(os.environ["CAMEO_INGEST_DEST"])
     out: Path = args.out
     if not State.exists(out):
         if args.command in ("run", "status", "prune", "quality"):

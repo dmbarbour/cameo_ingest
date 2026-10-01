@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -117,10 +118,32 @@ def rebuild(state: State, out: Path) -> None:
 
     settings = state.settings()
     if settings.get("rag_files", True):
-        write_rag(out, {sha: p["name"] for sha, p in written.items()}, {sha: _merged_metadata(seen[sha]) for sha in written},
-                  _projects_ledger(index_rows), ".md" if settings.get("chunk_style") == "markdown" else ".txt")
+        projects = [RagProject(sha, p["name"], _merged_metadata(seen[sha]),
+                               [_file_ref(s) for s in seen[sha] if not s["missing"]] or [_file_ref(s) for s in seen[sha]])
+                    for sha, p in written.items()]
+        write_rag(out, projects, _projects_ledger(index_rows), ".md" if settings.get("chunk_style") == "markdown" else ".txt",
+                  settings.get("rag_source") or "trace")
     elif (out / RAG).exists():
         shutil.rmtree(out / RAG)
+
+
+@dataclass
+class RagProject:
+    """A written project, as rag/ names its sources."""
+
+    sha: str
+    name: str
+    found_with: dict[str, list[str]]  # the --meta values of its inputs
+    files: list[str]  # where it was found: absolute paths, with archive chains ("/x/a.zip!b.mdzip")
+
+    @property
+    def id(self) -> str:
+        """Its short logical id: the start of its token, as in its folder's name."""
+        return self.sha[:8]
+
+
+def _file_ref(sighting: dict[str, Any]) -> str:
+    return "!".join([sighting["path"], *sighting["chain"]])
 
 
 def _safe(name: str, limit: int = 80) -> str:
@@ -129,23 +152,32 @@ def _safe(name: str, limit: int = 80) -> str:
     return name if len(name) <= limit else name[:limit].rsplit(" ", 1)[0].rstrip(" .")
 
 
-def rag_text(chunk: dict[str, Any], project: str | None, found_with: dict[str, list[str]]) -> str:
+def rag_text(chunk: dict[str, Any], project: RagProject | None, form: str = "trace") -> str:
     """A chunk as a file: its text, then where it came from. A RAG tool that reads files may
-    keep only their text, so the provenance goes in it as well as in the metadata file: the
-    project and the trace locator (which names the content, archive entry, element and line),
-    and the --meta values of the inputs it was found in. One short line, since every token of
-    it is one fewer for the text: the plain style leaves room for it within a 512-token window."""
+    keep only their text, so the source goes in it as well as in the metadata file. One short
+    line, since every token of it is one fewer for the text (the plain style leaves room for it
+    within a 512-token window), in one of two forms (`--rag-source`):
+    - `trace`: the project and the trace locator (content, archive entry, element and line);
+    - `id`: only short logical ids, the project's and the chunk's, which rag/meta/_sources.json
+      and chunks.jsonl resolve to the input files and the locator.
+    Never the input files' paths, which can be longer than a whole window. Then the --meta
+    values of the inputs it was found in."""
     meta = chunk["metadata"]
-    locator = (meta.get("provenance") or {}).get("locator")
-    source = "; ".join(x for x in (project, f"trace {locator}" if locator else None) if x)
-    lines = [chunk["text"].rstrip(), "", f"Source: {source}"]
-    if found_with:
-        lines.append("Found with: " + "; ".join(f"{k}={', '.join(v)}" for k, v in sorted(found_with.items())))
+    prov = meta.get("provenance") or {}
+    locator = prov.get("locator")
+    if project is None:  # the tree's own chunks (the projects ledger)
+        source = locator
+    elif form == "id":
+        source = f"{project.name} [{project.id}:{chunk['id'][:12]}]"
+    else:
+        source = "; ".join(x for x in (project.name, f"trace {locator}" if locator else None) if x)
+    lines = [chunk["text"].rstrip(), ""] + ([f"Source: {source}"] if source else [])
+    if project is not None and project.found_with:
+        lines.append("Found with: " + "; ".join(f"{k}={', '.join(v)}" for k, v in sorted(project.found_with.items())))
     return "\n".join(lines) + "\n"
 
 
-def rag_meta(chunk: dict[str, Any], file: str, sha: str | None, project: str | None,
-             found_with: dict[str, list[str]]) -> dict[str, Any]:
+def rag_meta(chunk: dict[str, Any], file: str, project: RagProject | None) -> dict[str, Any]:
     """The metadata file of a chunk's file: flat, for tools that take metadata per file. The
     chunk's id joins it to chunks.jsonl, which has the rest."""
     m = chunk["metadata"]
@@ -154,12 +186,14 @@ def rag_meta(chunk: dict[str, Any], file: str, sha: str | None, project: str | N
     page = m.get("file")
     out: dict[str, Any] = {
         "file": file, "title": md_plain(chunk["text"].split("\n", 1)[0].lstrip("# ")), "chunk_id": chunk["id"],
-        "kind": m.get("kind"), "project": project, "project_token": m.get("content"),
+        "kind": m.get("kind"), "project": project.name if project else None, "project_token": m.get("content"),
+        "source_id": project.id if project else None,
+        "source_file": project.files[0] if project else None, "source_files": project.files if project else None,
         "element_id": m.get("element_id"), "element_type": m.get("element_type"),
         "qualified_name": m.get("qualified_name"), "stereotypes": m.get("stereotypes") or None,
-        "page": f"{PROJECTS}/{sha}/{page}" if sha and page else page, "trace": prov.get("locator"),
+        "page": f"{PROJECTS}/{project.sha}/{page}" if project and page else page, "trace": prov.get("locator"),
         "derivation": d.get("method"), "generated_by": d.get("model"), "tool": d.get("tool"),
-        "found_with": found_with or None,
+        "found_with": (project.found_with or None) if project else None,
     }
     for k in ("part", "parts", "piece", "pieces", "diagram_type"):
         if isinstance(m.get(k), (str, int)):
@@ -167,8 +201,8 @@ def rag_meta(chunk: dict[str, Any], file: str, sha: str | None, project: str | N
     return {k: v for k, v in out.items() if v is not None}
 
 
-def _write_files(folder: str, root: Path, chunks: list[dict[str, Any]], sha: str | None, project: str | None,
-                 found_with: dict[str, list[str]], ext: str) -> None:
+def _write_files(folder: str, root: Path, chunks: list[dict[str, Any]], project: RagProject | None, ext: str,
+                 form: str) -> None:
     """A folder of chunk files under text/, named by the sha256 of their text, and their
     metadata under meta/, at the same path. Two chunks with the same text share a file, and its
     metadata lists both."""
@@ -179,47 +213,52 @@ def _write_files(folder: str, root: Path, chunks: list[dict[str, Any]], sha: str
         d.mkdir(parents=True)
     metas: dict[str, dict[str, Any]] = {}
     for c in chunks:
-        data = rag_text(c, project, found_with).encode("utf-8")
+        data = rag_text(c, project, form).encode("utf-8")
         name = sha256_bytes(data)
         if name in metas:
             metas[name].setdefault("same_text_chunk_ids", []).append(c["id"])
             continue
         (text_dir / f"{name}{ext}").write_bytes(data)
-        metas[name] = rag_meta(c, f"{name}{ext}", sha, project, found_with)
+        metas[name] = rag_meta(c, f"{name}{ext}", project)
     for name, record in metas.items():
         (meta_dir / f"{name}.json").write_text(json.dumps(record, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
-def write_rag(out: Path, names: dict[str, str], found_with: dict[str, dict[str, list[str]]],
-              tree_chunks: list[dict[str, Any]], ext: str) -> None:
+def write_rag(out: Path, projects: list[RagProject], tree_chunks: list[dict[str, Any]], ext: str,
+              form: str = "trace") -> None:
     """rag/: the chunks as files, for RAG tools that read files. Under text/, a folder per
-    project (its name and token, `TMT-9ffd7a2c`) of files named by the sha256 of their text;
-    under meta/, the same folders, with each file's metadata as `<sha256>.json`; the projects
-    ledger in `_tree`. Point a RAG tool at text/ alone. A project's files are written again only
-    when its chunks or --meta values change; folders of projects no longer in the tree go."""
+    project (its name and short id, `TMT-9ffd7a2c`) of files named by the sha256 of their text;
+    under meta/, the same folders, with each file's metadata as `<sha256>.json`, and
+    `_sources.json`, which resolves each project's short id to the files it was found in; the
+    projects ledger in `_tree`. Point a RAG tool at text/ alone. A project's files are written
+    again only when its chunks, sources or --meta values change; folders of projects no longer in
+    the tree go."""
     root = out / RAG
     for d in (root, root / "text", root / "meta"):
         d.mkdir(exist_ok=True)
     for old in root.iterdir():  # anything else is from an earlier layout
         if old.name not in ("text", "meta"):
             shutil.rmtree(old) if old.is_dir() else old.unlink()
-    keep = {"_tree"}
-    for sha, name in names.items():
-        src = out / PROJECTS / sha / "index" / "chunks.jsonl"
-        stamp = json.dumps([sha256_bytes(src.read_bytes()), found_with[sha], ext, TOOL])
-        folder = f"{_safe(PurePosixPath(name).stem, 40)}-{sha[:8]}"
+    keep, sources = {"_tree", "_sources.json"}, {}
+    for p in projects:
+        src = out / PROJECTS / p.sha / "index" / "chunks.jsonl"
+        stamp = json.dumps([sha256_bytes(src.read_bytes()), p.found_with, p.files, ext, form, TOOL])
+        folder = f"{_safe(PurePosixPath(p.name).stem, 40)}-{p.id}"
         keep.add(folder)
+        sources[p.id] = {"project": p.name, "token": f"sha256:{p.sha}", "folder": folder, "files": p.files,
+                         "found_with": p.found_with}
         marker = root / "meta" / folder / ".stamp"
         if marker.is_file() and marker.read_text(encoding="utf-8") == stamp and (root / "text" / folder).is_dir():
             continue
         with src.open(encoding="utf-8") as f:
-            _write_files(folder, root, [json.loads(line) for line in f], sha, name, found_with[sha], ext)
+            _write_files(folder, root, [json.loads(line) for line in f], p, ext, form)
         marker.write_text(stamp, encoding="utf-8")
     for top in (root / "text", root / "meta"):
         for old in top.iterdir():
             if old.name not in keep:
                 shutil.rmtree(old) if old.is_dir() else old.unlink()
-    _write_files("_tree", root, tree_chunks, None, None, {}, ext)
+    _write_files("_tree", root, tree_chunks, None, ext, form)
+    (root / "meta" / "_sources.json").write_text(json.dumps(sources, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
 def _projects_ledger(index_rows: list[tuple[str, str]]) -> list[dict[str, Any]]:
