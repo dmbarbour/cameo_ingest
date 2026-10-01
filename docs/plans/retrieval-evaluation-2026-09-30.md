@@ -37,6 +37,7 @@ All answered by the maintainer on 2026-09-30.
 | 6 | A second text field for embedding | Not pursued: the stack embeds whatever text it is given, and we can't change which field it reads. If plainer text helps, `text` itself becomes plainer. |
 | 7 | Which models (added later that day) | Production probably doesn't use MiniLM. The in-house list has `llmrails/ember-v1` (512 tokens) beside the two e5 models, and one reranker, `BAAI/bge-reranker-v2-m3` (8,192 tokens). |
 | 8 | Local models (after two crashes that day) | Not restarted: only what DeepInfra serves is evaluated. |
+| 9 | A gold standard (the maintainer's suggestion) | A synthetic project with planted facts and questions whose answers are known by construction. |
 
 ### What these mean for the design
 
@@ -131,7 +132,22 @@ hold them:
 - **Results by project:** reported for each project, and for the whole. The drone sample (183
   chunks) stays the one small enough to check every result by hand.
 
-### Queries, from three sources, each with its own ground truth
+### Queries, from four sources, each with its own ground truth
+
+0. **A synthetic project with planted facts** (decision 9; `cameo_ingest.evaluation.synthetic`).
+   - **The project:** the Kestrel Orchard Irrigation System, an invented orchard irrigation
+     system, built in Cameo's own format. It has eight blocks, seven requirements with
+     «satisfy» and «deriveReqt» links, two activities and three diagrams.
+   - **Planted facts:** names and figures that appear nowhere else ("Brine Valve K7", "340
+     milliseconds", "Verdant-3").
+   - **The questions:** 14 facts, each asked twice, by hand: literally, with the model's own names,
+     and as a paraphrase without them. That gives 28 questions, and their answers are the
+     elements that hold the facts, known by construction.
+   - **Checked:** a test ingests the project and checks that each answer's chunks contain the
+     planted fact, so the answer key can't drift.
+   - **In the index:** the project is ingested into `out/all` with the samples, so its facts are
+     needles in a haystack of 28,000 chunks. It also checks the judges: one that misses these
+     answers can't be trusted on the others.
 
 1. **Structural questions, generated from the model.** Their answers are known by
    construction, so they need no judge:
@@ -250,7 +266,7 @@ hash of their text, so unchanged chunks cost nothing.
 | RE-01 | Inventory: chunk lengths in each model's tokens, what fills them (links, names, traces), and how the simulated 512-token windows fall; as a script and a research note. | Done: `scripts/chunk_inventory.py`, `docs/research/chunk-inventory-2026-09-30.md` |
 | RE-02 | Endpoints and the embedding cache: the models on DeepInfra, their input limits, prefixes and speed. | Done: `cameo_ingest.evaluation.embed`, `scripts/embedding_check.py`. Local containers dropped (decision 8) |
 | RE-03 | Corpora: ingest every sample except TMT-2024x into one tree, with LLM enrichment, reusing TMT's cached answers. | Done: `out/all`, 19 projects, 28,220 chunks; about 400 new LLM requests |
-| RE-04 | Questions: the structural generator and the LLM question writer. A sample goes to the maintainer to spot-check for sense; the generators are fixed where it finds faults. | Not started |
+| RE-04 | Questions: the synthetic project (decision 9), the structural generator and the LLM question writer. A sample goes to the maintainer to spot-check for sense; the generators are fixed where it finds faults. | In progress: the synthetic project and its 28 questions are done, and ingested into `out/all` |
 | RE-05 | The harness: the simulated pipeline (windows over chunks and over pages), indexes, dense, BM25 and hybrid search, measures with confidence intervals, the report and per-question pages. | Not started |
 | RE-06 | Judging: the judge panel, with cached judgments; Claude's check set; agreement per judge; the panel's labels. | Not started |
 | RE-07 | Baseline: the four models (at their standard limits; e5 with and without prefixes), dense alone, and BM25 and hybrid for comparison, on every project. | Not started |
