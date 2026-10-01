@@ -147,8 +147,9 @@ def build_parser() -> argparse.ArgumentParser:
                         "described on its own (default 25:6:25; N = 0 never splits). For tuning: the default "
                         "should serve")
     g.add_argument("--chunk-style", choices=("markdown", "plain"),
-                   help="chunk text: as on the pages (markdown, the default), or plain text in parts that fit an "
-                        "embedding window, with each element's structural detail in separate chunks (plan RE-08)")
+                   help="chunk text: plain text in parts that fit an embedding window, under a heading that says "
+                        "what and where each item is (plain, the default; docs/research/chunk-styles-2026-10-01.md), "
+                        "or as on the pages (markdown, as before 0.5.0)")
     g.add_argument("--llm-timeout", type=float, metavar="SECONDS", help="per-request timeout (default 120)")
     g.add_argument("--llm-retries", type=int, metavar="N", help="retries per request (default 2)")
     g.add_argument("--llm-max-calls", type=int, metavar="N", help="stop calling the LLM after N requests in a run "
@@ -287,7 +288,7 @@ def run_tree(args: argparse.Namespace, argv: list[str]) -> int:
         options = {"render": settings.get("render", True), "text_model": cfg.text_model,
                    "vision_model": cfg.vision_model, "max_calls": cfg.max_calls,
                    "image_pixels": settings.get("image_pixels") or IMAGE_PIXELS, "modules": list(modules),
-                   **({"chunk_style": "plain"} if settings.get("chunk_style") == "plain" else {}),
+                   "chunk_style": settings.get("chunk_style") or "plain",
                    "templates": sorted(t.key for t in CURRENT.values()) if cfg.enabled else []}
         runner = Runner(state, out, llm, options, Progress(heartbeat=args.heartbeat),
                         concurrency=settings.get("llm_concurrency") or 1)

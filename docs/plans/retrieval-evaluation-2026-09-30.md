@@ -1,7 +1,10 @@
 # Plan: retrieval evaluation, 2026-09-30
 
 - **Status:** Proposed on 2026-09-30, and revised the same day with the maintainer's answers
-  (Decisions, below). Ready to start.
+  (Decisions, below). In progress: the comparison of chunk styles is done
+  (`docs/research/chunk-styles-2026-10-01.md`), and plain chunks are the default from 0.5.0.
+  The README's advice and the questions for the stack's owners remain (RE-09), as do the
+  maintainer's spot check and windows over the pages.
 - **Step prefix:** `RE`, so steps are `RE-01`, `RE-02` and so on
 - **Addresses:** the "Retrieval evaluation" tentative plan in `docs/plans/README.md`, and the
   advice in the README's "Using the output for RAG", which is untested. It also informs the
@@ -40,6 +43,7 @@ All answered by the maintainer on 2026-09-30.
 | 9 | A gold standard (the maintainer's suggestion) | A synthetic project with planted facts and questions whose answers are known by construction. |
 | 10 | Keyword search (2026-10-01, after the baseline) | A future plan: a keyword index of the corpus, and an export searchable without special tools (Ctrl+F in Excel). It is in the plan index's tentative list. |
 | 11 | The changes to try (2026-10-01) | Plainer chunk text, with structural detail kept apart from meaning, perhaps in a separate file; readable titles; the heading repeated in each part of a long section. Judge first, then try them. |
+| 12 | Where structural detail goes (2026-10-01, from the evidence) | After the meaning, in the same chunk when the whole fits in one part, else in a `<kind>:details` chunk in `chunks.jsonl`. A file outside the index lost the natural questions about members, ports and tagged values (e5-large's top 10: 0.92 to 0.81), and short details chunks of their own outranked their element for its name. |
 
 ### What these mean for the design
 
@@ -272,12 +276,22 @@ hash of their text, so unchanged chunks cost nothing.
 | RE-01 | Inventory: chunk lengths in each model's tokens, what fills them (links, names, traces), and how the simulated 512-token windows fall; as a script and a research note. | Done: `scripts/chunk_inventory.py`, `docs/research/chunk-inventory-2026-09-30.md` |
 | RE-02 | Endpoints and the embedding cache: the models on DeepInfra, their input limits, prefixes and speed. | Done: `cameo_ingest.evaluation.embed`, `scripts/embedding_check.py`. Local containers dropped (decision 8) |
 | RE-03 | Corpora: ingest every sample except TMT-2024x into one tree, with LLM enrichment, reusing TMT's cached answers. | Done: `out/all`, 19 projects, 28,220 chunks; about 400 new LLM requests |
-| RE-04 | Questions: the synthetic project (decision 9), the structural generator and the LLM question writer. A sample goes to the maintainer to spot-check for sense; the generators are fixed where it finds faults. | In progress: the synthetic project (28 questions), 88 structural and 75 natural questions; the spot check (`out/eval/questions/spot-check.md`) awaits the maintainer |
+| RE-04 | Questions: the synthetic project (decision 9), the structural generator and the LLM question writer. A sample goes to the maintainer to spot-check for sense; the generators are fixed where it finds faults. | In progress: the synthetic project (28 questions), 88 structural questions, and two natural sets of 75 (from Markdown chunks, and from plain chunks: `natural-plain`); the spot check (`out/eval/questions/spot-check.md`) awaits the maintainer |
 | RE-05 | The harness: the simulated pipeline (windows over chunks and over pages), indexes, dense, BM25 and hybrid search, measures with confidence intervals, the report and per-question pages. | Done for windows over chunks (`cameo_ingest.evaluation.harness`, `scripts/retrieval_eval.py`); windows over pages to come |
-| RE-06 | Judging: the judge panel, with cached judgments; Claude's check set; agreement per judge; the panel's labels. | In progress: `eval-relevance-judge@v1` and `scripts/judge_pools.py`; DeepSeek-V3.2 and Qwen3-235B judging the baseline's 7,280 pooled pairs. Checked by construction: on a trial both graded every known answer 2 and credited no passage from another project |
-| RE-07 | Baseline: the four models (at their standard limits; e5 with and without prefixes), dense alone, and BM25 and hybrid for comparison, on every project. | Preliminary: `docs/research/retrieval-baseline-2026-10-01.md`, before judging |
-| RE-08 | Changes: plainer chunk text, splitting, titles for unnamed requirements, generated and ledger chunks included or not. | In progress: `--chunk-style plain` (`cameo_ingest.plain`) does the first three, with structural detail in separate chunks (decision 11); `out/all-plain` (45,779 chunks) is being evaluated |
-| RE-09 | Recommendations: adopt what helps into the output (with a version bump), rewrite the README's RAG advice, and write down what to ask of the stack (model limits, overlap, prefixes). | Not started |
+| RE-06 | Judging: the judge panel, with cached judgments; Claude's check set; agreement per judge; the panel's labels. | Done: `eval-relevance-judge@v1` and `scripts/judge_pools.py`; DeepSeek-V3.2 and Qwen3-235B graded 25,000 pooled pairs; Claude labelled a check set of 200 (`out/eval/check/`). Scores take the lower grade where the two disagree: for answers, that matches Claude as well as the Kimi-K2 tie-breaker does. The panel is generous with 2s (Claude agreed with 13 of 28): a stricter prompt is a follow-up |
+| RE-07 | Baseline: the four models (at their standard limits; e5 with and without prefixes), dense alone, and BM25 and hybrid for comparison, on every project. | Done: `docs/research/retrieval-baseline-2026-10-01.md` (before judging), and judged in `docs/research/chunk-styles-2026-10-01.md` |
+| RE-08 | Changes: plainer chunk text, splitting, titles for unnamed requirements, generated and ledger chunks included or not. | Done for the first three: `--chunk-style plain` (`cameo_ingest.plain`), with structural detail apart only when long (decision 12). Never significantly worse than Markdown, and better for ids, relationships, the weak models and the plain-written questions, at half the tokens (`docs/research/chunk-styles-2026-10-01.md`). Generated and ledger chunks included or not: not tested |
+| RE-09 | Recommendations: adopt what helps into the output (with a version bump), rewrite the README's RAG advice, and write down what to ask of the stack (model limits, overlap, prefixes). | In progress: plain chunks are the default from 0.5.0, and the README's RAG advice is rewritten from the results |
+
+**Follow-ups**, not yet scheduled:
+- **A stricter judge prompt** (`eval-relevance-judge@v2`), with the check set's rules: a passage
+  about a similar element is 0, and a list that only names the subject is at most 1. Then
+  re-judge, and measure it against Claude's labels.
+- **The tie-breaker on the plain pools:** Kimi's grades so far are cached in
+  `out/eval/judge-plain2/.cache`, and re-running `out/eval/judge-plain2/run.sh` resumes it. It
+  matters for nDCG only.
+- **Windows over the pages** (RE-05), and **generated and ledger chunks** left out or not
+  (RE-08).
 
 ## Questions to raise with the stack's owners
 

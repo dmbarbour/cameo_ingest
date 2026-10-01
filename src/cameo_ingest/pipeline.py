@@ -316,7 +316,7 @@ SKETCH = "re-drawn from layout data, not a Cameo rendering"
 
 def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM, render: bool = True,
                    progress: Progress = QUIET, concurrency: int = 1, image_pixels: int = dg.IMAGE_PIXELS,
-                   modules: tuple[int, int, int] = mod.DEFAULTS, chunk_style: str = "markdown") -> ProjectResult:
+                   modules: tuple[int, int, int] = mod.DEFAULTS, chunk_style: str = "plain") -> ProjectResult:
     ix = parse_project(project, progress)
     annotations: dict[str, list[Annotation]] = {}
     base = Trace(content_sha256=content.sha256)

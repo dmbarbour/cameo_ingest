@@ -66,9 +66,9 @@ class ProjectWriter:
     def __init__(self, content: ContentInfo, project: Project, ix: ModelIndex, root: Path,
                  annotations: dict[str, list[Annotation]] | None = None,
                  layouts: dict[str, Layout] | None = None, modules: tuple[int, int, int] = mod.DEFAULTS,
-                 chunk_style: str = "markdown"):
+                 chunk_style: str = "plain"):
         self.layouts = layouts or {}
-        self.chunk_style = chunk_style  # "markdown" (as on the pages) or "plain" (plan RE-08, plain.py)
+        self.chunk_style = chunk_style  # "plain" (plan RE-08, plain.py) or "markdown" (as on the pages)
         self.modules = modules  # large diagrams: split above N shapes, into MIN to MAX
         self.content = content
         self.project = project

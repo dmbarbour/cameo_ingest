@@ -205,12 +205,29 @@ emitted as separate `generated:*` chunks, so chunks of extracted text never mix 
 ## Using the output for RAG
 
 Load the root `chunks.jsonl` into your vector store: embed `text`, and keep `metadata` as
-filterable fields. Each chunk is self-contained, with its project and package path in the
-text. `metadata.kind` says what the chunk is:
+filterable fields.
+
+**Chunk text is plain, for embedding** (from version 0.5.0; `--chunk-style markdown` gives the
+old chunks, as on the pages):
+- **A heading on every chunk:** what the item is, its name, where it is and the project. For
+  example, "Block Movement Channel in M-SysML::Facility::Material Handling System (project
+  NIST_M-SysML.mdzip)". An unnamed requirement is titled by its id and the start of its text.
+- **No apparatus:** link labels without their targets, and no trace line (the metadata keeps
+  the provenance).
+- **Parts that fit a 512-token window:** text longer than 1,500 characters is split into
+  parts, each repeating the heading, so that a window cut from any part still says whose text
+  it is.
+
+On the samples, plain chunks found answers as well as the Markdown or better, and better for
+requirement ids, relationships and the smaller embedding models, at half the tokens to embed
+(`docs/research/chunk-styles-2026-10-01.md`).
+
+`metadata.kind` says what the chunk is:
 
 | `kind` | Contents | Good for |
 |---|---|---|
-| `element`, `requirement`, `package`, `diagram`, `project` | Full description of one item, with its trace | "What does X do?", "Why does requirement R exist?" |
+| `element`, `requirement`, `package`, `diagram`, `project` | One item: its documentation, requirement text, relationships and diagrams, then its members and tagged values | "What does X do?", "Why does requirement R exist?" |
+| `element:details`, `package:details`, … | An item's members and tagged values, when they don't fit in its own chunk | "What ports does X have?", "What does X's tag T say?" |
 | `ledger:requirements`, `ledger:diagrams`, `ledger:elements`, `ledger:packages` | One line per item for one package (split into parts of about 60 lines); `metadata.element_ids` lists the ids row by row | "Which requirements cover thermal control?", "List the activity diagrams", "Where does REQ-2-APS-0086 come from?" |
 | `ledger:projects` | One line per project in the tree, with where it was found; `metadata.tokens` row by row | "Which models came from supplier X?" |
 | `generated:*` | LLM summaries and descriptions (`provenance.derivation.method = "llm"`) | Extra recall; weight or filter them separately |
@@ -222,18 +239,25 @@ input the content was found in, as lists (`{"program": ["XYZ"]}`), ready for fil
 per-project `index/chunks.jsonl` files leave them out, so they stay independent of inputs;
 join them with `provenance.jsonl` on `metadata.content` when loading those instead.
 
-Suggestions, roughly in order of value:
+Suggestions, roughly in order of value, measured on the samples where the numbers say so
+(`docs/research/chunk-styles-2026-10-01.md`):
 
 1. **Add keyword search next to vector search** (hybrid retrieval, e.g. BM25). Embeddings
-   handle identifiers such as `REQ-2-APS-0086`, or part and block names, poorly; keyword
-   search handles them exactly. Most vector stores support hybrid search.
-2. **Filter on metadata.** Restrict to `kind` (for example `ledger:*` for "list…" questions,
+   handle identifiers such as `REQ-2-APS-0086` poorly: asked "What does requirement X state?",
+   e5-large ranked the requirement first 5 times in 20, and BM25 20 times in 20. Fused, they
+   put the answer in the top 10 for 98% of literal questions, against 83% for e5-large alone.
+   Most vector stores support hybrid search.
+2. **Pass five chunks or more to the LLM.** The first chunk retrieved answered 59% of natural
+   questions with e5-large, and the first five 92%.
+3. **Use a large embedding model.** e5-large and bge-large did about equally well, and far better
+   than MPNet or MiniLM. e5's `query: ` and `passage: ` prefixes made no difference.
+4. **Filter on metadata.** Restrict to `kind` (for example `ledger:*` for "list…" questions,
    or `requirement` for "why…" questions), `project`, `content`, `stereotypes`, or
    `source_metadata` fields such as the program or supplier.
-3. **Route counting and exhaustive questions to the tables.** Top-k retrieval can't reliably
+5. **Route counting and exhaustive questions to the tables.** Top-k retrieval can't reliably
    answer "how many requirements are unverified?". A tool that runs SQL over `tables/*.csv`
    (e.g. DuckDB) can. The ledgers cover the cases in between.
-4. **Cite with the trace.** Every chunk's `metadata.provenance.locator` names the content,
+6. **Cite with the trace.** Every chunk's `metadata.provenance.locator` names the content,
    entry, `xmi:id` and line, and `provenance.jsonl` maps its token to the files it came from.
    Ask the LLM to quote the locator so answers can be checked.
 
@@ -315,9 +339,11 @@ runner: inputs ─► archive.discover ─► state (contents, sightings) ─►
   rasterizer such as `cairosvg` or `resvg`.
 - **Attachments** (`BINARY-*` PNG, JPEG or PDF) are listed at project level but not yet
   linked to their owning elements. PDF and Office attachments aren't converted yet.
-- **Chunk sizes.** Very large requirement or member sections aren't split; downstream chunkers
-  may need to split them. Tagged values are cut at 4,000 characters on pages, and
-  hex-encoded images are described rather than shown.
+- **Chunk sizes.** Chunk text is split into parts of at most 1,500 characters (about 400
+  tokens) under its heading, for 512-token embedding windows; a model with a smaller limit
+  (MiniLM's 256) sees only the start of each. The projects ledger isn't split. Tagged
+  values are cut at 4,000 characters on pages, and hex-encoded images are described rather
+  than shown.
 - **Sequence diagrams and swimlanes** are split into modules like any other diagram. Bands
   along the time axis, and activity partitions, would be better module boundaries.
 - **Deleted diagrams.** Diagrams whose layout stream is missing still get a page, listing
