@@ -40,3 +40,20 @@ def test_synthetic_project_answers_its_questions(tmp_path):
     for q in QUESTIONS:
         texts = [c["text"] for c in chunks if c["metadata"].get("element_id") in q["answers"]]
         assert any(q["evidence"] in t for t in texts), (q["id"], q["evidence"])
+
+
+def test_search_and_measures():
+    """BM25 ranks the document with the query's rare words first; fusion keeps what both
+    rankings agree on; the measures read graded relevance (plan RE-05)."""
+    pytest.importorskip("numpy")  # the optional eval group
+    from cameo_ingest.evaluation.harness import BM25, fuse, mean_ci, measures, top
+
+    docs = ["the brine valve closes in 340 ms", "the pump station has two pumps", "the valve and the pump"]
+    bm = BM25(docs)
+    assert top(bm.scores("how fast does the brine valve close"), 3)[0] == 0
+    assert fuse([[0, 1, 2], [1, 0, 2]])[:2] in ([0, 1], [1, 0]) and fuse([[2, 0], [2, 1]])[0] == 2
+    m = measures([5, 3, 7], {3: 2, 7: 1})
+    assert m["hit@1"] == 0 and m["hit@5"] == 1 and m["mrr@10"] == 0.5 and 0 < m["ndcg@10"] < 1
+    assert measures([3], {3: 2})["ndcg@10"] == 1.0
+    mean, lo, hi = mean_ci([0.0, 1.0, 1.0, 1.0])
+    assert mean == 0.75 and lo <= mean <= hi
