@@ -1,4 +1,4 @@
-"""Ashgrove Library Book Return Kiosk: a small project (about 60 elements), easy questions.
+"""Ashgrove Library Book Return Kiosk: a small project (about 190 XMI ids), easy questions.
 
 Every name and figure is invented. The facts sit in documentation, requirement text, one
 activity and one state machine; the questions use the model's own words, or a plain paraphrase.

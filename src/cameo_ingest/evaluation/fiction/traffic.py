@@ -1,4 +1,4 @@
-"""Port Calder Traffic Signal System: a large project (about 5,000 elements), generated from a
+"""Port Calder Traffic Signal System: a large project (about 5,100 XMI ids), generated from a
 seeded table, with hard questions.
 
 Every name and figure is invented. Twelve corridors cross over a hundred streets at about 150

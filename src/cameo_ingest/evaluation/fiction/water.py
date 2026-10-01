@@ -1,5 +1,5 @@
-"""Riverbend Water Treatment Works: a medium project (about 400 elements), questions from easy to
-hard.
+"""Riverbend Water Treatment Works: a medium project (about 800 XMI ids), questions from easy
+to hard.
 
 Every name and figure is invented. Besides documentation and requirement text, facts sit in:
 - tagged values of a custom profile (an instrument's alarm limit, a tank's delivery interval);

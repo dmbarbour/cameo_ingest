@@ -44,6 +44,7 @@ All answered by the maintainer on 2026-09-30.
 | 10 | Keyword search (2026-10-01, after the baseline) | A future plan: a keyword index of the corpus, and an export searchable without special tools (Ctrl+F in Excel). It is in the plan index's tentative list. |
 | 11 | The changes to try (2026-10-01) | Plainer chunk text, with structural detail kept apart from meaning, perhaps in a separate file; readable titles; the heading repeated in each part of a long section. Judge first, then try them. |
 | 12 | Where structural detail goes (2026-10-01, from the evidence) | After the meaning, in the same chunk when the whole fits in one part, else in a `<kind>:details` chunk in `chunks.jsonl`. A file outside the index lost the natural questions about members, ports and tagged values (e5-large's top 10: 0.92 to 0.81), and short details chunks of their own outranked their element for its name. |
+| 13 | More fictional projects (2026-10-01) | The maintainer can't spot-check much soon, and asked for a few more fictional sample projects, of various subjects, sizes and difficulty (water treatment, city traffic control...), as gold standards: RE-10. |
 
 ### What these mean for the design
 
@@ -283,6 +284,8 @@ hash of their text, so unchanged chunks cost nothing.
 | RE-08 | Changes: plainer chunk text, splitting, titles for unnamed requirements, generated and ledger chunks included or not. | Done for the first three: `--chunk-style plain` (`cameo_ingest.plain`), with structural detail apart only when long (decision 12). Never significantly worse than Markdown, and better for ids, relationships, the weak models and the plain-written questions, at half the tokens (`docs/research/chunk-styles-2026-10-01.md`). Generated and ledger chunks included or not: not tested |
 | RE-09 | Recommendations: adopt what helps into the output (with a version bump), rewrite the README's RAG advice, and write down what to ask of the stack (model limits, overlap, prefixes). | In progress: plain chunks are the default from 0.5.0, and the README's RAG advice is rewritten from the results |
 
+| RE-10 | Fictional projects (decision 13): several invented projects, of rising size and difficulty, with questions answered by construction, so that retrieval can be measured without judges or spot checks. | Done: `cameo_ingest.evaluation.fiction` (a builder and four projects: a library kiosk, a water treatment works, a level crossing in two variants, and a city's traffic signals with about 5,100 XMI ids), 178 questions tagged by difficulty, `scripts/make_fictional_projects.py`, `tests/test_fiction.py`. They found three gaps in the ingest, now fixed: transitions' triggers and flows' guards were dropped (0.5.1), unnamed requirements read "(Class)", and diagram notes appeared only cut short in legends. Retrieval on them (`docs/research/fictional-projects-2026-10-01.md`): plain chunks as good or better again; keyword search fused at equal weight helps literal questions and hurts paraphrases; behaviour is the hardest to find |
+
 **Follow-ups**, not yet scheduled:
 - **A stricter judge prompt** (`eval-relevance-judge@v2`), with the check set's rules: a passage
   about a similar element is 0, and a list that only names the subject is at most 1. Then
@@ -292,6 +295,11 @@ hash of their text, so unchanged chunks cost nothing.
   matters for nDCG only.
 - **Windows over the pages** (RE-05), and **generated and ledger chunks** left out or not
   (RE-08).
+- **Behaviour as readable steps:** activities and state machines are the hardest to find
+  (RE-10). Render them as steps ("after X, Y; if [guard], Z") in place of node and edge lists,
+  and measure on the fictional questions.
+- **Weighted fusion:** keyword search at equal weight costs paraphrased questions (RE-10).
+  Measure a lower weight for BM25, or BM25 only for queries that look like ids and names.
 
 ## Questions to raise with the stack's owners
 
@@ -299,6 +307,9 @@ The evaluation will put numbers on these. They are listed here so they can be as
 1. **Which model,** and at what input limit? MiniLM is usually run at 256 tokens, so a 512-token
    chunk would be embedded by half.
 2. **How much overlap** between chunks, and does the splitter respect paragraphs?
-3. **What is ingested:** `chunks.jsonl`, the Markdown pages, or both?
+3. **What is ingested:** `chunks.jsonl`, the Markdown pages, or both? And how does the stack
+   carry provenance: from chunk metadata, or from the text (titles, headings)? The maintainer is
+   finding out (2026-10-01). Plain chunks keep the provenance in `metadata` only; the pages keep
+   their trace lines.
 4. **For e5 models:** are the `query: ` and `passage: ` prefixes added?
 5. **How many chunks** go into a prompt?

@@ -246,7 +246,10 @@ Suggestions, roughly in order of value, measured on the samples where the number
    handle identifiers such as `REQ-2-APS-0086` poorly: asked "What does requirement X state?",
    e5-large ranked the requirement first 5 times in 20, and BM25 20 times in 20. Fused, they
    put the answer in the top 10 for 98% of literal questions, against 83% for e5-large alone.
-   Most vector stores support hybrid search.
+   Most vector stores support hybrid search. Weight the keywords below the vectors, though,
+   or use them for queries that look like ids and names: fused at equal weight, they lowered
+   bge-large's MRR on paraphrased questions from 0.74 to 0.52
+   (`docs/research/fictional-projects-2026-10-01.md`).
 2. **Pass five chunks or more to the LLM.** The first chunk retrieved answered 59% of natural
    questions with e5-large, and the first five 92%.
 3. **Use a large embedding model.** e5-large and bge-large did about equally well, and far better
@@ -357,7 +360,23 @@ uv run pytest            # synthetic fixtures, plus the samples under 5 MB (abou
 uv run pytest -m slow    # the large samples: TMT, TMT-2024x, SAF_FFDS, SAF_Plugin (about 1 min)
 uv run pytest -m llm     # a real LLM endpoint, from the environment or .env (about 1 min, ~20 requests)
 uv run python scripts/record_llm_fixture.py --env .env   # re-record the LLM replay fixture
+uv run python scripts/make_fictional_projects.py out/eval/fiction   # the fictional projects, and their questions
 ```
+
+**Fictional projects.** Four invented Cameo projects, ours to share, are built by
+`cameo_ingest.evaluation.fiction` in the format Cameo writes. They grow in size and difficulty:
+- **Ashgrove Library Book Return Kiosk:** small and plain;
+- **Riverbend Water Treatment Works:** a custom profile, near-duplicate instruments,
+  requirements imported from DOORS, instances, a state machine and a constraint block;
+- **Ferrous Valley Level Crossing:** two variants whose blocks share their names, traceability
+  three levels deep, a hazard log, and a fact found only in a diagram note;
+- **Port Calder Traffic Signal System:** about 5,100 XMI ids, 150 intersections with
+  near-duplicate names.
+
+Each comes with questions whose answers are known by construction (178 in all, tagged by
+difficulty), for the retrieval evaluation (`scripts/retrieval_eval.py --questions
+out/eval/fiction/questions.jsonl`). The tests ingest every project and check that each answer
+is where the key says it is.
 
 The regular tests replay real model answers from `tests/fixtures/llm-replay.sqlite`, offline.
 When a prompt, the fixture model (`tests/fixture_model.py`) or the page text changes, the

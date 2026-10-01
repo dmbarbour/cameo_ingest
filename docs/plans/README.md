@@ -11,7 +11,7 @@ here.
 | [Resumable, content-addressed ingest](resumable-ingest-2026-09-29.md) | Completed 2026-09-29 | BASE-008R1, BASE-016R2, BASE-017R1, BASE-021R1 |
 | [Measuring LLM enrichment quality](llm-quality-2026-09-30.md) | LQ-01 to LQ-03 done; judge panel (LQ-04 to LQ-06) deferred | FU-006R1 (and measures fixes for FU-001, FU-002, FU-004, FU-005) |
 | [Modular views of large diagrams and packages](diagram-views-2026-09-30.md) | Completed 2026-09-30 | FU-011R1, FU-005R1, FU-012R2 |
-| [Retrieval evaluation](retrieval-evaluation-2026-09-30.md) | In progress: plain chunks judged better and made the default (0.5.0); the README's advice and the spot check remain | The README's RAG advice; chunk sizes |
+| [Retrieval evaluation](retrieval-evaluation-2026-09-30.md) | In progress: plain chunks judged better and made the default (0.5.0); fictional projects with answers by construction (RE-10); the spot check remains | The README's RAG advice; chunk sizes |
 
 ## Tentative
 

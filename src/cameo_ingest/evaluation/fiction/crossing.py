@@ -1,4 +1,4 @@
-"""Ferrous Valley Level Crossing: a medium project (about 900 elements) built to be hard.
+"""Ferrous Valley Level Crossing: a medium project (about 550 XMI ids) built to be hard.
 
 Every name and figure is invented. The crossing comes in two variants, single-track rural (A)
 and double-track urban (B), whose blocks share their names and differ in their figures (a gate
