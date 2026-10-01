@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import time
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -37,18 +38,24 @@ SYNTHETIC = "_kois_"  # the synthetic project's element ids start so
 MEASURES = ("hit@1", "hit@5", "hit@10", "hit@20", "mrr@10", "ndcg@10")
 
 
+def _norm(text: str) -> str:
+    """Letters and digits only, in lower case: a quote and a window compared whatever their
+    markup (Markdown on the pages, the plain chunk style)."""
+    return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+
+
 def grades(q: dict, units: list[Unit], judged: dict[str, int] | None = None) -> dict[int, int]:
     """Grades by construction, overridden by the judge panel's where it judged (`judged`: unit ->
     grade, for this question)."""
     out = {}
-    quote = " ".join(q.get("quote", "").split())
+    quote = _norm(q.get("quote", ""))
     sources = set(q.get("answer_chunks", ()))
     if sources and not any(u.id.split("#w")[0] in sources for u in units):
         # Another corpus (another chunk style): the source element's chunks stand in for the source chunk.
         sources = {u.id.split("#w")[0] for u in units if u.element_id and u.element_id == q.get("source_element")}
     for i, u in enumerate(units):
         if u.id.split("#w")[0] in sources:  # a written question's source chunk
-            out[i] = 2 if quote in " ".join(_plain(u.text).split()) else 1  # the window with the quote
+            out[i] = 2 if quote and quote in _norm(_plain(u.text)) else 1  # the window with the quote
         elif u.element_id in q["answers"] or (
                 "evidence" in q and (u.element_id or "").startswith(SYNTHETIC) and holds(q["evidence"], u.text)):
             out[i] = 2  # about an answering element, or holding the planted fact (a ledger quoting it, say)
