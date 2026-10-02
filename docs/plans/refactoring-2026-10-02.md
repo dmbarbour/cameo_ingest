@@ -294,6 +294,44 @@ The output stays the same: a `--no-llm` tree compared with CP6's. Tests follow t
 
 ### CP8: the evaluation
 
+**In detail.** Three steps, each with a check. The evaluation's results stay comparable: one run
+of the new code on a tree an old run measured reproduces its report.
+
+- **CP8a: KOIS joins the fiction (AR-021, AR-005R3).**
+  - `fiction/orchard.py` rebuilds the Kestrel Orchard project with the builder, under the
+    prefix `kois`, so that its element ids stay `_kois_…`.
+  - Through the builder it gains diagram owners and the right UML types. Its questions take the
+    fact rule, and their evidence is written in today's wording.
+  - It joins `PROJECTS`, so the answer-key test covers it, and the fiction folder and question
+    file include it.
+  - `synthetic.py`, `make_synthetic_project.py`, `--questions synthetic` and `judge_pools`'
+    synthetic set go.
+  - `fiction.is_fictional(id)`, derived from `PROJECTS`, replaces the `FICTIONAL` list.
+  - Its question ids gain the prefix (`kois-q01-literal`), and its scores are rebased: plan RE
+    notes it.
+- **CP8b: the evaluation as library code (AR-020).**
+  - `evaluation/systems.py` builds the systems from windows and questions: BM25, each dense
+    model, their fusions, and the reranked variants.
+  - `evaluation/report.py` holds the per-question measures, the measure tables and the misses.
+  - `evaluation/records.py` reads and writes questions, rankings, judgments and the run's
+    record.
+  - `retrieval_eval` keeps its arguments, and writes `run.json` beside the rankings: the tree,
+    the units (`--rag`, filters), the windows (tokenizer, size, overlap) and the questions'
+    file.
+  - `judge_pools` reads that record and cuts the same windows. It no longer hard-codes 512/64,
+    the chunk units or `out/eval/questions`.
+- **CP8c: tests for untested library code (RA-18d, AR-022R4).**
+  - The structural generator, on the drone fixture.
+  - The natural question writer and the judge, each with a fake session: replies that parse,
+    replies that don't, and JSON inside prose.
+  - The caches were tested in CP7.
+
+**Checks.**
+- The suite.
+- The new `retrieval_eval` on `out/ra/cp5` reproduces `out/ra/retrieval-cp5/report.md` byte for
+  byte, from the caches (the same questions, which hold no KOIS ones).
+- The fiction folder is rebuilt with KOIS only after the plan's comparisons are done.
+
 | Step | What | Status |
 |---|---|---|
 | RA-17 | **The evaluation as library code** (AR-020, AR-021, AR-005R3): `evaluation/systems.py` and `evaluation/report.py`, the script keeping its arguments; the windows recorded beside the rankings, for `judge_pools`; one module for reading and writing questions, rankings and judgments; the synthetic project ported to the fiction builder (`fiction/orchard.py`), taking the fact rule, its scores rebased, and `synthetic.py` and its script deleted; one `is_fictional(id)` from `fiction.PROJECTS`. | |

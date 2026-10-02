@@ -24,10 +24,9 @@ from ..llm import EnrichmentSession
 from ..plain import plain
 from ..prompts import Slot, Template
 from ..text import DOORS_ID
+from .fiction import is_fictional
 
 csv.field_size_limit(1 << 30)
-# The synthetic and fictional projects' element ids start so: they have questions of their own.
-FICTIONAL = ("_kois_", "_abk_", "_rwt_", "_fvx_", "_pct_", "_hal_", "_aqu_")
 
 
 def _rows(project: Path, table: str) -> list[dict]:
@@ -38,14 +37,14 @@ def _rows(project: Path, table: str) -> list[dict]:
         return list(csv.DictReader(f))
 
 
-def structural(tree: Path, per_project: int = 5, seed: int = 1, skip_prefix: tuple[str, ...] = FICTIONAL) -> list[dict]:
-    """Questions for every project of the tree but the synthetic and fictional ones (whose
-    elements' ids start with one of `skip_prefix`; they have questions of their own)."""
+def structural(tree: Path, per_project: int = 5, seed: int = 1) -> list[dict]:
+    """Questions for every project of the tree but the fictional ones, which have questions of
+    their own."""
     manifest = json.loads((tree / "manifest.json").read_text())
     out: list[dict] = []
     for p in manifest["projects"]:
         qs = _project_questions(p["name"], tree / p["dir"], per_project, seed)
-        out += [q for q in qs if not q["answers"][0].startswith(skip_prefix)]
+        out += [q for q in qs if not is_fictional(q["answers"][0])]
     return out
 
 
@@ -134,8 +133,7 @@ QUESTION_WRITER = Template(
 )
 
 
-def sample_chunks(tree: Path, per_project: int = 6, seed: int = 1, skip_prefix: tuple[str, ...] = FICTIONAL,
-                  ) -> list[dict]:
+def sample_chunks(tree: Path, per_project: int = 6, seed: int = 1) -> list[dict]:
     """Chunks to write questions from: up to `per_project` from each project, of the kinds that
     describe something (not ledgers or project overviews), at least 300 characters long."""
     by_project: dict[str, list[dict]] = defaultdict(list)
@@ -143,7 +141,7 @@ def sample_chunks(tree: Path, per_project: int = 6, seed: int = 1, skip_prefix: 
         c = json.loads(line)
         m = c["metadata"]
         if (m["kind"].startswith(("ledger", "project")) or len(c["text"]) < 300 or not m.get("content")
-                or (m.get("element_id") or "").startswith(skip_prefix)):
+                or is_fictional(m.get("element_id"))):
             continue
         by_project[m["content"]].append(c)
     rng = random.Random(seed)

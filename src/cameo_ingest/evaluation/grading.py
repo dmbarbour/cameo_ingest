@@ -6,11 +6,12 @@ which parts of its answer each holds. Each question has one rule:
   chunks stand in.
 - **parts** (an answer in parts: one per model, or per element along a derivation): a window
   holding any part's phrase answers, and coverage counts the parts the top windows hold.
-- **fact** (a fictional project's): a window of the project, or an index entry, that holds the
-  fact answers; the other windows of answering or related elements relate.
-- **element** (structural questions about the samples, and the synthetic project's): any window
-  of an answering element answers, as does a window of the project that holds the planted fact
-  (a ledger quoting it, say); a related element's window relates.
+- **fact** (a fictional project's, KOIS included since AR-005R3): a window of the project, or
+  an index entry, that holds the fact answers; the other windows of answering or related
+  elements relate.
+- **element** (structural questions about the samples): any window of an answering element
+  answers, as does a window of the project that holds the planted fact (a ledger quoting it,
+  say); a related element's window relates.
 
 A question's source states its rule (`"rule"`); question files written before that are read by
 what they hold (`Question.of`). Windows are anything with `id`, `text`, `element_id` and `kind`

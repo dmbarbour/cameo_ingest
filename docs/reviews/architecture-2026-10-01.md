@@ -85,7 +85,7 @@ Four themes run through the findings:
 | AR-002 | High | An unnamed requirement whose text starts with `[` fails its whole project when a vision model is set | Reproduced | Fixed |
 | AR-003 | High | Plain chunks are made by regex-parsing the page Markdown, which corrupts model text | Reproduced | Partly fixed |
 | AR-004 | Medium | The two chunk styles branch in five places and have drifted: generated and ledger chunks break the plain style's rules | Reproduced | Partly fixed |
-| AR-005 | High | Grading by construction lives in a script, untested, with two different rules | By inspection | Partly fixed |
+| AR-005 | High | Grading by construction lives in a script, untested, with two different rules | By inspection | Fixed |
 | AR-006 | Medium | The within-model questions' evidence groups are bare names, so their measures are inflated | Measured | Fixed |
 | AR-007 | Medium | `ProjectWriter` is a god object, and pipeline and ledger reach into its internals | By inspection | Open |
 | AR-008 | Medium | `ingest_project` mixes six jobs; request kinds are bare strings | By inspection | Open |
@@ -101,7 +101,7 @@ Four themes run through the findings:
 | AR-018 | Medium | LLM summary inputs are page Markdown, link targets and all | By inspection | Open |
 | AR-019 | Medium | `diagrams.py` and `modules.py` each carry several unrelated responsibilities | By inspection | Fixed |
 | AR-020 | Medium | `retrieval_eval.main` is library code; `judge_pools` cuts windows again on its own defaults | By inspection | Open |
-| AR-021 | Medium | The KOIS project duplicates the fiction builder, and fictional prefixes are listed in four places | By inspection | Open |
+| AR-021 | Medium | The KOIS project duplicates the fiction builder, and fictional prefixes are listed in four places | By inspection | Fixed |
 | AR-022 | Medium | The test suite: a 1,168-line module, no `conftest.py`, repeated setup, untested library code | By inspection | Open |
 | AR-023 | Low | Five Markdown-to-plain converters and four link patterns | By inspection | Open |
 | AR-024 | Low | SQL against `state.sqlite` is written outside `state.py` | By inspection | Open |
@@ -240,7 +240,7 @@ Markdown.
 
 **Severity:** High · **Verified:** By inspection · **Where:** `scripts/retrieval_eval.py:58-92, 185-189`, `tests/test_fiction.py:31-34`, `tests/test_evaluation.py:41-42`, `evaluation/synthetic.py`
 
-**Status:** Partly fixed on 2026-10-02. AR-005R1 and R2 are done: `evaluation/grading.py` holds the four rules (`source`, `parts`, `fact`, `element`), each question source states its own, and `Question.of` rejects a question that lacks what its rule grades by. A `Corpus` flattens each window once, and grades are computed once per question, not once per system. `test_grading_rules` tests each rule on hand-made windows, and the answer-key test now grades through `Question.grades`, index entries included. AR-005R3 waits on AR-021.
+**Status:** Partly fixed on 2026-10-02. AR-005R1 and R2 are done: `evaluation/grading.py` holds the four rules (`source`, `parts`, `fact`, `element`), each question source states its own, and `Question.of` rejects a question that lacks what its rule grades by. A `Corpus` flattens each window once, and grades are computed once per question, not once per system. `test_grading_rules` tests each rule on hand-made windows, and the answer-key test now grades through `Question.grades`, index entries included. AR-005R3 is done with AR-021 (plan RA-17): KOIS takes the fact rule, and plan RE notes that its scores are rebased.
 
 **Where the grading is:**
 - `grades()`, the coverage logic and `group_measures` are what every measure in plans RE and RF
@@ -735,6 +735,13 @@ already gone.
 ### AR-021: The KOIS project duplicates the fiction builder, and fictional prefixes are listed in four places
 
 **Severity:** Medium · **Verified:** By inspection · **Where:** `evaluation/synthetic.py`, `scripts/make_synthetic_project.py`, `evaluation/questions.py:28`, `scripts/retrieval_eval.py:48`, `scripts/judge_pools.py:59`
+
+**Status:** Fixed on 2026-10-02 (plan RA-17, CP8a).
+- AR-021R1: KOIS is `evaluation/fiction/orchard.py`, built with the builder, and is one of
+  `PROJECTS`. The answer-key test covers it, and its evidence is now specific enough for the
+  fact rule: q14's "Pump Station" also matched the block's own chunk. `synthetic.py`, its script,
+  `--questions synthetic` and `judge_pools`' synthetic set are gone.
+- AR-021R2: `fiction.is_fictional(id)`, derived from `PROJECTS`, replaces the four lists.
 
 **KOIS hand-writes what the builder makes:** `synthetic.py` hand-writes the XMI, layouts and
 archive (280 lines).

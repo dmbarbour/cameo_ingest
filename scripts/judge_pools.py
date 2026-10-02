@@ -33,7 +33,7 @@ def main() -> int:
     ap.add_argument("tree", type=Path)
     ap.add_argument("--env", type=Path)
     ap.add_argument("--retrieval", type=Path, default=Path("out/eval/retrieval"))
-    ap.add_argument("--sets", nargs="+", default=["synthetic", "structural", "natural"])
+    ap.add_argument("--sets", nargs="+", default=["structural", "natural"])
     ap.add_argument("--judges", nargs="+", required=True)
     ap.add_argument("--only-disagreements", nargs=2, metavar=("A", "B"))
     ap.add_argument("--out", type=Path, default=Path("out/eval/judge/judgments.jsonl"))
@@ -56,11 +56,8 @@ def main() -> int:
     windows = windowed(chunk_units(args.tree), args.window_tokenizer)
     texts = {u.id: u.text for u in windows}
     project_of_unit = {u.id: u.project for u in windows}
-    project_of_question = {}  # the synthetic project's, or as the question names it
-    synthetic = next((u.project for u in windows if (u.element_id or "").startswith("_kois_")), None)
+    project_of_question = {}  # as the question names it
     for s in args.sets:
-        if s == "synthetic":
-            continue
         path = Path("out/eval/questions") / f"{s}.jsonl"
         if path.is_file():
             for line in path.read_text(encoding="utf-8").splitlines():
@@ -101,7 +98,7 @@ def main() -> int:
     for j in old:
         by_pair.setdefault((j["set"], j["qid"], j["unit"]), {})[j["judge"]] = j["grade"]
     def question_project(j: dict) -> str | None:
-        return synthetic if j["set"] == "synthetic" else project_of_question.get(j["qid"])
+        return project_of_question.get(j["qid"])
 
     print("\n| judge | judged | unreadable | grades 0/1/2 | known answers graded 2 | other projects credited |")
     print("|---|---|---|---|---|---|")

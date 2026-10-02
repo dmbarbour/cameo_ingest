@@ -142,7 +142,7 @@ hold them:
 
 ### Queries, from four sources, each with its own ground truth
 
-0. **A synthetic project with planted facts** (decision 9; `cameo_ingest.evaluation.synthetic`).
+0. **A synthetic project with planted facts** (decision 9; `cameo_ingest.evaluation.fiction.orchard`).
    - **The project:** the Kestrel Orchard Irrigation System, an invented orchard irrigation
      system, built in Cameo's own format. It has eight blocks, seven requirements with
      «satisfy» and «deriveReqt» links, two activities and three diagrams.
@@ -156,6 +156,13 @@ hold them:
    - **In the index:** the project is ingested into `out/all` with the samples, so its facts are
      needles in a haystack of 28,000 chunks. It also checks the judges: one that misses these
      answers can't be trusted on the others.
+   - **Since 2026-10-02 (plan RA-17, review AR-021, AR-005R3):** KOIS is rebuilt with the fiction
+     builder (`evaluation/fiction/orchard.py`) and is one of the fictional projects. Its diagrams
+     now have owners and Cameo's UML types. It is graded by the fact rule, with evidence that
+     only its answers' own chunks hold, and its questions are named `kois-q01-literal` and so
+     on. Its element ids are unchanged, but its project token and chunk ids are new. **Scores
+     before that date are not comparable** with later ones: the old ones used the element rule,
+     which credited any window of an answering element.
 
 1. **Structural questions, generated from the model.** Their answers are known by
    construction, so they need no judge:
