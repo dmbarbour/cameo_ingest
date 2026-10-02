@@ -1207,3 +1207,30 @@ def test_ledger_natural_sort_and_split():
 
     ids = ["REQ.1.10", "REQ.1.2", "REQ.1", "REQ.2"]
     assert sorted(ids, key=_natural_key) == ["REQ.1", "REQ.1.2", "REQ.1.10", "REQ.2"]
+
+
+def test_treediff(tmp_path, capsys):
+    """Two runs of one model make the same tree; a changed chunk shows by id, text and kind (plan RA-01)."""
+    from cameo_ingest.treediff import compare
+    from cameo_ingest.treediff import main as treediff
+
+    src = tmp_path / "drone.mdzip"  # one input: rag/meta names its path
+    src.write_bytes(make_mdzip())
+    a, b = tmp_path / "a", tmp_path / "b"
+    for out in (a, b):
+        assert main([str(src), "-o", str(out), "--no-llm"]) == 0
+    assert not compare(a, b) and treediff([str(a), str(b)]) == 0
+    last = json.loads((a / "chunks.jsonl").read_text().splitlines()[-1])["id"]
+    chunks = b / "chunks.jsonl"
+    lines = chunks.read_text().splitlines()
+    first = json.loads(lines[0])
+    lines[0] = json.dumps({**first, "text": first["text"] + "\nA new line."})
+    lines[1] = json.dumps({**json.loads(lines[1]), "title": "Renamed"})
+    chunks.write_text("\n".join(lines[:-1]) + "\n")
+    (b / "extra.md").write_text("# New page\n")
+    r = compare(a, b)
+    assert r.changed == {"chunks": ["chunks.jsonl"]} and r.added == {"pages": ["extra.md"]} and not r.removed
+    ch = r.chunks["chunks.jsonl"]
+    assert [c[0] for c in ch.text] == [first["id"]] and ch.metadata == [json.loads(lines[1])["id"]]
+    assert ch.removed == [last] and not ch.added
+    assert treediff([str(a), str(b)]) == 1 and "+A new line." in capsys.readouterr().out
