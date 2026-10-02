@@ -5,7 +5,7 @@
     cameo-ingest ingest -o OUT PATH... [options]   add, then run (the default command)
     cameo-ingest status -o OUT [--json]            what the tree holds, and the latest run
     cameo-ingest prune -o OUT [--dry-run]          drop missing inputs and the projects only they held
-    cameo-ingest export -o OUT --workbook FILE     the catalog, to search without tools (plan KX)
+    cameo-ingest export -o OUT [--workbook F] [--search-page F]   the catalog, to search without tools
     cameo-ingest quality sample -o OUT [--n N]     draw a spot-check set of LLM requests and answers
 """
 
@@ -190,9 +190,10 @@ def build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--dry-run", action="store_true", help="only list what would be removed")
     ex = sub.add_parser("export", parents=[common],
                         help="write the catalog of the tree's models for people to search without tools: a "
-                             "workbook (see README, Searching without tools)")
-    ex.add_argument("--workbook", type=Path, metavar="FILE", required=True,
-                    help="write the catalog as an Excel workbook (.xlsx) to FILE")
+                             "workbook, a search page (see README, Searching without tools)")
+    ex.add_argument("--workbook", type=Path, metavar="FILE", help="write the catalog as an Excel workbook (.xlsx)")
+    ex.add_argument("--search-page", type=Path, metavar="FILE",
+                    help="write the catalog as one self-contained web page (.html) that searches in a browser")
     q = sub.add_parser("quality", help="measure the quality of LLM enrichment (see docs/plans/llm-quality-*.md)")
     qs = q.add_subparsers(dest="action", required=True, metavar="ACTION")
     qsample = qs.add_parser("sample", parents=[common], help="draw a spot-check set of requests and answers")
@@ -268,18 +269,28 @@ def add_inputs(state: State, args: argparse.Namespace) -> tuple[int, int]:
 
 
 def export_catalog(out: Path, args: argparse.Namespace) -> int:
-    """`export`: the tree's catalogs as a workbook (plan KX-06)."""
-    from . import catalog, workbook
+    """`export`: the tree's catalogs as a workbook and a search page (plan KX-06)."""
+    from . import catalog, searchpage, workbook
 
+    if not (args.workbook or args.search_page):
+        print("error: export needs --workbook FILE, --search-page FILE or both", file=sys.stderr)
+        return 2
     state = State(out)
     missing: list[str] = []
     try:
-        rows = workbook.write_workbook(args.workbook, catalog.tree_catalogs(state, out, missing, Progress()),
-                                       __version__)
+        if args.workbook:
+            rows = workbook.write_workbook(args.workbook, catalog.tree_catalogs(state, out, missing, Progress()),
+                                           __version__)
+            print(f"wrote {args.workbook} ({args.workbook.stat().st_size / 1e6:.1f} MB): "
+                  + ", ".join(f"{n:,} {k}" for k, n in rows.items()))
+        if args.search_page:
+            missing.clear()
+            counts = searchpage.write_search_page(
+                args.search_page, catalog.tree_catalogs(state, out, missing, Progress(), chunks=True), __version__)
+            print(f"wrote {args.search_page} ({args.search_page.stat().st_size / 1e6:.1f} MB): "
+                  f"{counts['items']:,} items from {counts['projects']:,} models")
     finally:
         state.close()
-    size = args.workbook.stat().st_size
-    print(f"wrote {args.workbook} ({size / 1e6:.1f} MB): " + ", ".join(f"{n:,} {k}" for k, n in rows.items()))
     if missing:
         print(f"note: {len(missing)} project(s) were made before catalogs existed and are left out: "
               f"{', '.join(missing[:5])}{'…' if len(missing) > 5 else ''}; `run` makes them again", file=sys.stderr)

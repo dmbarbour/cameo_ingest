@@ -38,7 +38,7 @@ many files, bundles or names it turns up under.
 | `cameo-ingest ingest -o OUT PATH... [options]` | `add`, then `run`. It is the default command: `cameo-ingest FILE -o OUT`. |
 | `cameo-ingest status -o OUT [--json]` | Inputs and projects by status, failures, the latest run. Works while a run is going. |
 | `cameo-ingest prune -o OUT [--dry-run]` | Drops missing inputs, and the projects that no remaining input contains. |
-| `cameo-ingest export -o OUT --workbook FILE` | Writes the catalog of the tree's models for people to search without tools (see "Searching without tools"). Apart from `run`, since it is a distribution step. |
+| `cameo-ingest export -o OUT [--workbook FILE] [--search-page FILE]` | Writes the catalog of the tree's models for people to search without tools: a workbook, a self-contained search page, or both (see "Searching without tools"). Apart from `run`, since it is a distribution step. |
 
 - **Output directories.** A missing or empty directory starts a tree. A directory with
   `state.sqlite` is continued. Any other non-empty directory is refused.
@@ -333,8 +333,24 @@ better at ids and names: embeddings almost never find a requirement by its id, a
 search does nine times in ten (`docs/research/retrieval-baseline-2026-10-01.md`).
 
 ```sh
-cameo-ingest export -o OUT --workbook catalog.xlsx
+cameo-ingest export -o OUT --workbook catalog.xlsx --search-page search.html
 ```
+
+**The search page** is one HTML file. A reader downloads it and opens it in a browser (Edge,
+Chrome, Firefox, Safari): it loads nothing from the network and sends nothing anywhere, since
+everything it shows is inside the file, compressed.
+- **Loading:** it unpacks and indexes the catalog, with a progress bar and the time spent in
+  each phase, and a Cancel button. It is then ready to search.
+- **Searching:** results come as you type, ranked by BM25 with names and ids weighted above text.
+  An id such as `REQ-1-OAD-1050` is one word. `prefix*` and `"a phrase"` work, and results can
+  be filtered by model and type.
+- **Reading an item:** its full text, as the RAG reads it, and its relationships as links to
+  the related items. Its source is shown too, and the generated summaries about it, marked as
+  such.
+- **Linking:** `search.html#q=REQ-1` opens the page with that search.
+
+SharePoint downloads HTML files rather than showing them, so readers save the page and open the
+saved copy. Opened from inside a zip without extracting it first, it says so.
 
 **The workbook** has one row per item, with its source: the path the model was found at
 (which mirrors the SharePoint folders it was copied from) and its `--meta` values. Its sheets:
@@ -354,7 +370,7 @@ cameo-ingest export -o OUT --workbook catalog.xlsx
 
 **Sharing it.** Upload the workbook to SharePoint, where Excel for the web opens it in the
 browser (up to 100 MB), or share it as a file for desktop Excel. Long text is cut in its
-cells, and the tree holds it whole.
+cells; the search page and the tree hold it whole.
 
 **Other tools.** Obsidian and VS Code open the tree's pages as they are, Markdown with relative
 links, and search all of them, for those who have the tree and one of these tools.

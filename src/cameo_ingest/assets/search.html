@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="cameo-ingest {{VERSION}}">
+<title>{{TITLE}}</title>
+<style>
+{{CSS}}
+</style>
+</head>
+<body>
+<div id="loading">
+  <h1>{{TITLE}}</h1>
+  <p class="lead">Loading the search index: {{MODELS}}, {{ITEMS}}. Large indexes take a while; the bars
+    below show how far it has got.</p>
+  <p class="note">This page works offline. It loads nothing from the network and sends nothing anywhere:
+    everything it shows is inside this file. If you opened it from SharePoint or a zip file, save it
+    first and open the saved copy.</p>
+  <div class="reading"><span class="spinner" aria-hidden="true"></span><span id="reading">Reading the file…</span></div>
+  <div id="phases"></div>
+  <p id="stall" class="warn" hidden>No progress for ten seconds. A very large index can pause like this while
+    the browser works; if it lasts for minutes, close other tabs, or try another browser.</p>
+  <p id="problem" class="warn" hidden></p>
+  <button id="cancel" type="button">Cancel</button>
+  <noscript><p class="warn">This page needs JavaScript to search. The data is inside the file.</p></noscript>
+</div>
+<div id="app" hidden>
+  <header>
+    <div class="title">{{TITLE}}</div>
+    <div id="ready" class="ready"></div>
+  </header>
+  <div class="search">
+    <input id="q" type="search" placeholder="Search: words, an id, &quot;a phrase&quot;, or a prefix*"
+           autocomplete="off" spellcheck="false">
+    <select id="project" aria-label="Model"><option value="">All models</option></select>
+    <select id="type" aria-label="Type"><option value="">All types</option></select>
+  </div>
+  <div id="count" class="count"></div>
+  <main>
+    <nav id="results"></nav>
+    <article id="detail"></article>
+  </main>
+  <footer>Made by cameo-ingest {{VERSION}}. Summaries marked "generated" were written by an LLM and are not
+    part of the source models.</footer>
+</div>
+<script>
+{{JS}}
+</script>
+{{DATA}}
+</body>
+</html>

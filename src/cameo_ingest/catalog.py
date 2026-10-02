@@ -134,6 +134,7 @@ class ProjectCatalog:
     records: list[dict[str, Any]]
     ids: list[dict[str, Any]] = field(default_factory=list)
     sources: list[dict[str, Any]] = field(default_factory=list)  # [{"path", "metadata"}]
+    chunks: dict[str, str] = field(default_factory=dict)  # chunk id -> text, when asked for
 
     @property
     def label(self) -> str:
@@ -152,9 +153,9 @@ def _jsonl(path: Path) -> list[dict[str, Any]]:
 
 
 def tree_catalogs(state: State, out: Path, missing: list[str], progress: Progress | None = None,
-                  ) -> Iterator[ProjectCatalog]:
-    """The written projects' catalogs, one at a time. A project made before catalogs existed
-    (0.8.0) is named in `missing`: `run` makes it again."""
+                  chunks: bool = False) -> Iterator[ProjectCatalog]:
+    """The written projects' catalogs, one at a time, with their chunks' text if `chunks`. A
+    project made before catalogs existed (0.8.0) is named in `missing`: `run` makes it again."""
     rows = state.written()
     with (progress or QUIET).phase("projects", len(rows), "project") as ph:
         for row in rows:
@@ -168,4 +169,5 @@ def tree_catalogs(state: State, out: Path, missing: list[str], progress: Progres
             ids = _jsonl(d / "index" / "ids.jsonl") if (d / "index" / "ids.jsonl").is_file() else []
             sources = [{"path": "!".join([s["path"], *json.loads(s["chain"])]), "metadata": json.loads(s["metadata"])}
                        for s in state.sightings(row["content_sha256"]) if s["input_status"] != "missing"]
-            yield ProjectCatalog(recs[0], recs[1:], ids, sources)
+            texts = {c["id"]: c["text"] for c in _jsonl(d / "index" / "chunks.jsonl")} if chunks else {}
+            yield ProjectCatalog(recs[0], recs[1:], ids, sources, texts)

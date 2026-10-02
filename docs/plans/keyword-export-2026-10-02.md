@@ -145,8 +145,8 @@ pane:
 
 | Checkpoint | Steps | Output | Status |
 |---|---|---|---|
-| CP1: the records and the workbook | KX-02, KX-03, KX-06 (workbook) | `index/catalog.jsonl` per project; `export --workbook`; 0.8.0 | |
-| CP2: the search page | KX-04, KX-06 (page) | `export --search-page` | |
+| CP1: the records and the workbook | KX-02, KX-03, KX-06 (workbook) | `index/catalog.jsonl` per project; `export --workbook`; 0.8.0 | Done (1db2652) |
+| CP2: the search page | KX-04, KX-06 (page) | `export --search-page` | Done; no version bump, since the tree's output is unchanged and a bump would make every project again |
 | CP3: sketches | KX-05 | The maintainer's choice, in the page | |
 | CP4: the samples | KX-07 | Measurements, and adjustments | |
 | CP5: the trial | KX-08, KX-09 | What the maintainer keeps | |
@@ -202,9 +202,93 @@ yields each project's header, records, identifier records and sources.
 
 **Version:** 0.8.0, since there is a new per-project file.
 
+**Results (2026-10-02):**
+- **The tree:** a `--no-llm` tree of the samples and the fiction (27 projects, KOIS now among
+  them) differs from 0.7.2's (`out/kx/base`) only in the 27 new `index/catalog.jsonl` files and
+  the manifest that lists them.
+- **The workbook from it** (`out/kx/catalog-cp1.xlsx`): 7.1 MB, written in 16 s at 204 MB of
+  memory. Rows:
+
+  | Sheet | Rows |
+  |---|---|
+  | Search | 68,314 |
+  | Requirements | 8,808 |
+  | Identifiers | 9,620 |
+  | Elements | 54,100 |
+  | Relationships | 22,988 |
+  | Diagrams | 3,645 |
+  | Summaries | none, without the LLM |
+  | Projects | 27 |
+
 **Checks:** a `--no-llm` tree of the samples and the fiction, against one made at 0.7.2
 (`out/kx/base`): everything the same but `index/catalog.jsonl`, the manifest's lists and the
 version. Then the workbook made from it: its size and rows.
+
+### CP2 in detail
+
+**Files.**
+- **`searchpage.py`:** `write_search_page(path, projects, version)` fills the template and
+  appends the data blocks.
+- **`assets/`:** `search.html` (the template, with its loading message), `search.css` and
+  `search.js`, inlined into the page when it is written.
+- **`search.js`:** two parts. The engine (tokens, the index, search, snippets) has no DOM, so
+  Node can test it; the interface runs only in a browser.
+
+**Data.** One `<script type="application/octet-stream">` block per project, holding
+base64(gzip(JSON)), with gzip's time fixed for the same bytes each time. Each block has:
+- **The project:** label, file name, token, sources (paths and `--meta`), counts.
+- **The items, as objects with short keys:**
+  - `k` key, `t` type, `kd` kind, `id`, `db`, `n` name, `w` where, `x` text;
+  - `c`: the full text, the item's own chunks joined. Members borrow none, but link to the
+    item they are listed in (`l`), so the text isn't repeated.
+  - `r` relations (`[kind, direction, phrase, other key, other label]`), `d` diagrams;
+  - `m` model, `of` (summaries).
+
+Relationship records stay in the workbook: the page shows relations on their items.
+
+**Loading** (the plan's feedback rules).
+- **While the file is still being read:** a small inline script after each data block advances
+  "Reading: project 3 of 26", since the browser paints while it parses.
+- **When the document is ready, per project:**
+  - base64 to bytes;
+  - `DecompressionStream`;
+  - `JSON.parse`;
+  - indexing, in slices of about 30 ms that yield to the page.
+- **During all of it:** each phase has a bar and a running time, and a Cancel button. A note
+  appears if a phase stalls for 10 s.
+- **At the end:** the summary.
+- **Problems:**
+  - a browser without `DecompressionStream`: a message;
+  - a path in a temporary folder of Windows' zip preview: a message.
+
+**The engine.**
+- **Tokens:** those of `harness.words` (`[a-z0-9]+(?:[-.][a-z0-9]+)*`, lower case).
+- **Two BM25 indexes** (k1 = 1.2, b = 0.75, the idf of `harness.BM25`):
+  - the title (id and name);
+  - the body (where, text and full text).
+- **Score:** 3 × the title's BM25 + the body's.
+- **Postings:** per token, typed arrays of document numbers and term counts.
+- **Queries:**
+  - words, scored together, so that an item with more of them ranks higher;
+  - `prefix*`, expanded through the sorted vocabulary, at most 200 tokens;
+  - `"a phrase"`: its words, then a check for the phrase in the item's text;
+  - filters by project and type.
+- **Results:** the first 200, with the total, the time, and snippets that mark the words.
+
+**The interface.**
+- **Layout:** a search box, filters and results on the left, the item on the right.
+- **Navigation:** in the URL's `#` (an item's project and key), so that Back and Forward work.
+- **Safety:** model text is shown with `textContent` only, never as HTML.
+
+**Tests.**
+- **Python:** the page's blocks decode back into the records; the same bytes twice; the
+  template's placeholders are all filled.
+- **Node** (`tests/js/`, run from pytest, skipped without Node):
+  - the engine's BM25 on a small corpus matches `harness.BM25`'s scores to 1e-6;
+  - prefixes, phrases and filters;
+  - the blocks of a real page, from the fiction tree, decode and index.
+
+**Packaging:** the assets ship in the wheel, which a `uv build` and a listing check.
 
 **Checks:**
 - **The workbook** (CP1), read in tests with `zipfile`:
