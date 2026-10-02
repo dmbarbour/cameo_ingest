@@ -14,6 +14,7 @@ here.
 | [Retrieval evaluation](retrieval-evaluation-2026-09-30.md) | In progress: plain chunks judged better and made the default (0.5.0); fictional projects with answers by construction (RE-10); the spot check remains | The README's RAG advice; chunk sizes |
 | [Related facts brought together](related-facts-2026-10-01.md) | Completed 2026-10-01; facet lists deferred | The maintainer's request to bring related facts and requirements together for keyword search, tracing and provenance |
 | [Refactoring after the architecture review](refactoring-2026-10-02.md) | Done (2026-10-02, 0.7.2): every checkpoint checked; every review finding fixed; retrieval held; the new summaries adopted | AR-003R2 to AR-026: stages 2 to 4 of the review's remediation order, with the maintainer's decisions (Markdown chunks, studies and old templates retired; `cameo-ingest[eval]`) |
+| [Searching the corpus without tools](keyword-export-2026-10-02.md) | Proposed 2026-10-02: a workbook (`CATALOG.xlsx`) with links into SharePoint; decisions await the maintainer | The tentative plan for keyword search and an export; plan RE's finding that embeddings rarely find a requirement by its id |
 
 ## Tentative
 
@@ -36,17 +37,9 @@ roadmap in the top-level `README.md`.
 - **Better module boundaries.** Split sequence diagrams into bands along the time axis, and
   activity diagrams along their partitions (swimlanes, from the model's `inPartition`),
   rather than by connectivity alone. Both were found in plan DV's partitioning study.
-- **Keyword search over the corpus, and an export to search without tools.** (The concordance
-  in plan RF, related facts, would cover part of this.) The retrieval
-  baseline (`docs/research/retrieval-baseline-2026-10-01.md`) found that embeddings almost never
-  find a requirement by its id, where keyword search (BM25) does nine times in ten; but the
-  production stack can't take keyword search yet. Investigate:
-  - a keyword index of the whole tree, built with the output and searchable from the command
-    line;
-  - an export that needs no special tools: one workbook for the whole corpus, with ids, names,
-    requirement texts, documentation and where each item is (file and anchor), searchable with
-    Ctrl+F in Excel. The per-project CSV tables and `LEDGER.md` are a start, but are split by
-    project.
+- **Keyword search from the command line.** A keyword index of the whole tree, built with the
+  output and searchable from the command line. This is for when Python can run where the corpus
+  is read. The export for office tools is plan KX (`keyword-export-2026-10-02.md`).
 - **Vision calibration by "eye chart".** Sketches are drawn for what gemma-4 on DeepInfra is
   known to see: the 645,120-pixel budget, 48-pixel patches, 12-pixel text, and diagrams split
   above 25 shapes (FU-012, FU-015, `docs/research/gemma4-images-2026-09-30.md`). Those values
