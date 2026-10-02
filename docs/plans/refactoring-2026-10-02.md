@@ -320,6 +320,13 @@ Pillow when imported, and only `pipeline` imports `sketch`.
 The output stays the same: a `--no-llm` tree compared with CP6's. Tests follow their code
 (`test_modules.py` becomes `test_partition.py`).
 
+**Result (2026-10-02):** the `--no-llm` tree at RA-15 (`out/ra/cp7a`, which has CP6 too) is the
+same as CP5's, but for the order of a few records in five projects' `index/ids.jsonl`. That
+was a bug of CP5c, not of CP7: `crossref` listed the ids of a text in set order, which
+changes with Python's hash seed (MF-1 and MF-8 in Halvorsen's rack swapped places). The ids are
+now listed sorted, and a test ingests a project under two hash seeds that used to disagree.
+Version 0.7.2.
+
 **RA-16 in detail.**
 
 - **`llm.py`, three pieces.**
@@ -359,7 +366,7 @@ The output stays the same: a `--no-llm` tree compared with CP6's. Tests follow t
 
 | Step | What | Status |
 |---|---|---|
-| RA-15 | **Diagrams and partitioning** (AR-019): `diagram_graph` (build, nodes, links, labels), `diagram_text`, `sketch` (rendering, frames, presets), `vision` (the pixel budget, one `fit_size` for sketches and images) and `partition` (one base with diagram and package adapters; `_Sequence` calls its base's constructor). | Done; its `--no-llm` tree check pending |
+| RA-15 | **Diagrams and partitioning** (AR-019): `diagram_graph` (build, nodes, links, labels), `diagram_text`, `sketch` (rendering, frames, presets), `vision` (the pixel budget, one `fit_size` for sketches and images) and `partition` (one base with diagram and package adapters; `_Sequence` calls its base's constructor). | Done; its tree is CP5's (see below) |
 | RA-16 | **The LLM session, HTTP and caches** (AR-016R1, AR-017): `ChatClient` (OpenAI or replay, injectable, so tests stop patching `openai.OpenAI`), `ResponseStore`, `EnrichmentSession` (budget, breaker, outcomes, request log); embeddings through the OpenAI SDK; one `post_json` with retries for the reranker; one `SqliteCache` base, with the store's recovery from a corrupt file; the provider's settings in one place; the `Embedder` counters under a lock. | Done; replay from `out/ra/llm-cache` pending |
 
 ### CP8: the evaluation

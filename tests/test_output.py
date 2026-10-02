@@ -256,3 +256,25 @@ def test_treediff(tmp_path, capsys):
     assert [c[0] for c in ch.text] == [first["id"]] and ch.metadata == [json.loads(lines[1])["id"]]
     assert ch.removed == [last] and not ch.added
     assert treediff([str(a), str(b)]) == 1 and "+A new line." in capsys.readouterr().out
+
+
+def test_reproducible_across_hash_seeds(tmp_path):
+    """The output doesn't depend on Python's string hashing, which changes with every process:
+    an identifier file once listed a document's ids in set order (CP7's tree check)."""
+    import os
+    import subprocess
+    import sys
+
+    from cameo_ingest.evaluation.fiction import PROJECTS
+
+    project = PROJECTS["hal"]()  # documentation that names several ids: MF-1 to MF-8
+    src = tmp_path / project.file_name
+    src.write_bytes(project.mdzip())
+    trees = []
+    for seed in ("0", "9"):  # seeds that iterate {"MF-1", "MF-8"} in different orders
+        out = tmp_path / f"out{seed}"
+        env = {**os.environ, "PYTHONHASHSEED": seed}
+        subprocess.run([sys.executable, "-m", "cameo_ingest.cli", str(src), "-o", str(out), "--no-llm", "--no-render"],
+                       check=True, env=env, capture_output=True)
+        trees.append(tree(out))
+    assert trees[0] == trees[1]

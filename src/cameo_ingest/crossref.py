@@ -67,6 +67,8 @@ def _rows(project_dir: Path, table: str) -> list[dict[str, str]]:
 
 
 def _ids(text: str) -> set[str]:
+    """The identifiers in a text, as a set: iterate it sorted, so that output keeps one order
+    whatever the hash seed."""
     return {m for m in ID.findall(text or "") if any(c.isdigit() for c in m) and not NOT_IDS.match(m)}
 
 
@@ -111,7 +113,7 @@ def project_places(view: ProjectView, chunk_of: dict[str, str]) -> list[dict[str
             req_id[el.id] = req.id
             add(req.id, el.id, "Requirement" + (f" {el.name}" if el.name else ""), "its id",  # the text follows
                 text or req.title, locator)
-        for term in _ids(text) - {req.id}:
+        for term in sorted(_ids(text) - {req.id}):
             add(term, el.id, what_of(el), "in its text", text, locator)
     for r in view.rels:  # the other end of a relationship with a requirement
         w = sem.wording(r.kind)
@@ -129,9 +131,9 @@ def project_places(view: ProjectView, chunk_of: dict[str, str]) -> list[dict[str
         if not (_ids(name) or _ids(doc)):
             continue
         locator = view.trace(el).locator()
-        for term in _ids(name):
+        for term in sorted(_ids(name)):
             add(term, el.id, what_of(el), "in its name", name, locator)
-        for term in _ids(doc):
+        for term in sorted(_ids(doc)):
             add(term, el.id, what_of(el), "in its documentation", doc, locator)
     for app in ix.stereotypes.values():
         el = ix.elements.get(app.base)
@@ -141,7 +143,7 @@ def project_places(view: ProjectView, chunk_of: dict[str, str]) -> list[dict[str
         for tag, vals in app.tags.items():
             for v in vals:
                 value = ix.qualified_name(v) if v in ix.elements else v
-                for term in _ids(value):
+                for term in sorted(_ids(value)):
                     add(term, el.id, what_of(el), f"in its tag {tag}", f"{tag} = {value}", locator)
     return out
 
