@@ -314,7 +314,10 @@ class LLM:
                 self._skip(item, "empty")  # not stored, so a re-run asks again
                 return None
             self.outcomes["answered"] += 1
-        self.store.put(endpoint, model, key, text)
+        try:  # the answer is paid for: a store that can't keep it costs a re-ask later, not this project (AR-016)
+            self.store.put(endpoint, model, key, text)
+        except sqlite3.DatabaseError as e:
+            log.warning("cannot store LLM response: %s", e)
         return text, key
 
     def ask(self, template: Template, values: dict[str, str], *, image: bytes | None = None,
