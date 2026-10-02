@@ -83,31 +83,31 @@ Four themes run through the findings:
 |---|---|---|---|---|
 | AR-001 | High | `--no-cross-index` crashes every run, and `--no-threads` deletes `CROSSREF.md` | Reproduced | Fixed |
 | AR-002 | High | An unnamed requirement whose text starts with `[` fails its whole project when a vision model is set | Reproduced | Fixed |
-| AR-003 | High | Plain chunks are made by regex-parsing the page Markdown, which corrupts model text | Reproduced | Partly fixed |
-| AR-004 | Medium | The two chunk styles branch in five places and have drifted: generated and ledger chunks break the plain style's rules | Reproduced | Partly fixed |
+| AR-003 | High | Plain chunks are made by regex-parsing the page Markdown, which corrupts model text | Reproduced | Fixed |
+| AR-004 | Medium | The two chunk styles branch in five places and have drifted: generated and ledger chunks break the plain style's rules | Reproduced | Fixed |
 | AR-005 | High | Grading by construction lives in a script, untested, with two different rules | By inspection | Fixed |
 | AR-006 | Medium | The within-model questions' evidence groups are bare names, so their measures are inflated | Measured | Fixed |
-| AR-007 | Medium | `ProjectWriter` is a god object, and pipeline and ledger reach into its internals | By inspection | Open |
-| AR-008 | Medium | `ingest_project` mixes six jobs; request kinds are bare strings | By inspection | Open |
-| AR-009 | Medium | Prompt values are built in three modules and two scripts, with wording and limits outside the versioned templates | By inspection | Open |
-| AR-010 | Medium | An element's label and a requirement's id are worked out in about eight places, with different results | Reproduced | Open |
-| AR-011 | Medium | Relationship wording is defined in three to five places | By inspection | Open |
-| AR-012 | Medium | Per-project files and rendered text serve as undeclared APIs, and readers have already broken | Reproduced | Partly fixed |
-| AR-013 | Medium | Settings, project options and their defaults are spread over five modules | By inspection | Open |
-| AR-014 | Medium | `exports.rebuild` does seven jobs, and tree-level chunks are made in two modules | By inspection | Open |
-| AR-015 | Medium | Chunk records are loose dicts made in four places, and packing rows into parts is written three times | By inspection | Open |
+| AR-007 | Medium | `ProjectWriter` is a god object, and pipeline and ledger reach into its internals | By inspection | Fixed |
+| AR-008 | Medium | `ingest_project` mixes six jobs; request kinds are bare strings | By inspection | Fixed |
+| AR-009 | Medium | Prompt values are built in three modules and two scripts, with wording and limits outside the versioned templates | By inspection | Fixed |
+| AR-010 | Medium | An element's label and a requirement's id are worked out in about eight places, with different results | Reproduced | Fixed |
+| AR-011 | Medium | Relationship wording is defined in three to five places | By inspection | Fixed |
+| AR-012 | Medium | Per-project files and rendered text serve as undeclared APIs, and readers have already broken | Reproduced | Fixed |
+| AR-013 | Medium | Settings, project options and their defaults are spread over five modules | By inspection | Fixed |
+| AR-014 | Medium | `exports.rebuild` does seven jobs, and tree-level chunks are made in two modules | By inspection | Fixed |
+| AR-015 | Medium | Chunk records are loose dicts made in four places, and packing rows into parts is written three times | By inspection | Fixed |
 | AR-016 | Medium | The `LLM` class mixes transport, store, replay, run policy and report | By inspection | Fixed |
 | AR-017 | Medium | HTTP clients, retries and SQLite caches are written two or three times | By inspection | Fixed |
-| AR-018 | Medium | LLM summary inputs are page Markdown, link targets and all | By inspection | Open |
+| AR-018 | Medium | LLM summary inputs are page Markdown, link targets and all | By inspection | Fixed, its check pending |
 | AR-019 | Medium | `diagrams.py` and `modules.py` each carry several unrelated responsibilities | By inspection | Fixed |
 | AR-020 | Medium | `retrieval_eval.main` is library code; `judge_pools` cuts windows again on its own defaults | By inspection | Fixed |
 | AR-021 | Medium | The KOIS project duplicates the fiction builder, and fictional prefixes are listed in four places | By inspection | Fixed |
 | AR-022 | Medium | The test suite: a 1,168-line module, no `conftest.py`, repeated setup, untested library code | By inspection | Fixed |
-| AR-023 | Low | Five Markdown-to-plain converters and four link patterns | By inspection | Open |
-| AR-024 | Low | SQL against `state.sqlite` is written outside `state.py` | By inspection | Open |
+| AR-023 | Low | Five Markdown-to-plain converters and four link patterns | By inspection | Fixed |
+| AR-024 | Low | SQL against `state.sqlite` is written outside `state.py` | By inspection | Fixed |
 | AR-025 | Low | The prompt registry is two hand-kept lists, current and retired templates mixed | By inspection | Fixed |
 | AR-026 | Low | Dead code, finished studies left in `scripts/`, and the evaluation in the product wheel | By inspection | Fixed |
-| AR-027 | Medium | A thread split into parts loses its nesting, so a part can misstate what derives from what | Reproduced | Partly fixed |
+| AR-027 | Medium | A thread split into parts loses its nesting, so a part can misstate what derives from what | Reproduced | Fixed, its measurement pending |
 
 ## Findings
 
@@ -164,7 +164,16 @@ This was introduced by a pushed commit (`cb0c6ba`).
 
 **Severity:** High · **Verified:** Reproduced · **Where:** `src/cameo_ingest/plain.py:31-140`, `emit.py:247-262`, `text.py:49` (`md_escape`)
 
-**Status:** Partly fixed on 2026-10-02 (0.5.3). AR-003R1 is done: `plain` removes only the emphasis emit writes (bold labels and names, a member's role, an annotation's origin); quotes are removed only from the requirement text; `#` lines are kept inside blocks; a block's name keeps its parenthesis unless it is a count; and the table configuration and annotation labels start blocks of their own. A test covers each case. AR-003R2 remains.
+**Status:** Fixed on 2026-10-02.
+- AR-003R1 (0.5.3): `plain` removes only the emphasis emit writes (bold labels and names, a
+  member's role, an annotation's origin). Quotes are removed only from the requirement text,
+  and `#` lines are kept inside blocks. A block's name keeps its parenthesis unless it is a
+  count, and the table configuration and annotation labels start blocks of their own. A test
+  covers each case.
+- AR-003R2 (plan RA-11, CP3): `sections.py` builds each element's section once as data, with
+  two renderers, `markdown` for pages and `plain` for chunks (and `text` for LLM inputs).
+  `plain.section`, `blocks` and the block pattern are gone. Against CP2's tree, 325 lines
+  changed, every one a fault of the old parsing.
 
 **How the chunks are made:**
 - `emit.section` renders a page section as Markdown.
@@ -205,7 +214,16 @@ wording change in `emit.section` silently changes how chunks are split into mean
 
 **Severity:** Medium · **Verified:** Reproduced · **Where:** `emit.py:202, 250, 267, 381, 525, 646`, `ledger.py:133-155`, `exports.py:148`, `plain.py:108`
 
-**Status:** Partly fixed on 2026-10-02 (0.6.0). AR-004R4: the Markdown chunk style is retired, as the maintainer decided (plan RA-02), and with it the branching between styles. AR-004R1 to R3 remain (plan RA-09).
+**Status:** Fixed on 2026-10-02.
+- AR-004R4 (0.6.0): the Markdown chunk style is retired, as the maintainer decided (plan
+  RA-02), and with it the branching between styles.
+- AR-004R1 to R3 (plan RA-09, 0.6.2):
+  - generated and ledger chunks have plain headings;
+  - `parts` caps a heading at a quarter of the budget, keeping the project;
+  - module and part metadata is `covers`.
+
+  One deviation: a part's covered names stay in its heading, cut to fit, as keywords the
+  fiction can't measure.
 
 **Branching:** `chunk_style` is tested in five places. A typo in `!= "plain"` silently selects
 Markdown.
@@ -240,7 +258,7 @@ Markdown.
 
 **Severity:** High · **Verified:** By inspection · **Where:** `scripts/retrieval_eval.py:58-92, 185-189`, `tests/test_fiction.py:31-34`, `tests/test_evaluation.py:41-42`, `evaluation/synthetic.py`
 
-**Status:** Partly fixed on 2026-10-02. AR-005R1 and R2 are done: `evaluation/grading.py` holds the four rules (`source`, `parts`, `fact`, `element`), each question source states its own, and `Question.of` rejects a question that lacks what its rule grades by. A `Corpus` flattens each window once, and grades are computed once per question, not once per system. `test_grading_rules` tests each rule on hand-made windows, and the answer-key test now grades through `Question.grades`, index entries included. AR-005R3 is done with AR-021 (plan RA-17): KOIS takes the fact rule, and plan RE notes that its scores are rebased.
+**Status:** Fixed on 2026-10-02. AR-005R1 and R2: `evaluation/grading.py` holds the four rules (`source`, `parts`, `fact`, `element`), each question source states its own, and `Question.of` rejects a question that lacks what its rule grades by. A `Corpus` flattens each window once, and grades are computed once per question, not once per system. `test_grading_rules` tests each rule on hand-made windows, and the answer-key test now grades through `Question.grades`, index entries included. AR-005R3 is done with AR-021 (plan RA-17): KOIS takes the fact rule, and plan RE notes that its scores are rebased.
 
 **Where the grading is:**
 - `grades()`, the coverage logic and `group_measures` are what every measure in plans RE and RF
@@ -302,6 +320,13 @@ cubic metres") and are sound. The stray check in the tests covers `evidence`, no
 
 **Severity:** Medium · **Verified:** By inspection · **Where:** `emit.py:65-846`, `pipeline.py:339-546`, `ledger.py:23-24, 77`
 
+**Status:** Fixed on 2026-10-02 (plan RA-13).
+- AR-007R1 (CP5a): `ProjectView` (`view.py`), `FilePlan` (`files.py`), `ChunkSink`
+  (`sink.py`), `PageWriter` (`pages.py`) and `TableWriter` (`tables.py`). `emit.ProjectWriter`
+  only assembles them, and the ledger takes the view, plan, sink and pages.
+- AR-007R2 (CP4c): the enricher passes package parts to the view (`set_parts`) and image notes
+  as annotations.
+
 **What `ProjectWriter` holds** (846 lines):
 - the model's derived indexes (relationships by end, flows, notes, diagrams showing each
   element);
@@ -335,6 +360,14 @@ cubic metres") and are sound. The stray check in the tests covers `evidence`, no
 
 **Severity:** Medium · **Verified:** By inspection · **Where:** `pipeline.py:317-562`, `emit.py:56, 383`
 
+**Status:** Fixed on 2026-10-02 (plan RA-13, CP4c).
+- AR-008R1: `enrich.Enricher`, with typed requests, `annotations.AnnotationKind` and rounds
+  (`next_round`, `fold`).
+- AR-008R2:
+  - the image fitting is in `vision`, beside the sketch's canvas sizing (RA-15);
+  - the id rewrite is `layout.own_elements`;
+  - `images.md` is written by the page writer.
+
 **The six jobs:** `ingest_project` (245 lines):
 - renders sketches;
 - writes files;
@@ -366,6 +399,12 @@ cubic metres") and are sound. The stray check in the tests covers `evidence`, no
 ### AR-009: Prompt values are built in three modules and two scripts, with wording and limits outside the versioned templates
 
 **Severity:** Medium · **Verified:** By inspection · **Where:** `pipeline.py:179-264, 373-386, 432`, `modules.py:356-369`, `prompts.py`, `scripts/sandwich_study.py:72-92`, `scripts/long_context_study.py:63-87`
+
+**Status:** Fixed on 2026-10-02 (plan RA-12, CP4a).
+- AR-009R1: `prompt_values` has one builder per template, returning values, notes and what
+  was cut. The limits are named constants, interpolated into the templates' fragments.
+- AR-009R2: `enrich.package_parts` (the studies that also built package plans are retired).
+- AR-009R3: a test fills every current template from its builder.
 
 **Where values are built:**
 - the diagram description: inline in pipeline;
@@ -401,6 +440,13 @@ versioning that quality ratings rely on.
 ### AR-010: An element's label and a requirement's id are worked out in about eight places, with different results
 
 **Severity:** Medium · **Verified:** Reproduced · **Where:** `model.py:102-115`, `text.py:70-83`, `emit.py:236-244, 304, 311`, `ledger.py:98-118, 200`, `diagrams.py:67-138`, `crossref.py:36, 98-130`, `pipeline.py:189-193`, `evaluation/questions.py:29`
+
+**Status:** Fixed on 2026-10-02 (plan CP2, 0.6.1).
+- AR-010R1 (CP2a): `semantics.requirement`, `label`, `own_name` and `kind_word`, with
+  `text.DOORS_ID` the one pattern. `ModelIndex.label` is generic again.
+- AR-010R2 (CP2b): `ShapeLabel`, computed once per shape.
+- AR-010R3 (CP2c): pages and the ledger show the id once, and the database number as a field.
+  A DOORS id after a bullet is read since CP5b.
 
 **The requirement id:**
 - `ModelIndex.label` (the schema-free data layer) applies SysML and DOORS requirement logic,
@@ -438,6 +484,9 @@ versioning that quality ratings rely on.
 
 **Severity:** Medium · **Verified:** By inspection · **Where:** `diagrams.py:55-60` (`VERBS`), `emit.py:357`, `ledger.py:32-40` (`REQ_LINKS`), `crossref.py:39-40, 253-255`, `emit.py:748-752`
 
+**Status:** Fixed on 2026-10-02 (plan CP2a): `semantics.RELATIONS` and `wording(*kinds)`,
+used by pages, the ledger, diagrams and threads.
+
 **Where the wording is defined:**
 - `diagrams.VERBS`: page text takes its vocabulary from here, a drawing module that loads
   Pillow.
@@ -453,7 +502,14 @@ versioning that quality ratings rely on.
 
 **Severity:** Medium · **Verified:** Reproduced · **Where:** `crossref.py:53-130, 220-230`, `quality.py:53-87`, `emit.py:381-382, 393, 525-526, 646-647`, `pipeline.py:537-540`
 
-**Status:** Partly fixed on 2026-10-02. The label list in `quality` is gone: a reference page drops the answer under any bold label before its "generated by" sentence, so part summaries are no longer judged against themselves (a test covers one). The rest of AR-012R2, and AR-012R1 and R3, remain.
+**Status:** Fixed on 2026-10-02.
+- AR-012R1 (plan RA-14, CP5c): `index/ids.jsonl` is written per project from the in-memory
+  model, and `crossref.places` reads it.
+- AR-012R2: the label list is gone (a test covers one). Generated chunks carry
+  `primary_chunk` and `annotation` (CP5e), and `quality` joins an answer's pieces by
+  annotation before cutting it from the page. The reference stays the page: a package
+  summary's rater needs its elements' sections, which the package's own chunks lack.
+- AR-012R3 (CP2e): one `provenance.generated_by(derivation)`.
 
 **The index reads files back:**
 - It reads the per-project CSV tables and `chunks.jsonl`.
@@ -484,6 +540,12 @@ six places.
 
 **Severity:** Medium · **Verified:** By inspection · **Where:** `cli.py:45-47, 133-187, 281-350`, `runner.py:41-46, 191-195`, `pipeline.py:319`, `emit.py:70`, `exports.py:112-149`
 
+**Status:** Fixed on 2026-10-02 (plan RA-10, CP6).
+- AR-013R1: `config.TreeSettings` (stored: only what differs from the defaults) and
+  `ProjectOptions` (hashed as before, so that no project is made again for it), passed as
+  objects.
+- AR-013R2: `cli.flag_pair`.
+
 **Two kinds of setting:**
 - **Project options:** render, models, pixels, modules, chunk style, templates. They are hashed
   into each project's identity, and assembled as a `dict` in the CLI.
@@ -512,6 +574,12 @@ and `prompts.CURRENT` to build the options.
 ### AR-014: `exports.rebuild` does seven jobs, and tree-level chunks are made in two modules
 
 **Severity:** Medium · **Verified:** By inspection · **Where:** `exports.py:68-151`, `crossref.py:207-313`
+
+**Status:** Fixed on 2026-10-02 (plan CP5).
+- AR-014R1 (CP5f): `rebuild` is a sequence of steps, one per output.
+- AR-014R2 (CP5d): threads are made with their project, into `THREADS.md` and
+  `index/threads.jsonl`, and join its `rag/` folder.
+- AR-014R3: the docstring names `rag/meta` too.
 
 **The seven jobs:** `rebuild` writes, in one function:
 - the manifest;
@@ -544,6 +612,10 @@ too.
 ### AR-015: Chunk records are loose dicts made in four places, and packing rows into parts is written three times
 
 **Severity:** Medium · **Verified:** By inspection · **Where:** `emit.py:193-214`, `crossref.py:174-192, 296-312`, `exports.py:283-311`, `plain.py:105-129`, `ledger.py:135-150`
+
+**Status:** Fixed on 2026-10-02 (plan RA-09, 0.6.2).
+- AR-015R1: `chunks.make` and `chunks.problems`, which `check_invariants` uses.
+- AR-015R2: `plain.pack`.
 
 **Chunk records:**
 - They are built as dicts in `emit`, `crossref` (twice) and `exports`.
@@ -641,6 +713,10 @@ too.
 ### AR-018: LLM summary inputs are page Markdown, link targets and all
 
 **Severity:** Medium · **Verified:** By inspection · **Where:** `pipeline.py:424-432`
+
+**Status:** Fixed in code on 2026-10-02 (plan RA-12, CP4b). Summaries are sent each section's plain
+text (`Section.text`), and the templates' versions were bumped. The live run, and the
+side-by-side reading of its summaries against CP1's, are in plan RA's CP4 checks.
 
 **What goes to the LLM:** package summaries and part summaries send `writer.section(…)`, the
 page Markdown.
@@ -812,6 +888,10 @@ The scripts themselves stay untested; their work is now the library's.
 
 **Severity:** Low · **Verified:** By inspection · **Where:** `plain.py:31, 67-77`, `text.py:65`, `ledger.py:43`, `evaluation/questions.py:136-140`, `evaluation/synthetic.py:128-132`, `scripts/retrieval_eval.py:52-55`
 
+**Status:** Fixed on 2026-10-02 (plan CP2d).
+- AR-023R1: `text.strip_links`, one pattern.
+- AR-023R2: `plain.plain` for what a reader sees, and `text.flat` for matching.
+
 **The converters:**
 - `plain.plain`;
 - `text.md_plain` with `ledger._MD_LINK`;
@@ -830,6 +910,9 @@ The scripts themselves stay untested; their work is now the library's.
 ### AR-024: SQL against `state.sqlite` is written outside `state.py`
 
 **Severity:** Low · **Verified:** By inspection · **Where:** `runner.py:108, 135-138, 149-151, 177, 231-271`, `cli.py:359`, `exports.py:69`
+
+**Status:** Fixed on 2026-10-02 (plan CP6): `State` methods for the queries that `runner`,
+`cli` and `exports` ran.
 
 Nine statements in `runner`, `cli` and `exports` query the database directly: what to build,
 counts, status, orphans. The `State` class exists to hold them.
@@ -924,8 +1007,12 @@ for. Member lists split the same way.
   only, so that each part states its derivations whole. Measure it on the within-model
   questions.
 
-**Status:** Partly fixed on 2026-10-02 (0.5.3). AR-027R1 is done, with a test of a nested list
-split into parts. AR-027R2 remains (plan RA-21, checkpoint CP5).
+**Status:** Fixed on 2026-10-02.
+- AR-027R1 (0.5.3), with a test of a nested list split into parts.
+- AR-027R2 (plan RA-21, CP5d): a later part starts with its first line's ancestors, marked
+  "(continued)" (`plain.parts_with_context`), and a test checks it on the crossing's threads.
+
+Its measurement on the within-model questions is in plan RA's CP5 checks.
 
 ## Remediation order
 
