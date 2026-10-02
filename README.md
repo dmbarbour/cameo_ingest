@@ -143,6 +143,9 @@ out/
   provenance.jsonl       one record per token: every input path, archive chain and --meta
                          value it was found with
   chunks.jsonl           all projects' chunks, with --meta values joined in
+  CROSSREF.md            identifiers across every model: each requirement id, and each id in
+                         names, text, documentation and tagged values, held by two elements or
+                         more, with every place (also index:id chunks; --no-cross-index)
   rag/                   the same chunks as files, for RAG tools that read files but not JSONL
                          (see "Using the output for RAG"); --no-rag-files leaves it out
     text/<project>/      a .txt file per chunk, named <sha256 of its text>.txt
@@ -278,6 +281,8 @@ requirement ids, relationships and the smaller embedding models, at half the tok
 | `ledger:projects` | One line per project in the tree, with where it was found; `metadata.tokens` row by row | "Which models came from supplier X?" |
 | `generated:*` | LLM summaries and descriptions (`provenance.derivation.method = "llm"`) | Extra recall; weight or filter them separately |
 | `generated:module_description` | One module of a large diagram. `metadata.module` locates it: `number` and `of`, the legend's shape numbers (`shapes`), `elements`, its `box` in diagram coordinates, the page `anchor` and the `image` | "What does this part of the activity do?" |
+| `index:id` | An identifier (a requirement id, or an id cited in text) and every place it occurs, across every model in the tree: what holds it, how (its id, in its text, satisfies it, is derived from it…), a snippet, and the project's short id (`[9ffd7a2c]`; with `--line-refs`, the place's chunk too, `[9ffd7a2c:14d101e0b1d2]`). One entry per id held by two elements or more | "Which models address RWT-REG-002?", "What cites PCT-SYS-0302?" |
+| `trace:thread` | A model's derivation tree from one requirement: what derives from it, level by level, with what satisfies, verifies or refines each (`--no-threads` leaves them out) | "Which tests verify the requirements derived from SN-02?" |
 | `generated:module_summary` | One part (or run of parts) of a large package. `metadata.part` gives `number` to `last` of `of`, the `elements` it covers and the page `anchor` | "Which part of the requirements covers pointing?" |
 
 In the root `chunks.jsonl`, `metadata.source_metadata` holds the `--meta` values of every
@@ -288,7 +293,13 @@ join them with `provenance.jsonl` on `metadata.content` when loading those inste
 Suggestions, roughly in order of value, measured on the samples where the numbers say so
 (`docs/research/chunk-styles-2026-10-01.md`):
 
-1. **Add keyword search next to vector search** (hybrid retrieval, e.g. BM25). Embeddings
+1. **Rerank.** A reranker (a cross-encoder, such as `bge-reranker-v2-m3`) reorders the top
+   candidates by reading question and passage together. On the fictional questions, Qwen3's
+   0.6B reranker (a stand-in of about that size) raised BM25's MRR from 0.55 to 0.79 when
+   reranking its top 100, which matches vector search. It raised any hybrid's MRR to 0.82, the
+   best of all. Behind keyword search, rerank the top 100; behind a hybrid, the top 30
+   (`docs/research/rerankers-2026-10-01.md`).
+2. **Add keyword search next to vector search** (hybrid retrieval, e.g. BM25). Embeddings
    handle identifiers such as `REQ-2-APS-0086` poorly: asked "What does requirement X state?",
    e5-large ranked the requirement first 5 times in 20, and BM25 20 times in 20. Fused, they
    put the answer in the top 10 for 98% of literal questions, against 83% for e5-large alone.
@@ -296,17 +307,17 @@ Suggestions, roughly in order of value, measured on the samples where the number
    or use them for queries that look like ids and names: fused at equal weight, they lowered
    bge-large's MRR on paraphrased questions from 0.74 to 0.52
    (`docs/research/fictional-projects-2026-10-01.md`).
-2. **Pass five chunks or more to the LLM.** The first chunk retrieved answered 59% of natural
+3. **Pass five chunks or more to the LLM.** The first chunk retrieved answered 59% of natural
    questions with e5-large, and the first five 92%.
-3. **Use a large embedding model.** e5-large and bge-large did about equally well, and far better
+4. **Use a large embedding model.** e5-large and bge-large did about equally well, and far better
    than MPNet or MiniLM. e5's `query: ` and `passage: ` prefixes made no difference.
-4. **Filter on metadata.** Restrict to `kind` (for example `ledger:*` for "list…" questions,
+5. **Filter on metadata.** Restrict to `kind` (for example `ledger:*` for "list…" questions,
    or `requirement` for "why…" questions), `project`, `content`, `stereotypes`, or
    `source_metadata` fields such as the program or supplier.
-5. **Route counting and exhaustive questions to the tables.** Top-k retrieval can't reliably
+6. **Route counting and exhaustive questions to the tables.** Top-k retrieval can't reliably
    answer "how many requirements are unverified?". A tool that runs SQL over `tables/*.csv`
    (e.g. DuckDB) can. The ledgers cover the cases in between.
-6. **Cite with the trace.** Every chunk's `metadata.provenance.locator` names the content,
+7. **Cite with the trace.** Every chunk's `metadata.provenance.locator` names the content,
    entry, `xmi:id` and line, and `provenance.jsonl` maps its token to the files it came from.
    Ask the LLM to quote the locator so answers can be checked.
 

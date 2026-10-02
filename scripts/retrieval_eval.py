@@ -71,7 +71,8 @@ def grades(q: dict, units: list[Unit], judged: dict[str, int] | None = None) -> 
             if any(holds(g, u.text) for g in q["evidence_groups"]):
                 out[i] = 2
         elif "prefix" in q:  # a fictional project's: only a window that holds the fact answers
-            if (u.element_id or "").startswith(q["prefix"]) and (
+            # (an index entry, which spans projects, too: the fictional phrases occur nowhere else)
+            if ((u.element_id or "").startswith(q["prefix"]) or u.kind == "index:id") and (
                     holds(q["evidence"], u.text)
                     or holds(q.get("evidence_by_element", {}).get(u.element_id, []), u.text)):
                 out[i] = 2
@@ -198,6 +199,10 @@ def main() -> int:
     with (args.out / "rankings.jsonl").open("w", encoding="utf-8") as f:
         for r in rankings:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    with (args.out / "per_question.jsonl").open("w", encoding="utf-8") as f:  # every measure, for analysis
+        for name, per_q in results.items():
+            for r in per_q:
+                f.write(json.dumps({"system": name, **r}, ensure_ascii=False) + "\n")
     styles = Counter(q["style"] for q in questions)
     lines = [f"# Retrieval: {args.questions} questions on {args.tree}", "",
              (f"{len(units):,} chunks, windows of {args.window} tokens with {args.overlap} of overlap; "

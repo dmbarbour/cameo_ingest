@@ -168,9 +168,10 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--no-threads", dest="threads", action="store_const", const=False, help="no derivation threads")
     g.add_argument("--line-refs", dest="line_refs", action="store_const", const=True, default=None,
                    help="end each line of an assembled chunk (an index entry, a thread) with a short reference "
-                        "to its source chunk, [project:chunk] (the default)")
+                        "to its source chunk, [project:chunk], not only to its project. Off by default: the "
+                        "references lengthen entries, so fewer fit one window whole")
     g.add_argument("--no-line-refs", dest="line_refs", action="store_const", const=False,
-                   help="no references on the lines of assembled chunks")
+                   help="each line names only its project, by short id (the default)")
     g.add_argument("--rag-source", choices=("trace", "id"),
                    help="what the source line of every file in rag/ says: the project and trace locator (trace, the "
                         "default), or short ids that rag/meta/_sources.json and chunks.jsonl resolve to files and "

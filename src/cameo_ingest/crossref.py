@@ -168,11 +168,12 @@ def _kept(index: dict[str, list[Place]]) -> list[tuple[str, list[Place]]]:
     return out
 
 
-def entries(index: dict[str, list[Place]], refs: bool = True) -> list[dict[str, Any]]:
+def entries(index: dict[str, list[Place]], refs: bool = False) -> list[dict[str, Any]]:
     """Chunks for the identifiers held by two elements or more: a heading naming the models (by
     label and short id), then a line per place, split into parts that fit an embedding window.
     Each line ends with the project's short id, and with `refs` the element's chunk id too
-    (`[9ffd7a2c:14d101e0b1d2]`; plan RF, decision 5), which chunks.jsonl resolves."""
+    (`[9ffd7a2c:14d101e0b1d2]`; plan RF, decision 5), which chunks.jsonl resolves. Off by default:
+    the references lengthen entries, so that fewer fit one window whole (RF-06)."""
     chunks = []
     for term, ps in _kept(index):
         texts = pl.parts(_heading(term, ps), "\n".join(_line(p, refs) for p in ps))
@@ -229,7 +230,7 @@ def _chunk_ids(project_dir: Path) -> dict[str, str]:
     return out
 
 
-def threads(project_dir: Path, content: ContentInfo, refs: bool = True) -> list[dict[str, Any]]:
+def threads(project_dir: Path, content: ContentInfo, refs: bool = False) -> list[dict[str, Any]]:
     """A chunk (in parts) per derivation tree of requirements in one model: from a requirement that
     others derive from, and nothing above it, down through what derives from it (to THREAD_DEPTH
     levels), each with what satisfies, verifies and refines it. A question such as "which tests

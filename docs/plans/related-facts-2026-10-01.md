@@ -1,7 +1,7 @@
 # Plan: related facts brought together, 2026-10-01
 
-- **Status:** Proposed on 2026-10-01, and revised the same day with the maintainer's answers
-  (Decisions). In progress.
+- **Status:** Proposed on 2026-10-01, revised the same day with the maintainer's answers
+  (Decisions), and completed the same day. Deferred: facet lists (RF-05).
 - **Step prefix:** `RF`, so steps are `RF-01`, `RF-02` and so on
 - **Addresses:** the maintainer's request of 2026-10-01. The maintainer leans towards keyword
   search (BM25) to find related facts, since requirements and other items are named and looked
@@ -163,11 +163,11 @@ source.
 | Step | Work | Status |
 |---|---|---|
 | RF-01 | Source files in every chunk file: the input paths (with archive chains) in each file's metadata, a table from each project's short id to its files, and short ids in the text's source line behind a switch. | Done: `source_id`, `source_file` and `source_files` in `rag/meta/<project>/<sha256>.json`; `rag/meta/_sources.json`; `--rag-source trace|id`, set for the whole tree. Paths never go in the text: some are longer than a window (the maintainer, 2026-10-01). Nor do file names, which can be very long and repeat across groups: chunk text names a project by a label, the start of its file name and its short id (`TMT [9ffd7a2c]`; 0.5.2). Also `CAMEO_INGEST_DEST` for the output tree, in place of `-o` |
-| RF-02 | Rerankers: Qwen3-Reranker on DeepInfra (decision 3) in the harness, reordering the top candidates of BM25, dense and hybrid search; measured on the fictional questions. | Not started |
-| RF-03 | An index across models: requirement ids and names (and other ids) to every model, element and source file that mentions them. Fictional: two companies' models answering one set of requirements. | Not started |
-| RF-04 | Questions and measures: cross-model and multi-fact questions in the fictional projects; DOORS-like structure in one of them; grading that wants every evidence phrase. | Not started |
-| RF-05 | Within-model forms (trace cards, threads, facet lists) where relationships make them worthwhile, with short logical ids per line behind a switch (decision 5). | Not started |
-| RF-06 | Evaluate and adopt what helps (defaults, the README's advice, a version bump). | Not started |
+| RF-02 | Rerankers: Qwen3-Reranker on DeepInfra (decision 3) in the harness, reordering the top candidates of BM25, dense and hybrid search; measured on the fictional questions. | Done: `cameo_ingest.evaluation.rerank`, `retrieval_eval.py --rerank` and `--bm25-weights`; `docs/research/rerankers-2026-10-01.md`. BM25 reranked over its top 100 matches vector search (MRR 0.79 against 0.77); any hybrid reranked does best (0.82); the 0.6B reranker ties the 8B |
+| RF-03 | An index across models: requirement ids (and other ids) to every model, element and source file that mentions them. | Done: `cameo_ingest.crossref`, `CROSSREF.md` and `index:id` chunks (`--no-cross-index`), from tables alone: requirement ids, ids in names, text, documentation and tagged values, and what relates to a requirement with an id. On the samples: 927 entries, 12 s with the rest of a run's tree files |
+| RF-04 | Questions and measures: cross-model and multi-fact questions in the fictional projects; grading that wants every evidence phrase. | Done: two rival Riverbend proposals (Halvorsen, Aquila), all three under one file name; 10 questions across models and 8 along derivations within one, each with an evidence group per part; `coverage@10` and `complete@10`. DOORS-like structure: deferred with facet lists (RF-05) |
+| RF-05 | Within-model forms (trace cards, threads, facet lists) where relationships make them worthwhile, with short logical ids per line behind a switch (decision 5). | Done for threads: `trace:thread` chunks (`--no-threads`), each model's derivation trees with what satisfies, verifies and refines each requirement; `--no-line-refs` drops the per-line ids. Index entries serve as trace cards for requirements with ids. Facet lists deferred: TMT's facet tags (`Applicable_Subsystems`) run to hundreds of requirements a value, and choosing tags would need heuristics with one example to test them on |
+| RF-06 | Evaluate and adopt what helps (defaults, the README's advice, a version bump). | Done: `docs/research/related-facts-2026-10-01.md`. The index and threads are on by default: across models, the index lifted coverage@10 from 0.77 to 0.97 (reranked hybrid). The per-line chunk references are off by default (`--line-refs`): they split entries over more windows, and without them complete@10 rose from 0.20 to 0.60. The README advises rerankers first. All in 0.5.2 |
 
 RF-01's inventory of relatedness (the table under "Why") is done for requirements.
 

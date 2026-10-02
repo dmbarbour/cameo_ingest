@@ -116,11 +116,11 @@ def rebuild(state: State, out: Path) -> None:
         for sha, p in written.items():
             for term, ps in crossref.places(out / PROJECTS / sha, ContentInfo(sha, p["name"])).items():
                 merged[term] += ps
-        tree_chunks += crossref.entries(merged, refs=settings.get("line_refs", True))
+        tree_chunks += crossref.entries(merged, refs=settings.get("line_refs", False))
     if settings.get("threads", True):  # derivation trees within each model (plan RF-05)
         for sha, p in written.items():
             for c in crossref.threads(out / PROJECTS / sha, ContentInfo(sha, p["name"]),
-                                      refs=settings.get("line_refs", True)):
+                                      refs=settings.get("line_refs", False)):
                 c["metadata"]["source_metadata"] = _merged_metadata(seen[sha])
                 tree_chunks.append(c)
         fm = front_matter({"title": "Identifiers across the models in this tree", "kind": "crossref",
