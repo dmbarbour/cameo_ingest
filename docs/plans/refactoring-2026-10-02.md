@@ -204,6 +204,28 @@ version; their requests change only where CP2's labels do.
 - **Before adopting the new summaries:** a side-by-side reading of a sample of old and new
   summaries (same packages); the plan halts for discussion if the new read worse.
 
+**Results (2026-10-02):**
+- **Without the LLM:** CP4's tree is the same as CP3's.
+- **The live run** (`out/ra/cp4-llm`) made 2,849 new requests, none failed, and took 59
+  minutes. That is more than estimated, about $2–2.50, not $1.50:
+  - summaries, as estimated: 1,291 module, 207 package, 196 synthesis and 67 instance
+    summaries;
+  - diagram descriptions, four times the estimate: 803 diagrams, 232 modules and 53
+    syntheses. CP2's labels changed far more legends than the 296 changed sketches suggested.
+
+  Fewer requests in all (6,122, against CP1's 6,994): packages fit whole more often. Inputs
+  cut to fit fell from 88 to 12.
+- **The reading:** 16 package summaries drawn by project in turn, old (CP1) against new.
+  - The new read as well or better:
+    - they carry requirement ids;
+    - several list relationships more completely (Riverbend's allocations, FFDS's
+      impositions);
+    - one package (OpenSUT's Instrumentation) now fits a single request, with more specific
+      detail.
+  - A few lose a detail the old had: FVX Variant A's allocation to its three sites, MKM's
+    "32-byte AES key", Riverbend's "Strand S-9".
+  - No halt: the new summaries are adopted.
+
 ### CP5: the writer and the tree's outputs
 
 **Threads stay a tree-wide switch** (the maintainer's rule: switches are applied to the tree on
