@@ -16,17 +16,16 @@ import logging
 import os
 import signal
 import sys
+from dataclasses import fields
 from pathlib import Path
 from typing import Any
 
 from . import __version__
 from . import runner as tree
 from .archive import ZIP_MAGIC, sniff_xmi
-from .diagrams import IMAGE_PIXELS
+from .config import ProjectOptions, TreeSettings, parse_modules
 from .llm import LLM, LLMConfig
-from .modules import thresholds
 from .progress import Progress
-from .prompts import CURRENT
 from .runner import Runner
 from .state import State, StateError
 
@@ -41,10 +40,9 @@ NO_MODEL = """error: no LLM model is configured. Either
 The endpoint comes from OPENAI_BASE_URL and OPENAI_API_KEY; see .env.example.
 An output tree remembers these choices, so later runs need no flags."""
 
-# Run settings an output tree remembers (never secrets: --env names a file).
-SETTINGS = ("env", "text_model", "vision_model", "llm_timeout", "llm_retries", "llm_max_calls",
-            "llm_concurrency", "cache_dir", "image_pixels", "diagram_modules", "rag_files",
-            "rag_source", "cross_index", "line_refs", "threads")
+# Run settings an output tree remembers (never secrets: --env names a file), from their flags;
+# --no-llm and --render are read apart.
+SETTINGS = tuple(f.name for f in fields(TreeSettings) if f.name not in ("no_llm", "render"))
 
 PROGRESS_LOGGER = "cameo_ingest.progress"
 _handlers: list[logging.Handler] = []  # ours, replaced when main() runs again (as in tests)
@@ -138,9 +136,7 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--vision-model", help="LLM for image descriptions (overrides CAMEO_INGEST_VISION_MODEL; "
                                           "default: the text model)")
     g.add_argument("--no-llm", action="store_true", help="no LLM enrichment (required when no model is configured)")
-    g.add_argument("--render", dest="render", action="store_const", const=True, default=None,
-                   help="render diagram sketches (the default)")
-    g.add_argument("--no-render", dest="render", action="store_const", const=False, help="do not render sketches")
+    flag_pair(g, "render", "render diagram sketches", "do not render sketches", default=True)
     g.add_argument("--image-pixels", type=int, metavar="N",
                    help="pixel budget of diagram sketches and of images sent to the vision model (default 645120: "
                         "gemma-4's 280 soft tokens of 48 x 48 px, all that DeepInfra gives it)")
@@ -148,26 +144,17 @@ def build_parser() -> argparse.ArgumentParser:
                    help="split diagrams of more than N shapes into modules of MIN to MAX shapes, each drawn and "
                         "described on its own (default 25:6:25; N = 0 never splits). For tuning: the default "
                         "should serve")
-    g.add_argument("--rag-files", dest="rag_files", action="store_const", const=True, default=None,
-                   help="write rag/: every chunk as a .txt file, ending with its source and "
-                        "trace, for RAG tools that read files but not JSONL (the default)")
-    g.add_argument("--no-rag-files", dest="rag_files", action="store_const", const=False,
-                   help="do not write rag/ (chunks.jsonl has the same chunks)")
-    g.add_argument("--cross-index", dest="cross_index", action="store_const", const=True, default=None,
-                   help="index identifiers across every model in the tree: CROSSREF.md and index:id chunks "
-                        "(the default)")
-    g.add_argument("--no-cross-index", dest="cross_index", action="store_const", const=False,
-                   help="no index across the models")
-    g.add_argument("--threads", dest="threads", action="store_const", const=True, default=None,
-                   help="write each model's derivation trees of requirements, with what satisfies and verifies "
-                        "them, as trace:thread chunks (the default)")
-    g.add_argument("--no-threads", dest="threads", action="store_const", const=False, help="no derivation threads")
-    g.add_argument("--line-refs", dest="line_refs", action="store_const", const=True, default=None,
-                   help="end each line of an assembled chunk (an index entry, a thread) with a short reference "
-                        "to its source chunk, [project:chunk], not only to its project. Off by default: the "
-                        "references lengthen entries, so fewer fit one window whole")
-    g.add_argument("--no-line-refs", dest="line_refs", action="store_const", const=False,
-                   help="each line names only its project, by short id (the default)")
+    flag_pair(g, "rag-files", "write rag/: every chunk as a .txt file, ending with its source and trace, for RAG "
+              "tools that read files but not JSONL", "do not write rag/ (chunks.jsonl has the same chunks)",
+              default=True)
+    flag_pair(g, "cross-index", "index identifiers across every model in the tree: CROSSREF.md and index:id chunks",
+              "no index across the models", default=True)
+    flag_pair(g, "threads", "include each model's derivation trees of requirements, with what satisfies and "
+              "verifies them, in the tree's chunks and rag/, as trace:thread chunks (each project's THREADS.md "
+              "has them either way)", "leave the threads out of the tree's chunks", default=True)
+    flag_pair(g, "line-refs", "end each line of an assembled chunk (an index entry, a thread) with a short reference "
+              "to its source chunk, [project:chunk], not only to its project; the references lengthen entries, so "
+              "fewer fit one window whole", "each line names only its project, by short id", default=False)
     g.add_argument("--rag-source", choices=("trace", "id"),
                    help="what the source line of every file in rag/ says: the project and trace locator (trace, the "
                         "default), or short ids that rag/meta/_sources.json and chunks.jsonl resolve to files and "
@@ -274,7 +261,17 @@ def add_inputs(state: State, args: argparse.Namespace) -> tuple[int, int]:
     return new, old
 
 
-def effective_settings(args: argparse.Namespace, stored: dict[str, Any]) -> dict[str, Any]:
+def flag_pair(group: Any, name: str, on: str, off: str, default: bool) -> None:
+    """--NAME and --no-NAME, both setting NAME (None when neither is given: the stored setting,
+    or `default`), with the default named in the help (AR-013R2)."""
+    dest = name.replace("-", "_")
+    group.add_argument(f"--{name}", dest=dest, action="store_const", const=True, default=None,
+                       help=on + (" (the default)" if default else ""))
+    group.add_argument(f"--no-{name}", dest=dest, action="store_const", const=False,
+                       help=off + ("" if default else " (the default)"))
+
+
+def effective_settings(args: argparse.Namespace, stored: dict[str, Any]) -> TreeSettings:
     """The tree's stored settings, overridden by the flags given on this command line."""
     s = dict(stored)
     if s.pop("chunk_style", None) == "markdown":  # retired in 0.6.0 (plan RA-02)
@@ -289,7 +286,7 @@ def effective_settings(args: argparse.Namespace, stored: dict[str, Any]) -> dict
         s["no_llm"] = True
     if args.render is not None:
         s["render"] = args.render
-    return s
+    return TreeSettings.from_stored(s)
 
 
 def run_tree(args: argparse.Namespace, argv: list[str]) -> int:
@@ -300,21 +297,20 @@ def run_tree(args: argparse.Namespace, argv: list[str]) -> int:
         stored = st.settings()
         st.close()
     settings = effective_settings(args, stored)
-    if settings.get("env"):
-        env = Path(settings["env"])
+    if settings.env:
+        env = Path(settings.env)
         if not env.is_file():
             print(f"error: --env file {env} not found", file=sys.stderr)
             return 2
         load_env(env)
     try:
-        modules = thresholds(settings.get("diagram_modules"))
+        parse_modules(settings.diagram_modules)  # a malformed --diagram-modules stops here
     except ValueError as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
-    cfg = LLMConfig.from_env(settings.get("text_model"), settings.get("vision_model"),
-                             timeout=settings.get("llm_timeout"), retries=settings.get("llm_retries"),
-                             max_calls=settings.get("llm_max_calls"))
-    if settings.get("no_llm"):
+    cfg = LLMConfig.from_env(settings.text_model, settings.vision_model, timeout=settings.llm_timeout,
+                             retries=settings.llm_retries, max_calls=settings.llm_max_calls)
+    if settings.no_llm:
         cfg.text_model = cfg.vision_model = None
     elif not cfg.enabled:  # fail fast rather than silently skip enrichment (BASE-020)
         print(NO_MODEL, file=sys.stderr)
@@ -322,7 +318,7 @@ def run_tree(args: argparse.Namespace, argv: list[str]) -> int:
     if args.llm_replay is not None and not (cfg.enabled and args.llm_replay.is_file()):
         print(f"error: --llm-replay needs a model and an existing store file ({args.llm_replay})", file=sys.stderr)
         return 2
-    llm = LLM(cfg, Path(settings["cache_dir"]) if settings.get("cache_dir") else out / ".cache",
+    llm = LLM(cfg, Path(settings.cache_dir) if settings.cache_dir else out / ".cache",
               replay=args.llm_replay)
     if cfg.enabled and not args.no_preflight:
         log.info("checking LLM endpoint %s", cfg.base_url or "(OpenAI default)")
@@ -338,13 +334,10 @@ def run_tree(args: argparse.Namespace, argv: list[str]) -> int:
         state.lock()
         if args.command == "ingest":
             add_inputs(state, args)
-        state.save_settings(settings)
-        options = {"render": settings.get("render", True), "text_model": cfg.text_model,
-                   "vision_model": cfg.vision_model, "max_calls": cfg.max_calls,
-                   "image_pixels": settings.get("image_pixels") or IMAGE_PIXELS, "modules": list(modules),
-                   "templates": sorted(t.key for t in CURRENT.values()) if cfg.enabled else []}
+        state.save_settings(settings.stored())
+        options = ProjectOptions.of(settings, cfg.text_model, cfg.vision_model, cfg.max_calls)
         runner = Runner(state, out, llm, options, Progress(heartbeat=args.heartbeat),
-                        concurrency=settings.get("llm_concurrency") or 1)
+                        concurrency=settings.llm_concurrency or 1)
         previous = signal.signal(signal.SIGTERM, _interrupt)
         try:
             code = runner.run(argv)
@@ -353,7 +346,7 @@ def run_tree(args: argparse.Namespace, argv: list[str]) -> int:
             return 130
         finally:
             signal.signal(signal.SIGTERM, previous)
-        counts = dict(state.db.execute("SELECT status, count(*) FROM project_status GROUP BY status").fetchall())
+        counts = state.counts("projects")
         print(f"{len(runner.written)} project(s) written in this run; in {out}: "
               + ", ".join(f"{n} {s}" for s, n in sorted(counts.items())))
         return code
@@ -428,7 +421,7 @@ def main(argv: list[str] | None = None) -> int:
         from . import quality
 
         state = State(out)
-        cache = Path(state.settings().get("cache_dir") or out / ".cache")
+        cache = Path(TreeSettings.from_stored(state.settings()).cache_dir or out / ".cache")
         state.close()
         try:
             set_dir = quality.sample(out, cache, n=args.n, seed=args.seed, kinds=args.kind)

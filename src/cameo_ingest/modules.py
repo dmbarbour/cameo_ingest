@@ -22,27 +22,9 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 from . import diagrams as dg
+from .config import MODULES
 from .diagrams import DiagramGraph, Link
 from .model import ModelIndex
-
-LARGE = 25  # split diagrams with more shapes than this
-MIN_SHAPES = 6
-MAX_SHAPES = 25
-DEFAULTS = (LARGE, MIN_SHAPES, MAX_SHAPES)
-
-
-def thresholds(spec: str | None) -> tuple[int, int, int]:
-    """The --diagram-modules setting, 'N:MIN:MAX', as numbers; empty for the defaults. N = 0
-    never splits. A lever for tuning and tests: the defaults should serve."""
-    if not spec:
-        return DEFAULTS
-    try:
-        large, lo, hi = (int(x) for x in spec.split(":"))
-    except ValueError:
-        raise ValueError(f"--diagram-modules expects N:MIN:MAX, such as 25:6:25, not {spec!r}") from None
-    if large < 0 or not 1 <= lo <= hi or hi < 2:
-        raise ValueError(f"--diagram-modules {spec}: needs N >= 0 and 1 <= MIN <= MAX, MAX >= 2")
-    return large, lo, hi
 
 Box = tuple[float, float, float, float]  # x0, y0, x1, y1 in diagram coordinates
 
@@ -236,7 +218,7 @@ def sequence_partition(sizes: list[float], parents: list[int | None], links: lis
     return packed
 
 
-def partition(g: DiagramGraph, large: int = LARGE, lo: int = MIN_SHAPES, hi: int = MAX_SHAPES) -> Partition | None:
+def partition(g: DiagramGraph, large: int = MODULES[0], lo: int = MODULES[1], hi: int = MODULES[2]) -> Partition | None:
     """Modules of a diagram with more than `large` shapes; None for a smaller one, or when
     `large` is 0."""
     if not large or len(g.nodes) <= large:

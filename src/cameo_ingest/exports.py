@@ -31,6 +31,7 @@ from typing import Any
 
 from . import chunks, crossref
 from . import plain as pl
+from .config import TreeSettings
 from .ledger import MAX_ROWS
 from .provenance import TOOL, ContentInfo, chunk_ref, sha256_bytes, short_id
 from .state import State
@@ -75,26 +76,26 @@ class Tree:
     rows: list[Any]  # project_status
     written: dict[str, Any]  # content sha256 -> its row
     seen: dict[str, list[dict[str, Any]]]  # content sha256 -> its sightings
-    settings: dict[str, Any]
+    settings: TreeSettings
 
 
 def rebuild(state: State, out: Path) -> None:
     """Every root file, one function each (AR-014R1)."""
-    rows = state.db.execute("SELECT * FROM project_status ORDER BY name, sha256").fetchall()
+    rows = state.project_rows()
     tree = Tree(out, rows, {r["content_sha256"]: r for r in state.written()},
-                {r["sha256"]: sightings(state, r["sha256"]) for r in rows}, state.settings())
+                {r["sha256"]: sightings(state, r["sha256"]) for r in rows}, TreeSettings.from_stored(state.settings()))
     write_manifest(tree, state)
     write_provenance(tree)
     index_rows = write_index_page(tree)
     tree_chunks = projects_ledger(index_rows) + cross_index(tree)
     threads = thread_chunks(tree)
     write_chunks(tree, threads, tree_chunks)
-    if tree.settings.get("rag_files", True):
+    if tree.settings.rag_files:
         projects = [RagProject(sha, p["name"], _merged_metadata(tree.seen[sha]),
                                [_file_ref(s) for s in tree.seen[sha] if not s["missing"]]
                                or [_file_ref(s) for s in tree.seen[sha]])
                     for sha, p in tree.written.items()]
-        write_rag(out, projects, tree_chunks, tree.settings.get("rag_source") or "trace", threads)
+        write_rag(out, projects, tree_chunks, tree.settings.rag_source, threads)
     elif (out / RAG).exists():
         shutil.rmtree(out / RAG)
 
@@ -150,7 +151,7 @@ def write_index_page(tree: Tree) -> list[tuple[str, str]]:
 def cross_index(tree: Tree) -> list[dict[str, Any]]:
     """The index of identifiers across the models (plan RF-03): CROSSREF.md, and its entries as
     chunks; or neither, when the tree's setting is off."""
-    if not tree.settings.get("cross_index", True):
+    if not tree.settings.cross_index:
         if (tree.out / crossref.FILE).exists():
             (tree.out / crossref.FILE).unlink()
         return []
@@ -161,20 +162,20 @@ def cross_index(tree: Tree) -> list[dict[str, Any]]:
     fm = front_matter({"title": "Identifiers across the models in this tree", "kind": "crossref",
                        "provenance": {"tool": TOOL, "derivation": "assembled", "projects": len(tree.written)}})
     (tree.out / crossref.FILE).write_text(fm + crossref.page(merged), encoding="utf-8")
-    return crossref.entries(merged, refs=tree.settings.get("line_refs", False))
+    return crossref.entries(merged, refs=tree.settings.line_refs)
 
 
 def thread_chunks(tree: Tree) -> dict[str, list[dict[str, Any]]]:
     """Each project's threads (plan RF-05), as chunks, by content sha256: made at build time with
     the project, included when the tree's setting is on (AR-014R2)."""
-    if not tree.settings.get("threads", True):
+    if not tree.settings.threads:
         return {}
     out = {}
     for sha, p in tree.written.items():
         path = tree.out / PROJECTS / sha / "index" / "threads.jsonl"
         records = [json.loads(line) for line in path.open(encoding="utf-8")] if path.is_file() else []
         out[sha] = crossref.thread_chunks(records, ContentInfo(sha, p["name"]),
-                                          refs=tree.settings.get("line_refs", False))
+                                          refs=tree.settings.line_refs)
     return out
 
 

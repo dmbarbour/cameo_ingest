@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from PIL import Image, ImageDraw, ImageFont
 
 from . import semantics as sem
+from .config import IMAGE_PIXELS
 from .layout import Layout, View
 from .model import ModelIndex
 from .semantics import ItemFlow, Relationship
@@ -32,10 +33,7 @@ from .text import md_inline, one_line
 
 log = logging.getLogger(__name__)
 
-# gemma-4 fills a budget of 280 soft tokens of 48 x 48 px (645,120 px) at the image's own aspect
-# ratio, with sides in multiples of 48 (docs/research/gemma4-images-2026-09-30.md, FU-015).
-IMAGE_PIXELS = 280 * 48 * 48
-PATCH_PX = 48
+PATCH_PX = 48  # the vision model's patches (config.IMAGE_PIXELS)
 MAX_ZOOM = 2.0  # small diagrams are not blown up further than this
 FONT_PX = 12
 MARGIN = 8

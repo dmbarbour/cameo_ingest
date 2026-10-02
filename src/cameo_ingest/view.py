@@ -14,6 +14,7 @@ from . import sections as sx
 from . import semantics as sem
 from .annotations import Annotation
 from .archive import Project
+from .config import MODULES
 from .files import relpath
 from .layout import Layout
 from .model import Element, ModelIndex
@@ -29,7 +30,7 @@ SKIP_MEMBER_ROLES = {
 class ProjectView:
     def __init__(self, content: ContentInfo, project: Project, ix: ModelIndex,
                  annotations: dict[str, list[Annotation]] | None = None,
-                 layouts: dict[str, Layout] | None = None, modules: tuple[int, int, int] = mod.DEFAULTS):
+                 layouts: dict[str, Layout] | None = None, modules: tuple[int, int, int] = MODULES):
         self.layouts = layouts or {}
         self.modules = modules  # large diagrams: split above N shapes, into MIN to MAX
         self.content = content

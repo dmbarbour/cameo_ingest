@@ -240,6 +240,56 @@ class State:
     def run(self, run_id: str) -> sqlite3.Row | None:
         return self.db.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
 
+    # -- what the runner, the CLI and the root files ask (AR-024) ----------------------------------
+    def has_sighting(self, input_id: int, input_sha256: str) -> bool:
+        """Whether this version of an input has been read for its projects."""
+        return self.db.execute("SELECT 1 FROM sightings WHERE input_id = ? AND input_sha256 = ? LIMIT 1",
+                               (input_id, input_sha256)).fetchone() is not None
+
+    def stale_contents(self, tool: str, options_hash: str) -> list[str]:
+        """Contents whose output is missing, failed or unfinished, or made by another tool or options."""
+        return [r[0] for r in self.db.execute(
+            "SELECT c.sha256 FROM contents c LEFT JOIN projects p ON p.content_sha256 = c.sha256 "
+            "WHERE p.status IS NULL OR p.status != 'written' OR p.tool != ? OR p.options_hash != ? "
+            "ORDER BY c.name, c.sha256", (tool, options_hash))]
+
+    def count_projects(self, status: str, tool: str, options_hash: str) -> int:
+        return self.db.execute("SELECT count(*) FROM projects WHERE status = ? AND tool = ? AND options_hash = ?",
+                               (status, tool, options_hash)).fetchone()[0]
+
+    def input_id(self, path: str) -> int | None:
+        row = self.db.execute("SELECT id FROM inputs WHERE path = ?", (path,)).fetchone()
+        return row["id"] if row else None
+
+    def project_rows(self, status: str | None = None) -> list[sqlite3.Row]:
+        """Every content and the state of its project, by name; or those in one state."""
+        if status is None:
+            return self.db.execute("SELECT * FROM project_status ORDER BY name, sha256").fetchall()
+        return self.db.execute("SELECT * FROM project_status WHERE status = ? ORDER BY name, sha256",
+                               (status,)).fetchall()
+
+    def counts(self, what: str) -> dict[str, int]:
+        """Inputs ("inputs") or projects ("projects") by status."""
+        table = {"inputs": "inputs", "projects": "project_status"}[what]
+        return dict(self.db.execute(f"SELECT status, count(*) FROM {table} GROUP BY status").fetchall())
+
+    def latest_run(self) -> sqlite3.Row | None:
+        return self.db.execute("SELECT * FROM runs ORDER BY started DESC, rowid DESC LIMIT 1").fetchone()
+
+    def orphans(self) -> list[sqlite3.Row]:
+        """Contents that no existing input contains any more."""
+        return self.db.execute(
+            "SELECT sha256, name FROM contents c WHERE NOT EXISTS (SELECT 1 FROM current_sightings v "
+            "WHERE v.content_sha256 = c.sha256 AND v.input_status != 'missing') ORDER BY name, sha256").fetchall()
+
+    def prune(self, orphans: list[str]) -> None:
+        """Drop missing inputs, sightings in old versions of changed inputs, and these contents."""
+        with self.tx() as db:
+            db.execute("DELETE FROM inputs WHERE status = 'missing'")
+            db.execute("DELETE FROM sightings WHERE NOT EXISTS (SELECT 1 FROM inputs i "
+                       "WHERE i.id = sightings.input_id AND i.sha256 = sightings.input_sha256)")
+            db.executemany("DELETE FROM contents WHERE sha256 = ?", [(sha,) for sha in orphans])
+
     def settings(self) -> dict[str, Any]:
         return {r["key"]: json.loads(r["value"]) for r in self.db.execute("SELECT * FROM settings")}
 

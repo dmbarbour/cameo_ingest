@@ -22,9 +22,9 @@ from collections.abc import Callable
 from pathlib import Path
 
 from . import crossref
-from . import modules as mod
 from .annotations import Annotation
 from .archive import Project
+from .config import MODULES
 from .files import FilePlan
 from .layout import Layout
 from .ledger import LedgerWriter
@@ -42,7 +42,7 @@ class ProjectWriter:
 
     def __init__(self, content: ContentInfo, project: Project, ix: ModelIndex, root: Path,
                  annotations: dict[str, list[Annotation]] | None = None,
-                 layouts: dict[str, Layout] | None = None, modules: tuple[int, int, int] = mod.DEFAULTS):
+                 layouts: dict[str, Layout] | None = None, modules: tuple[int, int, int] = MODULES):
         self.root = root
         self.view = ProjectView(content, project, ix, annotations, layouts, modules)
         self.plan = FilePlan(self.view)

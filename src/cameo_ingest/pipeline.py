@@ -14,6 +14,7 @@ from . import modules as mod
 from . import semantics as sem
 from .annotations import Annotation
 from .archive import Project, first_tag
+from .config import IMAGE_PIXELS, MODULES
 from .emit import ProjectWriter
 from .enrich import Enricher
 from .layout import Layout, own_elements, parse_layout
@@ -104,8 +105,8 @@ SKETCH = "re-drawn from layout data, not a Cameo rendering"
 
 
 def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM, render: bool = True,
-                   progress: Progress = QUIET, concurrency: int = 1, image_pixels: int = dg.IMAGE_PIXELS,
-                   modules: tuple[int, int, int] = mod.DEFAULTS) -> ProjectResult:
+                   progress: Progress = QUIET, concurrency: int = 1, image_pixels: int = IMAGE_PIXELS,
+                   modules: tuple[int, int, int] = MODULES) -> ProjectResult:
     """Parse, draw the sketches, ask the LLM (`enrich`), write."""
     ix = parse_project(project, progress)
     annotations: dict[str, list[Annotation]] = {}

@@ -6,6 +6,7 @@ from PIL import Image
 
 from cameo_ingest import diagrams as dg
 from cameo_ingest import modules as mod
+from cameo_ingest.config import MODULES
 from cameo_ingest.layout import View
 from cameo_ingest.model import ModelIndex
 
@@ -65,7 +66,7 @@ def test_every_shape_in_one_bounded_module():
     assert part is not None
     shapes = [k for m in part.modules for k in m.shapes]
     assert sorted(shapes) == list(range(1, 44))
-    assert all(mod.MIN_SHAPES <= len(m.shapes) <= mod.MAX_SHAPES for m in part.modules)
+    assert all(MODULES[1] <= len(m.shapes) <= MODULES[2] for m in part.modules)
     assert set(part.module_of) == set(range(1, 44))
 
 

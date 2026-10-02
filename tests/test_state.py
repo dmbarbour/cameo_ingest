@@ -63,3 +63,20 @@ def test_lock_settings_and_schema(tmp_path):
     st.db.execute("UPDATE meta SET value = '99' WHERE key = 'schema_version'")
     with pytest.raises(StateError, match="newer cameo-ingest"):
         State(tmp_path)
+
+
+def test_settings_and_options():
+    """Settings with their defaults in one place; a tree remembers only what differs from them,
+    and a project's options hash as before they were typed (AR-013)."""
+    import pytest
+
+    from cameo_ingest.config import MODULES, ProjectOptions, TreeSettings, parse_modules
+    from cameo_ingest.provenance import sha256_text
+
+    s = TreeSettings.from_stored({"threads": False, "chunk_style": "markdown", "text_model": None})
+    assert s.threads is False and s.cross_index is True and s.stored() == {"threads": False}
+    assert parse_modules(None) == MODULES and parse_modules("0:1:2") == (0, 1, 2)
+    with pytest.raises(ValueError):
+        parse_modules("25:6")
+    o = ProjectOptions.of(s, None, None, None)
+    assert o.templates == () and o.hash() == sha256_text(json.dumps(o.as_dict(), sort_keys=True))[:16]
