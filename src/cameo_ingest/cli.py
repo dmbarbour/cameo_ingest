@@ -5,6 +5,7 @@
     cameo-ingest ingest -o OUT PATH... [options]   add, then run (the default command)
     cameo-ingest status -o OUT [--json]            what the tree holds, and the latest run
     cameo-ingest prune -o OUT [--dry-run]          drop missing inputs and the projects only they held
+    cameo-ingest export -o OUT --workbook FILE     the catalog, to search without tools (plan KX)
     cameo-ingest quality sample -o OUT [--n N]     draw a spot-check set of LLM requests and answers
 """
 
@@ -31,7 +32,7 @@ from .state import State, StateError
 
 log = logging.getLogger("cameo_ingest")
 
-COMMANDS = ("add", "run", "ingest", "status", "prune", "quality")
+COMMANDS = ("add", "run", "ingest", "status", "prune", "quality", "export")
 
 NO_MODEL = """error: no LLM model is configured. Either
   - pass --no-llm to ingest without LLM summaries and descriptions, or
@@ -187,6 +188,11 @@ def build_parser() -> argparse.ArgumentParser:
     pr = sub.add_parser("prune", parents=[common],
                         help="drop missing inputs, and the projects that no remaining input contains")
     pr.add_argument("--dry-run", action="store_true", help="only list what would be removed")
+    ex = sub.add_parser("export", parents=[common],
+                        help="write the catalog of the tree's models for people to search without tools: a "
+                             "workbook (see README, Searching without tools)")
+    ex.add_argument("--workbook", type=Path, metavar="FILE", required=True,
+                    help="write the catalog as an Excel workbook (.xlsx) to FILE")
     q = sub.add_parser("quality", help="measure the quality of LLM enrichment (see docs/plans/llm-quality-*.md)")
     qs = q.add_subparsers(dest="action", required=True, metavar="ACTION")
     qsample = qs.add_parser("sample", parents=[common], help="draw a spot-check set of requests and answers")
@@ -259,6 +265,25 @@ def add_inputs(state: State, args: argparse.Namespace) -> tuple[int, int]:
                 old += 1
     log.info("added %d input(s) to the task list (%d already listed)", new, old)
     return new, old
+
+
+def export_catalog(out: Path, args: argparse.Namespace) -> int:
+    """`export`: the tree's catalogs as a workbook (plan KX-06)."""
+    from . import catalog, workbook
+
+    state = State(out)
+    missing: list[str] = []
+    try:
+        rows = workbook.write_workbook(args.workbook, catalog.tree_catalogs(state, out, missing, Progress()),
+                                       __version__)
+    finally:
+        state.close()
+    size = args.workbook.stat().st_size
+    print(f"wrote {args.workbook} ({size / 1e6:.1f} MB): " + ", ".join(f"{n:,} {k}" for k, n in rows.items()))
+    if missing:
+        print(f"note: {len(missing)} project(s) were made before catalogs existed and are left out: "
+              f"{', '.join(missing[:5])}{'…' if len(missing) > 5 else ''}; `run` makes them again", file=sys.stderr)
+    return 0
 
 
 def flag_pair(group: Any, name: str, on: str, off: str, default: bool) -> None:
@@ -395,7 +420,7 @@ def main(argv: list[str] | None = None) -> int:
         args.out = Path(os.environ["CAMEO_INGEST_DEST"])
     out: Path = args.out
     if not State.exists(out):
-        if args.command in ("run", "status", "prune", "quality"):
+        if args.command in ("run", "status", "prune", "quality", "export"):
             print(f"error: no output tree at {out}; start one with `add` or `ingest`", file=sys.stderr)
             return 2
         if out.exists() and any(p.name != ".cache" for p in out.iterdir()):
@@ -435,6 +460,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"note: {meta['unexplained']} generated chunks predate the request log and were left out; "
                   "a run with the same settings logs them without new LLM calls", file=sys.stderr)
         return 0
+    if args.command == "export":
+        return export_catalog(out, args)
     if args.command == "prune":
         state = State(out)
         try:

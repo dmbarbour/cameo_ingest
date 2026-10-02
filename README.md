@@ -38,6 +38,7 @@ many files, bundles or names it turns up under.
 | `cameo-ingest ingest -o OUT PATH... [options]` | `add`, then `run`. It is the default command: `cameo-ingest FILE -o OUT`. |
 | `cameo-ingest status -o OUT [--json]` | Inputs and projects by status, failures, the latest run. Works while a run is going. |
 | `cameo-ingest prune -o OUT [--dry-run]` | Drops missing inputs, and the projects that no remaining input contains. |
+| `cameo-ingest export -o OUT --workbook FILE` | Writes the catalog of the tree's models for people to search without tools (see "Searching without tools"). Apart from `run`, since it is a distribution step. |
 
 - **Output directories.** A missing or empty directory starts a tree. A directory with
   `state.sqlite` is continued. Any other non-empty directory is refused.
@@ -174,7 +175,9 @@ out/
     images/, images.md   embedded raster images (attachment streams)
     tables/              elements, relationships, requirements, properties, tagged_values,
                          diagrams (.csv)
-    index/               elements.jsonl (full structure), hierarchy.json, chunks.jsonl
+    index/               elements.jsonl (full structure), hierarchy.json, chunks.jsonl,
+                         ids.jsonl and threads.jsonl (the index across models and the threads),
+                         catalog.jsonl (what `export` writes out, one record per item)
 ```
 
 ### Provenance
@@ -320,6 +323,41 @@ Suggestions, roughly in order of value, measured on the samples where the number
 7. **Cite with the trace.** Every chunk's `metadata.provenance.locator` names the content,
    entry, `xmi:id` and line, and `provenance.jsonl` maps its token to the files it came from.
    Ask the LLM to quote the locator so answers can be checked.
+
+## Searching without tools
+
+`cameo-ingest export` writes the tree's models as a file that people search with ordinary
+office tools, without Python, a database or the tree itself (plan KX,
+`docs/plans/keyword-export-2026-10-02.md`). The RAG finds things by meaning. Keyword search is
+better at ids and names: embeddings almost never find a requirement by its id, and keyword
+search does nine times in ten (`docs/research/retrieval-baseline-2026-10-01.md`).
+
+```sh
+cameo-ingest export -o OUT --workbook catalog.xlsx
+```
+
+**The workbook** has one row per item, with its source: the path the model was found at
+(which mirrors the SharePoint folders it was copied from) and its `--meta` values. Its sheets:
+
+| Sheet | Holds |
+|---|---|
+| `About` | How to search it, and what was left out |
+| `Find` | Type words; it lists the rows holding them all, ids and names first (Excel 2021, Microsoft 365 or Excel for the web) |
+| `Search` | Every item, for Ctrl+F |
+| `Requirements` | Requirements, with what satisfies, verifies, derives and refines them |
+| `Identifiers` | Every id, and each place it appears, across models |
+| `Elements` | Elements with a name or documentation |
+| `Relationships` | Each relationship, as the pages word it |
+| `Diagrams` | Diagrams, with their generated descriptions |
+| `Summaries` | Generated summaries, marked with the model that wrote them |
+| `Projects` | Each model: its source, metadata and counts |
+
+**Sharing it.** Upload the workbook to SharePoint, where Excel for the web opens it in the
+browser (up to 100 MB), or share it as a file for desktop Excel. Long text is cut in its
+cells, and the tree holds it whole.
+
+**Other tools.** Obsidian and VS Code open the tree's pages as they are, Markdown with relative
+links, and search all of them, for those who have the tree and one of these tools.
 
 ## State database
 

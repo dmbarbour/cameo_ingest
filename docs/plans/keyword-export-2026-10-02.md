@@ -151,6 +151,61 @@ pane:
 | CP4: the samples | KX-07 | Measurements, and adjustments | |
 | CP5: the trial | KX-08, KX-09 | What the maintainer keeps | |
 
+### CP1 in detail
+
+**The records** (`catalog.py`, KX-02). `project_catalog(view, sink)` gives the records of
+`index/catalog.jsonl`, in this order:
+- **`project`, first and once:**
+  - the file name, label and token;
+  - the exporter's "saved by";
+  - counts per record type;
+  - `left_out`: the elements out of scope, by metaclass.
+- **`requirement`:** each element with `semantics.requirement`.
+  - **Fields:** `key`, `id`, `db`, `name` (`label`), `where` (qualified name), `package`, `text`
+    (the requirement text), `stereotypes`.
+  - **`relations`:** `[relationship key, kind, "out"/"in", phrase, other key, other label]`. The
+    phrase is the pages' wording, forward or inverse ("satisfied by", "derived into"), or the
+    kind with an arrow.
+  - **`diagrams`:** `[key, label]` of the diagrams that show it.
+  - **`chunks`:** its main and details chunks.
+- **`diagram`, `package`, `element`:** the same fields where they apply. `kind` is the diagram
+  type, or the kind word, and `text` the documentation.
+  - **Scope:** an element is in when it has its own chunk (a section) or a name or documentation.
+    Comments, relationships and stereotype applications are records of other types or none.
+  - **Members:** an element in scope without a chunk of its own (a part property, a port, a pin)
+    names `listed_in`, the nearest owner with chunks, and borrows its chunks.
+- **`relationship`:** `key`, `kind`, `source`, `target` (each `[key, label]`), `phrase`.
+- **`summary`:** each LLM annotation with text:
+  - `of` (`[key, label]`), `label` (Summary, Part summary, Diagram description…), `module` or
+    `parts` where given;
+  - `text`, `model`.
+
+On the samples that is about 69,000 items in scope (42,000 sections and 27,000 members),
+23,600 relationships and 6,500 summaries.
+
+**The workbook** (`workbook.py`, KX-03): `write_workbook(path, projects)`, where `projects`
+yields each project's header, records, identifier records and sources.
+- **Sheets:** in the plan's order, written row by row (constant memory), a project at a time.
+- **Cut limits** (`LIMITS`, in one place): 1,000 characters for text in `Search`, 4,000 in
+  `Requirements`, 2,000 in `Elements`, 8,000 in `Summaries`.
+- **`Find`:** three cells for words and one each for a project and a type, with a single
+  `FILTER`/`SORTBY` formula over `Search`, ids and names first. LibreOffice 24.2 here predates
+  `FILTER`, so the formula is first checked in the maintainer's trial.
+- **Properties:** fixed (a fixed creation time; no author).
+
+**The command** (KX-06, workbook part): `cameo-ingest export -o OUT --workbook FILE`.
+- **Inputs:** the written projects from the state, with their sightings (paths and `--meta`), and
+  each project's `index/catalog.jsonl` and `index/ids.jsonl`.
+- **Feedback:** progress per project, then the file's size and the rows per sheet.
+- **Old trees:** a project made before 0.8.0 has no catalog. The command names it and says that
+  `run` makes it again.
+
+**Version:** 0.8.0, since there is a new per-project file.
+
+**Checks:** a `--no-llm` tree of the samples and the fiction, against one made at 0.7.2
+(`out/kx/base`): everything the same but `index/catalog.jsonl`, the manifest's lists and the
+version. Then the workbook made from it: its size and rows.
+
 **Checks:**
 - **The workbook** (CP1), read in tests with `zipfile`:
   - its sheets and their row counts;

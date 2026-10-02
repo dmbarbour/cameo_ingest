@@ -10,7 +10,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from . import crossref
+from . import catalog, crossref
 from . import semantics as sem
 from .files import FilePlan
 from .sink import ChunkSink
@@ -105,6 +105,10 @@ class TableWriter:
         p.parent.mkdir(parents=True, exist_ok=True)
         with p.open("w", encoding="utf-8") as f:
             for rec in crossref.project_places(self.view, self.sink.main):
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        p = self.root / "index/catalog.jsonl"  # what the exports search (plan KX-02)
+        with p.open("w", encoding="utf-8") as f:
+            for rec in catalog.project_catalog(self.view, self.sink):
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
         p = self.root / "index/elements.jsonl"
         p.parent.mkdir(parents=True, exist_ok=True)
