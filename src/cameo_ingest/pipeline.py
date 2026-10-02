@@ -14,7 +14,7 @@ from . import modules as mod
 from . import semantics as sem
 from .annotations import Annotation
 from .archive import Project, first_tag
-from .emit import ProjectWriter, slug
+from .emit import ProjectWriter
 from .enrich import Enricher
 from .layout import Layout, own_elements, parse_layout
 from .llm import LLM
@@ -22,7 +22,7 @@ from .model import ModelIndex
 from .progress import QUIET, Progress
 from .prompts import DIAGRAM_ITEMS, PART_CHARS
 from .provenance import ContentInfo, Derivation, Trace
-from .text import image_mime
+from .text import image_mime, slug
 from .xmi import finalize, parse_into
 
 log = logging.getLogger(__name__)
@@ -112,7 +112,7 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
     base = Trace(content_sha256=content.sha256)
     layouts = load_layouts(project, ix, progress)
     writer = ProjectWriter(content, project, ix, root, annotations, layouts, modules)
-    enricher = Enricher(llm, writer, annotations, content, root, image_pixels)
+    enricher = Enricher(llm, writer.view, writer.plan, root, image_pixels)
 
     reused = 0  # sketches drawn by an interrupted attempt with the same tool and options
     if render and layouts:
@@ -121,10 +121,10 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
                 ph.advance()
                 d = ix.diagrams[dia_id]
                 el = ix.elements[dia_id]
-                graph = writer.graph(dia_id)
-                part = writer.partition(dia_id)  # a large diagram: an overview and a view per module (plan DV)
+                graph = writer.view.graph(dia_id)
+                part = writer.view.partition(dia_id)  # a large diagram: an overview and a view per module (plan DV)
                 title = f"{d.diagram_type or 'Diagram'}: {ix.qualified_name(dia_id)}"
-                rel = writer.dia_file[dia_id].removesuffix(".md") + ".png"
+                rel = writer.plan.dia_file[dia_id].removesuffix(".md") + ".png"
                 reused += (root / rel).exists()
                 if part is not None:
                     drawn = _draw(root / rel, partial(mod.overview_png, ix, graph, part, title, image_pixels))
@@ -132,7 +132,7 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
                     drawn = _draw(root / rel, partial(dg.render_png, ix, graph, title, pixels=image_pixels))
                 if not drawn:
                     continue
-                tr = writer.trace(el).with_(entry=d.streams[0] if d.streams else el.entry, line=None,
+                tr = writer.view.trace(el).with_(entry=d.streams[0] if d.streams else el.entry, line=None,
                                             derivation=Derivation(method="rendered", inputs=tuple(d.streams)))
                 label = f"Diagram sketch with its modules outlined ({SKETCH})" if part else f"Diagram sketch ({SKETCH})"
                 annotations.setdefault(dia_id, []).append(Annotation(label, "", tr, image=rel))
@@ -140,7 +140,7 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
                     enricher.diagram(dia_id, tr, rel)
                     continue
                 for m in part.modules:
-                    mrel = writer.module_image(dia_id, m.num)
+                    mrel = writer.plan.module_image(dia_id, m.num)
                     if not _draw(root / mrel, partial(mod.module_png, ix, graph, part, m.num, title, image_pixels)):
                         continue
                     annotations[dia_id].append(
@@ -175,7 +175,7 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
                     f"{PART_CHARS[1]:,}", DIAGRAM_ITEMS)
     enricher.run(progress, project.display_name, concurrency)
 
-    writer.write_images(images, enricher.images, base)
+    writer.pages.write_images(images, enricher.images, base)
     with progress.phase(f"{project.display_name}: writing", writer.write_steps(), "step") as ph:
         writer.write_all(tick=ph.advance)
 
@@ -186,7 +186,7 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
         "elements": len(ix.elements),
         "diagrams": len(ix.diagrams),
         "stereotype_applications": len(ix.stereotypes),
-        "relationships": len(writer.rels),
+        "relationships": len(writer.view.rels),
         "requirements": sum(1 for e in ix.elements.values() if sem.is_requirement(ix, e)),
         "images": len(images),
     }

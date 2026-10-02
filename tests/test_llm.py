@@ -368,12 +368,12 @@ def test_every_template_filled_by_its_builder():
     with tempfile.TemporaryDirectory() as tmp:
         w = ProjectWriter(ContentInfo(hashlib.sha256(data).hexdigest(), "drone.mdzip"), project, ix, Path(tmp), {},
                           load_layouts(project, ix), (25, 6, 25))
-        dia = next(iter(w.layouts))
-        g, part, d = w.graph(dia), w.partition(dia), ix.diagrams[dia]
+        dia = next(iter(w.view.layouts))
+        g, part, d = w.view.graph(dia), w.view.partition(dia), ix.diagrams[dia]
         pkg = next(e for e in ix.elements.values() if e.kind == "Package" and any(
-            c.kind == "InstanceSpecification" for c in w.sections_in(e)))
-        sections = w.sections_in(pkg)
-        own, texts = w.section_view(pkg).text(), [w.section_view(e).text() for e in sections]
+            c.kind == "InstanceSpecification" for c in w.view.sections_in(e)))
+        sections = w.view.sections_in(pkg)
+        own, texts = w.view.section_view(pkg).text(), [w.view.section_view(e).text() for e in sections]
         filled = {
             "diagram-description": pv.diagram_description(ix, g, d),
             "module-description": pv.module_description(ix, g, part, 1, d),

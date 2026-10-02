@@ -21,7 +21,10 @@ from .model import Element
 from .text import front_matter, md_inline, plural, tidy
 
 if TYPE_CHECKING:
-    from .emit import ProjectWriter
+    from .files import FilePlan
+    from .pages import PageWriter
+    from .sink import ChunkSink
+    from .view import ProjectView
 
 MAX_ROWS = 60
 MAX_CHARS = 6000
@@ -51,14 +54,14 @@ def _first_sentence(text: str) -> str:
 
 
 class LedgerWriter:
-    def __init__(self, w: ProjectWriter):
-        self.w = w
-        self.ix = w.ix
+    def __init__(self, view: ProjectView, plan: FilePlan, sink: ChunkSink, pages: PageWriter):
+        self.view, self.plan, self.sink, self.pages = view, plan, sink, pages
+        self.ix = view.ix
         self.md: list[str] = []
 
     # -- rows ------------------------------------------------------------------
     def counts(self, pkg: Element) -> tuple[int, int, int]:
-        els = self.w.sections_in(pkg)
+        els = self.view.sections_in(pkg)
         reqs = sum(1 for e in els if sem.is_requirement(self.ix, e))
         dias = sum(1 for c in sem.children(self.ix, pkg) if c.kind == "Diagram")
         return len(els) - reqs, reqs, dias
@@ -67,11 +70,11 @@ class LedgerWriter:
         n_el, n_req, n_dia = self.counts(pkg)
         parts = [plural(n_el, "element")] + ([plural(n_req, "requirement")] if n_req else []) + \
                 ([plural(n_dia, "diagram")] if n_dia else [])
-        return f"- {self.w.link(pkg.id, FILE)} `{self.ix.qualified_name(pkg.id)}` — {', '.join(parts)}"
+        return f"- {self.plan.link(pkg.id, FILE)} `{self.ix.qualified_name(pkg.id)}` — {', '.join(parts)}"
 
     def diagram_row(self, dia_id: str) -> str:
         d = self.ix.diagrams[dia_id]
-        row = f"- {self.w.link(dia_id, FILE)} — {d.diagram_type or 'diagram'}"
+        row = f"- {self.plan.link(dia_id, FILE)} — {d.diagram_type or 'diagram'}"
         if d.owner and d.owner in self.ix.elements and self.ix.elements[d.owner].kind not in sem.PACKAGE_KINDS:
             row += f"; context {md_inline(sem.label(self.ix, d.owner))}"
         if d.shown:
@@ -82,13 +85,13 @@ class LedgerWriter:
         req = sem.requirement(self.ix, el)
         assert req is not None
         # The id once (AR-010R3): an unnamed requirement is linked by its id, since its text follows.
-        row = f"- {self.w.link(el.id, FILE, req.id if req.id and not el.name else None)}"
+        row = f"- {self.plan.link(el.id, FILE, req.id if req.id and not el.name else None)}"
         if req.text:
             row += f" — “{_clip(req.text, TEXT_CHARS)}”"
         links: dict[str, list[str]] = defaultdict(list)
         if req.db_id:
             links["database number"].append(req.db_id)
-        for r in self.w.rels_by_end.get(el.id, []):
+        for r in self.view.rels_by_end.get(el.id, []):
             if r.metaclass not in ("Abstraction", "Dependency", "Realization", "Usage"):
                 continue
             incoming = r.target == el.id
@@ -103,7 +106,7 @@ class LedgerWriter:
 
     def element_row(self, el: Element) -> str:
         label = " ".join(f"«{s}»" for s in sem.shown_stereotypes(self.ix, el.id)) or el.kind
-        row = f"- {label} {self.w.link(el.id, FILE)}"
+        row = f"- {label} {self.plan.link(el.id, FILE)}"
         doc = sem.documentation(self.ix, el)
         if doc:
             row += f" — {_first_sentence(doc)}"
@@ -121,8 +124,8 @@ class LedgerWriter:
         self.md += [f"### {heading} — {where}", ""] + [r for _, r in items] + [""]
         # A part fits an embedding window with its header (plan RE-08), which reads like any plain
         # chunk's heading (AR-004R1): what it is, of what, where, and the project.
-        target = (self.w.heading(pkg, "Package") if pkg is not None
-                  else f"the whole project (project {self.w.content.label})")
+        target = (self.view.heading(pkg, "Package") if pkg is not None
+                  else f"the whole project (project {self.view.content.label})")
         parts = pl.pack([(eid, pl.plain(r)) for eid, r in items],
                         f"{heading} ledger of {target} (part 99 of 99), 9,999 entries", max_rows=MAX_ROWS)
         rows = items
@@ -130,30 +133,30 @@ class LedgerWriter:
             of = f" (part {i} of {len(parts)})" if len(parts) > 1 else ""
             header = f"{heading} ledger of {target}{of}, {len(rows):,} {'entry' if len(rows) == 1 else 'entries'}"
             text = header + "\n\n" + "\n".join(r for _, r in part)
-            tr = self.w.trace(pkg) if pkg is not None else self.w.trace()
-            self.w.chunk(kind=f"ledger:{kind}", title=f"{heading} ledger: {where}{of}", text=text, file=FILE,
+            tr = self.view.trace(pkg) if pkg is not None else self.view.trace()
+            self.sink.chunk(kind=f"ledger:{kind}", title=f"{heading} ledger: {where}{of}", text=text, file=FILE,
                          el=pkg, trace=tr, salt=f"ledger:{kind}:{i}",
                          extra={"ledger": kind, "entries": len(part), "element_ids": [e for e, _ in part]})
 
     def write(self) -> None:
-        ix, w = self.ix, self.w
-        pkgs = sorted((ix.elements[p] for p in w.pkg_file), key=lambda e: ix.qualified_name(e.id))
+        ix, view, plan = self.ix, self.view, self.plan
+        pkgs = sorted((ix.elements[p] for p in plan.pkg_file), key=lambda e: ix.qualified_name(e.id))
         by_pkg: dict[str | None, list[Element]] = defaultdict(list)
         for el in ix.elements.values():
             if sem.is_section(ix, el) and el.kind not in sem.PACKAGE_KINDS and el.kind != "Diagram":
-                p = w.package_of(el)
+                p = view.package_of(el)
                 by_pkg[p.id if p else None].append(el)
         dias_by_pkg: dict[str | None, list[str]] = defaultdict(list)
         for d in ix.diagrams.values():
-            p = w.package_of(ix.elements[d.id])
+            p = view.package_of(ix.elements[d.id])
             dias_by_pkg[p.id if p else None].append(d.id)
 
         n_req = sum(1 for els in by_pkg.values() for e in els if sem.is_requirement(ix, e))
         self.md += [
-            f"# Ledger: {w.content.name}", "",
+            f"# Ledger: {view.content.name}", "",
             ("Compact listing of everything in this project, grouped by package. Each entry links to its "
              "full description."), "",
-            f"- **Content:** `{w.content.token}`",
+            f"- **Content:** `{view.content.token}`",
             f"- **Packages:** {len(pkgs)}; **diagrams:** {len(ix.diagrams)}; **requirements:** {n_req}", "",
             "## Packages", "",
         ]
@@ -181,6 +184,6 @@ class LedgerWriter:
                         rows = [(e.id, self.element_row(e)) for e in els]
                 self.emit_group(kind, heading, pkg, rows)
 
-        fm = front_matter({"title": f"Ledger {w.content.name}", "kind": "ledger",
-                           "provenance": w.file_provenance(trace=w.trace().to_dict())})
-        w.write_text(FILE, fm + "\n".join(self.md))
+        fm = front_matter({"title": f"Ledger {view.content.name}", "kind": "ledger",
+                           "provenance": view.file_provenance(trace=view.trace().to_dict())})
+        self.pages.write_text(FILE, fm + "\n".join(self.md))

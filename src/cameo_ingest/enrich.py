@@ -25,13 +25,14 @@ from . import diagrams as dg
 from . import modules as mod
 from . import prompt_values as pv
 from .annotations import Annotation
-from .emit import ProjectWriter
+from .files import FilePlan
 from .llm import LLM
 from .model import Element
 from .progress import Progress
 from .prompt_values import Level
 from .prompts import CURRENT, MAX_SUMMARIES, PART_CHARS, SUMMARY_CHARS, Template
-from .provenance import ContentInfo, Derivation, Trace
+from .provenance import Derivation, Trace
+from .view import ProjectView
 
 log = logging.getLogger(__name__)
 
@@ -86,7 +87,7 @@ def _ask_with_image(llm: LLM, template: Template, values: dict[str, str], root: 
     return llm.ask(template, values, image=data, mime=mime, image_path=rel, notes=notes, **kw)
 
 
-def package_parts(writer: ProjectWriter, sections: list[Element], texts: list[str]) -> list[list[int]]:
+def package_parts(view: ProjectView, sections: list[Element], texts: list[str]) -> list[list[int]]:
     """A large package's sections (indices), in parts of related elements: by nesting,
     relationships and order, each of PART_CHARS where the sections allow (plan DV-05)."""
     index = {e.id: i for i, e in enumerate(sections)}
@@ -94,24 +95,23 @@ def package_parts(writer: ProjectWriter, sections: list[Element], texts: list[st
     def section_of(el_id: str | None) -> int | None:
         """The section an element is in: its own, or its nearest owner's."""
         while el_id is not None and el_id not in index:
-            el = writer.ix.elements.get(el_id)
+            el = view.ix.elements.get(el_id)
             el_id = el.owner if el else None
         return index.get(el_id) if el_id else None
 
     parents = [section_of(e.owner) for e in sections]
-    links = [(a, b) for r in writer.rels
+    links = [(a, b) for r in view.rels
              if (a := section_of(r.source)) is not None and (b := section_of(r.target)) is not None and a != b]
     return mod.sequence_partition([len(t) + 1 for t in texts], parents, links, *PART_CHARS)
 
 
 class Enricher:
-    """A project's LLM requests, and their answers as annotations (`annotations`, by element)
-    and image descriptions (`images`, by archive entry)."""
+    """A project's LLM requests, and their answers as annotations (the view's, by element) and
+    image descriptions (`images`, by archive entry)."""
 
-    def __init__(self, llm: LLM, writer: ProjectWriter, annotations: dict[str, list[Annotation]],
-                 content: ContentInfo, root: Path, image_pixels: int):
-        self.llm, self.writer, self.annotations = llm, writer, annotations
-        self.ix, self.content, self.root, self.image_pixels = writer.ix, content, root, image_pixels
+    def __init__(self, llm: LLM, view: ProjectView, plan: FilePlan, root: Path, image_pixels: int):
+        self.llm, self.view, self.plan, self.annotations = llm, view, plan, view.ann
+        self.ix, self.content, self.root, self.image_pixels = view.ix, view.content, root, image_pixels
         self.images: dict[str, tuple[str, Derivation]] = {}
         self.truncated = 0  # LLM inputs cut short to fit the prompt
         self._first: list[Request] = []
@@ -126,31 +126,31 @@ class Enricher:
     def diagram(self, dia_id: str, tr: Trace, rel: str) -> None:
         """A diagram whose sketch is drawn at `rel`: a description, unless there is too little
         to describe (FU-010)."""
-        ix, writer, llm = self.ix, self.writer, self.llm
-        el, graph = ix.elements[dia_id], writer.graph(dia_id)
+        ix, view, llm = self.ix, self.view, self.llm
+        el, graph = ix.elements[dia_id], view.graph(dia_id)
         if not llm.cfg.vision_model or graph is None:
             return
         if graph.trivial():
-            llm.skip(writer.trace(el).locator(), "skipped_trivial",
+            llm.skip(view.trace(el).locator(), "skipped_trivial",
                      f"{len(graph.nodes)} shape(s), {len(graph.links)} connection(s)")
             return
         v = pv.diagram_description(ix, graph, ix.diagrams[dia_id])
         if v.cut:
             self.truncated += 1
-            llm.truncated(writer.trace(el).locator(), v.cut)
+            llm.truncated(view.trace(el).locator(), v.cut)
         call = partial(_ask_with_image, llm, CURRENT["diagram-description"], v.values, self.root, rel, "image/png",
-                       project=self.content.token, inputs=(writer.trace(el).locator(), tr.locator()), notes=v.notes)
+                       project=self.content.token, inputs=(view.trace(el).locator(), tr.locator()), notes=v.notes)
         self._first.append(Request(an.DIAGRAM, dia_id, tr, call))
 
     def module(self, dia_id: str, part: mod.Partition, num: int, tr: Trace, rel: str) -> None:
         """Module `num` of a large diagram, whose sketch is drawn at `rel`."""
         if not self.llm.cfg.vision_model:
             return
-        ix, writer = self.ix, self.writer
-        v = pv.module_description(ix, writer.graph(dia_id), part, num, ix.diagrams[dia_id])
+        ix, view = self.ix, self.view
+        v = pv.module_description(ix, view.graph(dia_id), part, num, ix.diagrams[dia_id])
         call = partial(_ask_with_image, self.llm, CURRENT["module-description"], v.values, self.root, rel,
                        "image/png", project=self.content.token,
-                       inputs=(writer.trace(ix.elements[dia_id]).locator(), tr.locator()), notes=v.notes)
+                       inputs=(view.trace(ix.elements[dia_id]).locator(), tr.locator()), notes=v.notes)
         self._first.append(Request(an.MODULE, dia_id, tr, call, num))
 
     def large_diagram(self, dia_id: str, part: mod.Partition, tr: Trace, rel: str) -> None:
@@ -168,19 +168,19 @@ class Enricher:
         """Package summaries from the deterministic text, so the LLM only rephrases what is there.
         A large package is summarized in parts, and then from its parts' summaries (FU-005); one
         made mostly of instance specifications, from a digest of them (FU-022)."""
-        ix, writer, llm = self.ix, self.writer, self.llm
+        ix, view, llm = self.ix, self.view, self.llm
         if not llm.cfg.text_model:
             return
-        for pkg_id in writer.pkg_file:
+        for pkg_id in self.plan.pkg_file:
             pkg = ix.elements[pkg_id]
-            sections = writer.sections_in(pkg)
+            sections = view.sections_in(pkg)
             if len(sections) < MIN_SECTIONS_FOR_SUMMARY:
                 continue
             # Plain text, without link targets or trace lines (AR-018): the prompt, and so the
             # cached answer, depends only on the model's content, not on where it was found.
-            own = writer.section_view(pkg, generated=False).text()
-            texts = [writer.section_view(e, generated=False).text() for e in sections]
-            tr = writer.trace(pkg)
+            own = view.section_view(pkg, generated=False).text()
+            texts = [view.section_view(e, generated=False).text() for e in sections]
+            tr = view.trace(pkg)
             text = "\n\n".join([own, *texts])
             ask = partial(llm.ask, project=self.content.token, inputs=(tr.locator(),))
             if len(text) <= SUMMARY_CHARS:
@@ -192,8 +192,8 @@ class Enricher:
                 self._first.append(Request(an.SUMMARY, pkg_id, tr, partial(
                     ask, CURRENT["instances-summary"], v.values, notes=v.notes)))
                 continue
-            parts = [[sections[i] for i in g] for g in package_parts(writer, sections, texts)]
-            writer.set_parts(pkg_id, [[e.id for e in part] for part in parts])
+            parts = [[sections[i] for i in g] for g in package_parts(view, sections, texts)]
+            view.set_parts(pkg_id, [[e.id for e in part] for part in parts])
             self._large_packages.append((pkg_id, tr, parts, own))
             for k, part in enumerate(parts, 1):
                 v = pv.module_summary(ix.qualified_name(pkg_id), k, len(parts),
@@ -268,10 +268,10 @@ class Enricher:
             if not any(texts):
                 continue  # the module requests got no answer: nor would this one
             el = self.ix.elements[dia_id]
-            v = pv.diagram_synthesis(self.ix, self.writer.graph(dia_id), part, self.ix.diagrams[dia_id], texts)  # type: ignore[arg-type]
+            v = pv.diagram_synthesis(self.ix, self.view.graph(dia_id), part, self.ix.diagrams[dia_id], texts)  # type: ignore[arg-type]
             call = partial(_ask_with_image, self.llm, CURRENT["diagram-synthesis"], v.values, self.root, rel,
                            "image/png", project=self.content.token,
-                           inputs=(self.writer.trace(el).locator(), tr.locator()), notes=v.notes)
+                           inputs=(self.view.trace(el).locator(), tr.locator()), notes=v.notes)
             out.append(Request(an.DIAGRAM, dia_id, tr, call))
         return out
 
