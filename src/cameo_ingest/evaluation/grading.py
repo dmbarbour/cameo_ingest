@@ -163,3 +163,19 @@ class Question:
             return len(self.groups), {i: frozenset(k for k, g in enumerate(self.groups) if _held(g, c.flat[i]))
                                       for i in grades}
         return 1, {i: frozenset([0]) for i, v in grades.items() if v == 2}
+
+
+# A question's grades, how many parts its answer has, and the parts each window holds.
+Graded = tuple[dict[int, int], int, dict[int, frozenset[int]]]
+
+
+def grade_all(questions: Sequence[Mapping[str, Any]], c: Corpus,
+              judged: Mapping[str, Mapping[str, int]] | None = None) -> list[Graded]:
+    """Each question graded once, whatever the systems that rank for it (AR-020R1). `judged`: the
+    judge panel's grades, by question id and window id, which override construction."""
+    out = []
+    for q in questions:
+        qq = Question.of(q)
+        g = qq.grades(c, (judged or {}).get(q["id"]))
+        out.append((g, *qq.covers(c, g)))
+    return out

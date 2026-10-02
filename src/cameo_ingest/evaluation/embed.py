@@ -106,7 +106,8 @@ class EmbeddingCache(SqliteCache):
     def put(self, m: EmbeddingModel, role: Role, items: list[tuple[str, np.ndarray]]) -> None:
         with self._lock:
             self._db.executemany("INSERT OR REPLACE INTO vectors VALUES (?, ?, ?, ?, ?)",
-                                 [(m.name, provider.OPENAI_API, role, k, v.astype(np.float32).tobytes()) for k, v in items])
+                                 [(m.name, provider.OPENAI_API, role, k, v.astype(np.float32).tobytes())
+                                  for k, v in items])
             self._db.commit()
 
 

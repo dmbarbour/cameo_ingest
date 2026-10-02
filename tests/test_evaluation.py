@@ -181,3 +181,92 @@ def test_reranker_scores_through_its_cache(tmp_path):
     assert posts[0][0] == f"{INFERENCE_API}/Qwen/Qwen3-Reranker-0.6B" and (r.calls, r.tokens) == (2, 14)
     again = Reranker("qwen3-0.6b", tmp_path / "r.sqlite", post=post)
     assert again.scores([("q", "bbb"), ("q", "e")]) == [3.0, 1.0] and again.calls == 1  # "e" was not scored
+
+
+class FakeSession:
+    """Stands in for an `EnrichmentSession`: a reply per item (the request's first input), or
+    None for no answer."""
+
+    def __init__(self, reply):
+        self.reply = reply
+        self.asked: list[dict] = []
+
+    def ask(self, template, values, *, project="", inputs=()):
+        self.asked.append(values)
+        text = self.reply(inputs[0] if inputs else "", values)
+        return None if text is None else (text, None)
+
+
+def test_structural_questions(tmp_path, fiction_tree):
+    """Questions from a model's structure, answered by its elements; none about the fictional
+    projects, which have questions of their own (AR-021R2, AR-022R4)."""
+    from fixture_model import make_mdzip
+    from helpers import ingest
+
+    from cameo_ingest.evaluation.grading import Question
+    from cameo_ingest.evaluation.questions import structural
+
+    out = ingest(tmp_path, ("drone.mdzip", make_mdzip()), args=("--no-llm", "--no-render"))
+    [q] = structural(out)
+    assert q["question"] == "Which elements satisfy the requirement Endurance?"
+    assert (q["answers"], q["related"]) == (["r1"], ["b2"]) and Question.of(q).rule == "element"
+    assert structural(fiction_tree) == []
+
+
+def test_natural_questions_keep_only_quoted_answers(tmp_path):
+    """A written question is kept only when its quote is in its chunk, which is then its answer;
+    a reply that isn't JSON, or quotes what the chunk doesn't say, is dropped."""
+    from fixture_model import make_mdzip
+    from helpers import ingest
+
+    from cameo_ingest.evaluation.questions import natural, sample_chunks
+
+    out = ingest(tmp_path, ("drone.mdzip", make_mdzip()), args=("--no-llm", "--no-render"))
+    chunks = sample_chunks(out, 3)
+    assert len(chunks) == 3
+    first, second, third = (c["id"] for c in chunks)
+
+    def reply(item, values):
+        quote = " ".join(values["PASSAGE"].split()[:4])
+        return {first: f'Here it is: {{"question": "What is this?", "quote": "{quote}"}} Done.',
+                second: '{"question": "What?", "quote": "words the chunk does not hold"}',
+                third: "I can't write one."}[item]
+
+    session = FakeSession(reply)
+    [q] = natural(out, session, per_project=3, concurrency=1)
+    assert (q["id"], q["rule"], q["answer_chunks"], q["question"]) == (f"llm:{first}", "source", [first], "What is this?")
+    assert len(session.asked) == 3 and all(v["KIND"] for v in session.asked)
+
+
+def test_judge_reads_replies():
+    """Grades from clean JSON, JSON inside prose, or a broken object with a readable grade; None
+    for anything else, or no answer."""
+    from cameo_ingest.evaluation.judge import judge, panel
+
+    replies = {"a": '{"grade": 2, "reason": "states it"}', "b": 'Sure. {"grade": 1, "reason": "helps"} Hope so.',
+               "c": '{"grade": 0, "reason": "a "quoted" word breaks it"}', "d": "No idea.", "e": None,
+               "f": '{"grade": 3}'}
+    pairs = [{"question": "Q?", "text": f"passage {u}", "unit": u, "set": "s", "qid": "q1"} for u in replies]
+    out = judge(FakeSession(lambda item, _v: replies[item]), pairs, concurrency=2)
+    assert [(j["unit"], j["grade"]) for j in out] == [("a", 2), ("b", 1), ("c", 0), ("d", None), ("e", None),
+                                                      ("f", None)]
+    assert out[0]["reason"] == "states it" and "text" not in out[0]
+    judgments = [{**j, "judge": "m1"} for j in out] + [{**j, "judge": "m2", "grade": 2} for j in out]
+    assert panel(judgments, "s", ("m1", "m2")) == {"q1": {"a": 2, "b": 1, "c": 0, "d": 2, "e": 2, "f": 2}}
+    assert panel(judgments, "other", ("m1", "m2")) == {}
+
+
+def test_run_record(tmp_path, fiction_tree):
+    """A run's record says which units it cut windows from, so that the judges read the same
+    text (AR-020R2)."""
+    from cameo_ingest.evaluation.records import Run
+
+    run = Run(str(fiction_tree), "questions.jsonl", rag=True, project="_abk_", window=256, overlap=32)
+    run.write(tmp_path)
+    assert Run.read(tmp_path) == run
+    units = run.units()
+    assert units and all(u.element_id.startswith("_abk_") for u in units)
+    chunks = {u.id: u.text for u in Run(str(fiction_tree), "q", project="_abk_").units()}
+    assert set(chunks) == {u.id for u in units}
+    for u in units:  # rag/'s files, as a RAG tool reads them: the chunk's text, then its source
+        assert u.text.startswith(chunks[u.id]) and "\n\nSource: sha256:" in u.text, u.id

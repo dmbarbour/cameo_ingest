@@ -334,8 +334,8 @@ of the new code on a tree an old run measured reproduces its report.
 
 | Step | What | Status |
 |---|---|---|
-| RA-17 | **The evaluation as library code** (AR-020, AR-021, AR-005R3): `evaluation/systems.py` and `evaluation/report.py`, the script keeping its arguments; the windows recorded beside the rankings, for `judge_pools`; one module for reading and writing questions, rankings and judgments; the synthetic project ported to the fiction builder (`fiction/orchard.py`), taking the fact rule, its scores rebased, and `synthetic.py` and its script deleted; one `is_fictional(id)` from `fiction.PROJECTS`. | |
-| RA-18d | **Tests for untested library code** (AR-022R4): the question generators, the judge's reply parsing, the embedding and rerank caches, with fakes. | |
+| RA-17 | **The evaluation as library code** (AR-020, AR-021, AR-005R3): `evaluation/systems.py` and `evaluation/report.py`, the script keeping its arguments; the windows recorded beside the rankings, for `judge_pools`; one module for reading and writing questions, rankings and judgments; the synthetic project ported to the fiction builder (`fiction/orchard.py`), taking the fact rule, its scores rebased, and `synthetic.py` and its script deleted; one `is_fictional(id)` from `fiction.PROJECTS`. | CP8a done (97007dd); CP8b done, its reproduction of `retrieval-cp5` pending |
+| RA-18d | **Tests for untested library code** (AR-022R4): the question generators, the judge's reply parsing, the embedding and rerank caches, with fakes. | Done (CP7 and CP8c) |
 
 ## Not in this plan
 

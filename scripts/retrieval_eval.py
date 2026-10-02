@@ -7,42 +7,32 @@ come back (plan RE-05).
 
 The questions (`--questions`) are the structural ones about the samples
 (`cameo_ingest.evaluation.questions`), or a JSONL file of any form: the fictional projects'
-(`scripts/make_fictional_projects.py`), or written questions (`scripts/write_questions.py`). All are graded by
-construction, each by its rule (`cameo_ingest.evaluation.grading`), and the judge panel's grades
-override construction where it judged (`--judgments`).
+(`scripts/make_fictional_projects.py`), or written questions (`scripts/write_questions.py`).
+All are graded by construction, each by its rule (`cameo_ingest.evaluation.grading`), and the
+judge panel's grades override construction where it judged (`--judgments`).
 
 Each model's windows are embedded through the cache (`--cache`), so a rerun, or a run cut off,
-costs only what is missing. Writes OUT/report.md and OUT/rankings.jsonl (each question's top 10
-per system, for inspection).
+costs only what is missing. Writes OUT/report.md, OUT/rankings.jsonl (each question's top 10 per
+system, for inspection), OUT/per_question.jsonl (every measure) and OUT/run.json (how the
+windows were cut, for `judge_pools`). The work is the library's (`cameo_ingest.evaluation`:
+`systems`, `grading`, `report`, `records`); this script holds the arguments.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
-import time
-from collections import Counter, defaultdict
 from pathlib import Path
 
 from cameo_ingest.cli import load_env
-from cameo_ingest.evaluation.embed import MODELS, Embedder, EmbeddingCache
-from cameo_ingest.evaluation.grading import Corpus, Question
-from cameo_ingest.evaluation.harness import (
-    BM25,
-    chunk_units,
-    fuse,
-    group_measures,
-    mean_ci,
-    measures,
-    rag_units,
-    top,
-    windowed,
-)
-from cameo_ingest.evaluation.judge import consensus
-from cameo_ingest.evaluation.questions import structural
-from cameo_ingest.evaluation.rerank import RERANKERS, Reranker
+from cameo_ingest.evaluation import records, report, systems
+from cameo_ingest.evaluation.embed import MODELS, EmbeddingCache
+from cameo_ingest.evaluation.grading import Corpus, grade_all
+from cameo_ingest.evaluation.judge import panel
+from cameo_ingest.evaluation.rerank import RERANKERS
 
-MEASURES = ("hit@1", "hit@5", "hit@10", "hit@20", "mrr@10", "ndcg@10", "coverage@10", "complete@10")
+
+def say(text: str) -> None:
+    print(text, flush=True)
 
 
 def main() -> int:
@@ -79,112 +69,29 @@ def main() -> int:
     args = ap.parse_args()
     if args.env:
         load_env(args.env)
-    units = rag_units(args.tree) if args.rag else chunk_units(args.tree)
-    if args.project:
-        units = [u for u in units if (u.element_id or "").startswith(args.project)]
-    if args.without_details:
-        units = [u for u in units if not u.kind.endswith(":details")]
-    cache = EmbeddingCache(args.cache)
-    if args.questions == "structural":
-        questions = structural(args.tree)
-    else:
-        questions = [json.loads(line) for line in Path(args.questions).read_text(encoding="utf-8").splitlines()]
+    run = records.Run(str(args.tree), args.questions, args.rag, args.project, args.without_details,
+                      args.window_tokenizer, args.window, args.overlap)
+    units = run.units()
+    questions = records.questions(args.questions, args.tree)
     print(f"{len(units):,} chunks from {args.tree}; {len(questions)} questions")
-    judged_of: dict[str, dict[str, int]] = defaultdict(dict)  # question -> unit -> grade
+    judged = {}
     if args.judgments:
-        name = Path(args.questions).stem if args.questions != "structural" else "structural"
-        panel = consensus([json.loads(line) for line in args.judgments.read_text(encoding="utf-8").splitlines()],
-                          tuple(args.judges), None if args.tiebreak == "none" else args.tiebreak)
-        for (s, qid, unit), grade in panel.items():
-            if s == name:
-                judged_of[qid][unit] = grade
-        print(f"judged grades for {len(judged_of)} questions")
+        judged = panel(records.read_jsonl(args.judgments), records.set_name(args.questions), tuple(args.judges),
+                       None if args.tiebreak == "none" else args.tiebreak)
+        print(f"judged grades for {len(judged)} questions")
 
-    results: dict[str, list[dict]] = {}  # system -> per-question measures
-    rankings = []
-    ws = windowed(units, args.window_tokenizer, args.window, args.overlap)
-    bm25 = BM25([u.text for u in ws])
-    lexical = [top(bm25.scores(q["question"]), 100) for q in questions]
-    print(f"{len(ws):,} windows", flush=True)
-    systems: dict[str, list[list[int]]] = {"bm25": lexical}
-    for key in args.models:
-        m = MODELS[key]
-        t0 = time.perf_counter()
-        e = Embedder(m, cache, concurrency=args.concurrency)
-        docs = e.embed([u.text for u in ws], "passage")
-        qv = e.embed([q["question"] for q in questions], "query")
-        print(f"{key}: embedded in {time.perf_counter() - t0:.0f} s "
-              f"({e.calls} requests, {e.tokens:,} tokens)", flush=True)
-        dense = [top(docs @ qv[i], 100) for i in range(len(questions))]
-        systems[key] = dense
-        systems[f"{key} + bm25"] = [fuse([d, w]) for d, w in zip(dense, lexical, strict=True)]
-        for weight in args.bm25_weights:
-            systems[f"{key} + bm25×{weight:g}"] = [fuse([d, w], weights=[1.0, weight])
-                                                   for d, w in zip(dense, lexical, strict=True)]
-    if args.rerank:
-        t0 = time.perf_counter()
-        reranker = Reranker(args.rerank, args.rerank_cache, concurrency=args.concurrency)
-        texts = [u.text for u in ws]
-        reranker.scores(list({(q["question"], texts[j]) for ranked in systems.values()  # every pair at once
-                              for q, r in zip(questions, ranked, strict=True) for j in r[:args.rerank_depth]}))
-        for name in list(systems):
-            systems[f"{name} → {args.rerank}"] = [reranker.rerank(q["question"], r, texts, args.rerank_depth)
-                                                  for q, r in zip(questions, systems[name], strict=True)]
-        print(f"{reranker.model}: {reranker.calls} requests, {reranker.tokens:,} tokens, "
-              f"{time.perf_counter() - t0:.0f} s", flush=True)
-    corpus = Corpus(ws)
-    graded = []  # per question: its grades, how many parts its answer has, and the parts each window holds
-    for q in questions:
-        qq = Question.of(q)
-        g = qq.grades(corpus, judged_of.get(q["id"]))
-        graded.append((g, *qq.covers(corpus, g)))
-    for name, ranked in systems.items():
-        per_q = []
-        for q, ranking, (g, parts, covers) in zip(questions, ranked, graded, strict=True):
-            per_q.append({"id": q["id"], "style": q["style"], "difficulty": q.get("difficulty"),
-                          "project_name": q.get("project_name"), **measures(ranking, g),
-                          **group_measures(ranking, covers, parts)})
-            rankings.append({"system": name, "question": q["id"], "text": q["question"],
-                             "top": [{"unit": ws[j].id, "kind": ws[j].kind, "grade": g.get(j, 0),
-                                      "text": ws[j].text[:200]} for j in ranking[:10]]})
-        results[name] = per_q
+    ws = run.windows(units)
+    ranked = systems.build(ws, questions, args.models, EmbeddingCache(args.cache), concurrency=args.concurrency,
+                           bm25_weights=args.bm25_weights, rerank=args.rerank, rerank_depth=args.rerank_depth,
+                           rerank_cache=args.rerank_cache, say=say)
+    results, rankings = report.per_question(ranked, questions, ws, grade_all(questions, Corpus(ws), judged))
 
-    args.out.mkdir(parents=True, exist_ok=True)
-    with (args.out / "rankings.jsonl").open("w", encoding="utf-8") as f:
-        for r in rankings:
-            f.write(json.dumps(r, ensure_ascii=False) + "\n")
-    with (args.out / "per_question.jsonl").open("w", encoding="utf-8") as f:  # every measure, for analysis
-        for name, per_q in results.items():
-            for r in per_q:
-                f.write(json.dumps({"system": name, **r}, ensure_ascii=False) + "\n")
-    styles = Counter(q["style"] for q in questions)
-    lines = [f"# Retrieval: {args.questions} questions on {args.tree}", "",
-             (f"{len(units):,} chunks, windows of {args.window} tokens with {args.overlap} of overlap; "
-              f"{len(questions)} questions ({', '.join(f'{n} {s}' for s, n in sorted(styles.items()))})."), ""]
-    groups = [("all", None)]  # all questions, then by style, difficulty and project where they differ
-    for field in ("style", "difficulty", "project_name"):
-        values = sorted({str(q.get(field)) for q in questions if q.get(field)})
-        groups += [(v, field) for v in values] if len(values) > 1 else []
-    for group, field in groups:
-        lines += [f"## {group.capitalize() if field != 'project_name' else group} questions", "",
-                  "| System | " + " | ".join(MEASURES) + " |", "|---|" + "---|" * len(MEASURES)]
-        for name, per_q in results.items():
-            rows = [r for r in per_q if field is None or str(r.get(field)) == group]
-            cells = []
-            for mname in MEASURES:
-                mean, lo, hi = mean_ci([r[mname] for r in rows])
-                cells.append(f"{mean:.2f} ({lo:.2f}–{hi:.2f})" if mname in ("hit@10", "mrr@10") else f"{mean:.2f}")
-            lines.append(f"| {name} | " + " | ".join(cells) + " |")
-        lines.append("")
-    misses = defaultdict(list)
-    for name, per_q in results.items():
-        for r in per_q:
-            if not r["hit@10"]:
-                misses[r["id"]].append(name)
-    lines += ["## Questions missed in the top 10", ""] + [
-        f"- {qid}: {', '.join(names)}" for qid, names in sorted(misses.items())] + [""]
-    (args.out / "report.md").write_text("\n".join(lines), encoding="utf-8")
-    print("\n".join(lines))
+    run.write(args.out)  # how the windows were cut, for the judges (AR-020R2)
+    records.write_jsonl(args.out / records.RANKINGS, rankings)
+    records.write_jsonl(args.out / records.PER_QUESTION, report.rows(results))
+    text = report.render(results, questions, run, len(units))
+    (args.out / records.REPORT).write_text(text, encoding="utf-8")
+    print(text)
     return 0
 
 

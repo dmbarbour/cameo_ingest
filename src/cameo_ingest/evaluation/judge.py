@@ -90,3 +90,13 @@ def consensus(judgments: list[dict], main: tuple[str, str], tiebreak: str | None
         elif a is not None or b is not None:
             out[key] = a if a is not None else b  # type: ignore[assignment]
     return out
+
+
+def panel(judgments: list[dict], set_name: str, main: tuple[str, str], tiebreak: str | None = None,
+          ) -> dict[str, dict[str, int]]:
+    """The panel's grades (`consensus`) for one question set, by question id and window id."""
+    out: dict[str, dict[str, int]] = {}
+    for (s, qid, unit), grade in consensus(judgments, main, tiebreak).items():
+        if s == set_name:
+            out.setdefault(qid, {})[unit] = grade
+    return out

@@ -100,9 +100,9 @@ Four themes run through the findings:
 | AR-017 | Medium | HTTP clients, retries and SQLite caches are written two or three times | By inspection | Fixed |
 | AR-018 | Medium | LLM summary inputs are page Markdown, link targets and all | By inspection | Open |
 | AR-019 | Medium | `diagrams.py` and `modules.py` each carry several unrelated responsibilities | By inspection | Fixed |
-| AR-020 | Medium | `retrieval_eval.main` is library code; `judge_pools` cuts windows again on its own defaults | By inspection | Open |
+| AR-020 | Medium | `retrieval_eval.main` is library code; `judge_pools` cuts windows again on its own defaults | By inspection | Fixed |
 | AR-021 | Medium | The KOIS project duplicates the fiction builder, and fictional prefixes are listed in four places | By inspection | Fixed |
-| AR-022 | Medium | The test suite: a 1,168-line module, no `conftest.py`, repeated setup, untested library code | By inspection | Open |
+| AR-022 | Medium | The test suite: a 1,168-line module, no `conftest.py`, repeated setup, untested library code | By inspection | Fixed |
 | AR-023 | Low | Five Markdown-to-plain converters and four link patterns | By inspection | Open |
 | AR-024 | Low | SQL against `state.sqlite` is written outside `state.py` | By inspection | Open |
 | AR-025 | Low | The prompt registry is two hand-kept lists, current and retired templates mixed | By inspection | Fixed |
@@ -705,6 +705,15 @@ already gone.
 
 **Severity:** Medium · **Verified:** By inspection · **Where:** `scripts/retrieval_eval.py:95-234`, `scripts/judge_pools.py:55, 63`, `evaluation/synthetic.py:135-139`
 
+**Status:** Fixed on 2026-10-02 (plan RA-17, CP8b).
+- AR-020R1: `evaluation/systems.py` builds the systems; `grading.grade_all` grades each question
+  once; `evaluation/report.py` measures and renders. The script keeps its arguments.
+- AR-020R2: `retrieval_eval` writes `run.json` beside the rankings (tree, units, filters,
+  tokenizer, window, overlap, questions). `judge_pools` reads it and cuts the same windows; a
+  run from before records is read with the defaults it used.
+- AR-020R3: `evaluation/records.py` reads and writes questions, rankings, judgments and the run
+  record, and `judge.panel` gives a question set's panel grades.
+
 **`main()` does everything:**
 - loads three question sources;
 - applies judgments;
@@ -764,6 +773,16 @@ archive (280 lines).
 ### AR-022: The test suite: a 1,168-line module, no `conftest.py`, repeated setup, untested library code
 
 **Severity:** Medium · **Verified:** By inspection · **Where:** `tests/`
+
+**Status:** Fixed on 2026-10-02 (plan RA-18).
+- AR-022R1: `conftest.py` and `helpers.py`. Since RA-16, the fake is a `FakeChat` in place of
+  `llm.OpenAIChat`.
+- AR-022R2: `test_pipeline.py` is split by concern.
+- AR-022R3: `fiction_tree` is a session fixture.
+- AR-022R4: tests with fakes for the structural and natural question generators, the judge's
+  reply parsing and panel, the run record, the embedder, and the reranker and their caches.
+
+The scripts themselves stay untested; their work is now the library's.
 
 **Structure:**
 - `test_pipeline.py` holds output, CLI, XMI, samples, LLM and ledger tests.

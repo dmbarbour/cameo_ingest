@@ -113,7 +113,8 @@ def build() -> Project:
     p.ask("q08", "trace", "medium", "Which requirement is KOIS-R2 derived from?",
           "Which broader safety need does the valve's closing time come from?", ["r5", "r2"],
           evidence={"r2": "is derived from Leak Shutdown",
-                    "r5": ["Valve Closing Time (KOIS-R2) is derived from this", "Valve Closing Time is derived from this"]})
+                    "r5": ["Valve Closing Time (KOIS-R2) is derived from this",
+                           "Valve Closing Time is derived from this"]})
     p.ask("q09", "trace", "medium", "Which block satisfies KOIS-R3, Frost Protection?",
           "Which component is responsible for keeping blossoms from freezing?", ["frs", "r3"],
           evidence={"frs": "satisfies Frost Protection", "r3": "Frost Shield satisfies this"})

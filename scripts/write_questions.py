@@ -17,6 +17,7 @@ import random
 from pathlib import Path
 
 from cameo_ingest.cli import load_env
+from cameo_ingest.evaluation import records
 from cameo_ingest.evaluation.provider import chat_config
 from cameo_ingest.evaluation.questions import natural, structural
 from cameo_ingest.llm import EnrichmentSession, connect
@@ -38,9 +39,7 @@ def main() -> int:
     llm = EnrichmentSession(cfg, args.out / ".cache", connect(cfg))
     sets = {"structural": structural(args.tree), "natural": natural(args.tree, llm, args.per_project)}
     for name, qs in sets.items():
-        with (args.out / f"{name}.jsonl").open("w", encoding="utf-8") as f:
-            for q in qs:
-                f.write(json.dumps(q, ensure_ascii=False) + "\n")
+        records.write_jsonl(args.out / f"{name}.jsonl", qs)
         print(f"{name}: {len(qs)} questions")
 
     chunks = {}

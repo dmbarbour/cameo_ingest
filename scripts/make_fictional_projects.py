@@ -11,10 +11,10 @@ answers are known by construction, so they need no judging.
 from __future__ import annotations
 
 import argparse
-import json
 from collections import Counter
 from pathlib import Path
 
+from cameo_ingest.evaluation import records
 from cameo_ingest.evaluation.fiction import ACROSS, PROJECTS
 
 
@@ -36,9 +36,7 @@ def main() -> int:
               f"{len(qs)} questions ({', '.join(f'{n} {d}' for d, n in sorted(levels.items()))} facts)")
     if not args.only:
         questions += ACROSS()
-    with (args.dir / "questions.jsonl").open("w", encoding="utf-8") as f:
-        for q in questions:
-            f.write(json.dumps(q, ensure_ascii=False) + "\n")
+    records.write_jsonl(args.dir / "questions.jsonl", questions)
     print(f"{len(questions)} questions in {args.dir / 'questions.jsonl'}")
     return 0
 

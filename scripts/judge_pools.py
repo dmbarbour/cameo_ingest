@@ -5,7 +5,10 @@
         --judges deepseek-ai/DeepSeek-V3.2 Qwen/Qwen3-235B-A22B-Instruct-2507
 
 Pools every question's top 10 from every system (OUT_RETRIEVAL/<set>/rankings.jsonl), and has each
-judge grade each pair once (answers cached in --cache). `--only-disagreements A B` judges only the
+judge grade each pair once (answers cached in --cache). The passages are the windows the run
+ranked, cut again as its record says (<set>/run.json); a run made before records is taken to have
+used the defaults then (chunks.jsonl's texts of TREE, 512 tokens with 64 of overlap) and the
+questions in out/eval/questions. `--only-disagreements A B` judges only the
 pairs that judges A and B graded differently (a tie-breaker). Writes --out (judgments.jsonl, all
 judges so far) and prints, per judge: unreadable replies, agreement with the other judges
 (Cohen's kappa), and two checks against what is known by construction:
@@ -17,15 +20,23 @@ judges so far) and prints, per judge: unreadable replies, agreement with the oth
 from __future__ import annotations
 
 import argparse
-import json
 from collections import Counter
+from dataclasses import replace
 from pathlib import Path
 
 from cameo_ingest.cli import load_env
-from cameo_ingest.evaluation.harness import chunk_units, windowed
+from cameo_ingest.evaluation import records
 from cameo_ingest.evaluation.judge import judge, kappa
 from cameo_ingest.evaluation.provider import chat_config
 from cameo_ingest.llm import EnrichmentSession, connect
+
+
+def run_of(retrieval: Path, s: str, tree: Path) -> records.Run:
+    """How set `s`'s run cut its windows: its record, or the defaults of a run made before records."""
+    if (retrieval / s / records.RUN).is_file():
+        return records.Run.read(retrieval / s)
+    legacy = Path("out/eval/questions") / f"{s}.jsonl"
+    return records.Run(str(tree), str(legacy) if legacy.is_file() else "structural")
 
 
 def main() -> int:
@@ -38,7 +49,6 @@ def main() -> int:
     ap.add_argument("--only-disagreements", nargs=2, metavar=("A", "B"))
     ap.add_argument("--out", type=Path, default=Path("out/eval/judge/judgments.jsonl"))
     ap.add_argument("--cache", type=Path, default=Path("out/eval/judge/.cache"))
-    ap.add_argument("--window-tokenizer", default="intfloat/multilingual-e5-large")
     ap.add_argument("--concurrency", type=int, default=6)
     ap.add_argument("--limit", type=int, help="only this many pairs (a trial)")
     args = ap.parse_args()
@@ -47,27 +57,31 @@ def main() -> int:
 
     pairs: dict[tuple[str, str, str], dict] = {}
     for s in args.sets:
-        for line in (args.retrieval / s / "rankings.jsonl").open(encoding="utf-8"):
-            r = json.loads(line)
+        for r in records.read_jsonl(args.retrieval / s / records.RANKINGS):
             for t in r["top"]:
                 key = (s, r["question"], t["unit"])
                 pairs.setdefault(key, {"set": s, "qid": r["question"], "question": r["text"], "unit": t["unit"],
                                        "known": t["grade"]})
-    windows = windowed(chunk_units(args.tree), args.window_tokenizer)
-    texts = {u.id: u.text for u in windows}
-    project_of_unit = {u.id: u.project for u in windows}
-    project_of_question = {}  # as the question names it
+    windows_of: dict[records.Run, dict] = {}  # windows by how they were cut, shared by sets cut alike
+    text_of: dict[tuple[str, str], str] = {}  # (set, unit) -> the passage
+    project_of_unit: dict[tuple[str, str], str | None] = {}
+    project_of_question: dict[tuple[str, str], str | None] = {}  # (set, question) -> as the question names it
     for s in args.sets:
-        path = Path("out/eval/questions") / f"{s}.jsonl"
-        if path.is_file():
-            for line in path.read_text(encoding="utf-8").splitlines():
-                q = json.loads(line)
-                project_of_question[q["id"]] = q.get("project")
-    todo = [{**p, "text": texts[p["unit"]]} for p in pairs.values()]
+        run = run_of(args.retrieval, s, args.tree)
+        cut = replace(run, questions="")
+        if cut not in windows_of:
+            windows_of[cut] = {u.id: u for u in run.windows()}
+        for (s2, _, unit) in pairs:
+            if s2 == s:
+                text_of[(s, unit)] = windows_of[cut][unit].text
+                project_of_unit[(s, unit)] = windows_of[cut][unit].project
+        for q in records.questions(run.questions, Path(run.tree)):
+            project_of_question[(s, q["id"])] = q.get("project")
+    todo = [{**p, "text": text_of[(p["set"], p["unit"])]} for p in pairs.values()]
     if args.limit:
         todo = todo[:args.limit]
 
-    old = [json.loads(line) for line in args.out.open(encoding="utf-8")] if args.out.is_file() else []
+    old = records.read_jsonl(args.out) if args.out.is_file() else []
     grade_of = {(j["judge"], j["set"], j["qid"], j["unit"]): j["grade"] for j in old}
     if args.only_disagreements:
         a, b = args.only_disagreements
@@ -88,17 +102,14 @@ def main() -> int:
             grade_of[(model, j["set"], j["qid"], j["unit"])] = j["grade"]
         print(f"{model}: judged {len(done):,} ({llm.calls} requests, "
               f"{sum(1 for j in old if j['judge'] == model and j['grade'] is None)} without a grade)", flush=True)
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    with args.out.open("w", encoding="utf-8") as f:
-        for j in old:
-            f.write(json.dumps(j, ensure_ascii=False) + "\n")
+    records.write_jsonl(args.out, old)
 
     judges = sorted({j["judge"] for j in old})
     by_pair: dict[tuple[str, str, str], dict[str, int | None]] = {}
     for j in old:
         by_pair.setdefault((j["set"], j["qid"], j["unit"]), {})[j["judge"]] = j["grade"]
     def question_project(j: dict) -> str | None:
-        return project_of_question.get(j["qid"])
+        return project_of_question.get((j["set"], j["qid"]))
 
     print("\n| judge | judged | unreadable | grades 0/1/2 | known answers graded 2 | other projects credited |")
     print("|---|---|---|---|---|---|")
@@ -107,7 +118,7 @@ def main() -> int:
         counts = Counter(j["grade"] for j in old if j["judge"] == m)
         known = [j["grade"] for j in mine if pairs.get((j["set"], j["qid"], j["unit"]), {}).get("known") == 2]
         other = [j["grade"] for j in mine if question_project(j)
-                 and project_of_unit.get(j["unit"]) not in (None, question_project(j))]
+                 and project_of_unit.get((j["set"], j["unit"])) not in (None, question_project(j))]
         print(f"| {m} | {sum(counts.values()):,} | {counts[None]} | {counts[0]}/{counts[1]}/{counts[2]} "
               f"| {sum(g == 2 for g in known) / max(1, len(known)):.0%} of {len(known)} "
               f"| {sum(g > 0 for g in other) / max(1, len(other)):.1%} of {len(other)} |")
