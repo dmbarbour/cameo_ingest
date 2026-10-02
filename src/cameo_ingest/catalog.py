@@ -38,7 +38,8 @@ SECTION_KINDS = ("element", "requirement", "package", "diagram")
 OUT_OF_SCOPE = {"Comment"}  # documentation, which its owner's record holds
 
 
-def project_catalog(view: ProjectView, sink: ChunkSink) -> Iterator[dict[str, Any]]:
+def project_catalog(view: ProjectView, sink: ChunkSink, root: Path | None = None) -> Iterator[dict[str, Any]]:
+    """The project's records; `root`, the project's directory, to find its SVG sketches."""
     ix = view.ix
     chunks_of: dict[str, list[str]] = defaultdict(list)  # element -> its section chunks, main first
     for c in sink.chunks:
@@ -79,6 +80,15 @@ def project_catalog(view: ProjectView, sink: ChunkSink) -> Iterator[dict[str, An
             d = ix.diagrams[el.id]
             rec: dict[str, Any] = {"type": "diagram", "kind": d.diagram_type or "Diagram",
                                    "owner": ref(d.owner) if d.owner else None, "shapes": len(d.shown)}
+            images = [a for a in view.ann.get(el.id, []) if a.image]
+            for a in images:  # its sketch, and a large diagram's modules (plan KX-05)
+                if a.module is None:
+                    rec["sketch"] = a.image
+                    svg = a.image.removesuffix(".png") + ".svg"
+                    if root is not None and (root / svg).is_file():
+                        rec["svg"] = svg
+                else:
+                    rec.setdefault("modules", []).append(a.image)
         elif el.kind in sem.PACKAGE_KINDS:
             rec = {"type": "package", "kind": el.kind}
         elif rq is not None:
@@ -135,6 +145,7 @@ class ProjectCatalog:
     ids: list[dict[str, Any]] = field(default_factory=list)
     sources: list[dict[str, Any]] = field(default_factory=list)  # [{"path", "metadata"}]
     chunks: dict[str, str] = field(default_factory=dict)  # chunk id -> text, when asked for
+    dir: Path | None = None  # the project's directory in the tree, for its sketches
 
     @property
     def label(self) -> str:
@@ -170,4 +181,4 @@ def tree_catalogs(state: State, out: Path, missing: list[str], progress: Progres
             sources = [{"path": "!".join([s["path"], *json.loads(s["chain"])]), "metadata": json.loads(s["metadata"])}
                        for s in state.sightings(row["content_sha256"]) if s["input_status"] != "missing"]
             texts = {c["id"]: c["text"] for c in _jsonl(d / "index" / "chunks.jsonl")} if chunks else {}
-            yield ProjectCatalog(recs[0], recs[1:], ids, sources, texts)
+            yield ProjectCatalog(recs[0], recs[1:], ids, sources, texts, d)

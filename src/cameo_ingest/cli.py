@@ -194,6 +194,9 @@ def build_parser() -> argparse.ArgumentParser:
     ex.add_argument("--workbook", type=Path, metavar="FILE", help="write the catalog as an Excel workbook (.xlsx)")
     ex.add_argument("--search-page", type=Path, metavar="FILE",
                     help="write the catalog as one self-contained web page (.html) that searches in a browser")
+    ex.add_argument("--sketches", choices=("none", "webp", "svg"), default="none",
+                    help="put the diagrams' sketches in the search page: the PNG sketches as WebP, or the SVG "
+                         "sketches (default: none)")
     q = sub.add_parser("quality", help="measure the quality of LLM enrichment (see docs/plans/llm-quality-*.md)")
     qs = q.add_subparsers(dest="action", required=True, metavar="ACTION")
     qsample = qs.add_parser("sample", parents=[common], help="draw a spot-check set of requests and answers")
@@ -286,9 +289,12 @@ def export_catalog(out: Path, args: argparse.Namespace) -> int:
         if args.search_page:
             missing.clear()
             counts = searchpage.write_search_page(
-                args.search_page, catalog.tree_catalogs(state, out, missing, Progress(), chunks=True), __version__)
+                args.search_page, catalog.tree_catalogs(state, out, missing, Progress(), chunks=True), __version__,
+                args.sketches)
             print(f"wrote {args.search_page} ({args.search_page.stat().st_size / 1e6:.1f} MB): "
-                  f"{counts['items']:,} items from {counts['projects']:,} models")
+                  f"{counts['items']:,} items from {counts['projects']:,} models"
+                  + (f", {counts['sketches']:,} sketches ({counts['sketch bytes'] / 1e6:.1f} MB)"
+                     if counts["sketches"] else ""))
     finally:
         state.close()
     if missing:

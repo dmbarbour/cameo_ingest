@@ -97,3 +97,56 @@ def test_export_names_projects_without_a_catalog(tmp_path, capsys):
     (project_dir(out) / "index" / "catalog.jsonl").unlink()  # as a project made before 0.8.0
     assert main(["export", "-o", str(out), "--workbook", str(tmp_path / "c.xlsx")]) == 0
     assert "drone.mdzip; `run` makes them again" in capsys.readouterr().err
+
+
+def test_svg_sketch_names_its_elements(tmp_path):
+    """The SVG sketch draws each shape with its element's key and full label, escaped (KX-05);
+    `run` writes it beside the PNG, and the catalog names both."""
+    from xml.etree import ElementTree
+
+    from cameo_ingest.diagram_graph import DiagramGraph, Link, Node
+    from cameo_ingest.layout import View
+    from cameo_ingest.model import ModelIndex
+    from cameo_ingest.sketch_svg import render_svg
+
+    g = DiagramGraph()
+    for i, (key, label) in enumerate((("a", 'Tank <A> & "B"'), ("b", "Pump")), 1):
+        node = Node(i, View(f"v{i}", "Class", key, rect=(10 + 200 * (i - 1), 10, 120, 50)), label, 0, shown=label)
+        g.nodes.append(node)
+        g.node_of[f"v{i}"] = node
+    g.links.append(Link(View("l", "Dependency", None, points=[(130, 35), (210, 35)]), g.nodes[0].view,
+                        g.nodes[1].view, True, "", "depends on", [], False))
+    svg = ElementTree.fromstring(render_svg(ModelIndex(), g, "Class Diagram: x"))
+    ns = {"s": "http://www.w3.org/2000/svg"}
+    keyed = svg.findall(".//s:g[@data-k]", ns)
+    assert {k.get("data-k") for k in keyed} == {"a", "b"}
+    assert '[1] Tank <A> & "B"' in [t.text for t in svg.iter("{http://www.w3.org/2000/svg}title")]
+    assert svg.findall(".//s:polyline[@stroke-dasharray]", ns)  # a dependency is dashed
+
+    out = ingest(tmp_path, ("drone.mdzip", make_mdzip()))  # rendering is on by default
+    dia = next(r for r in (json.loads(line) for line in (project_dir(out) / "index" / "catalog.jsonl").open())
+               if r["type"] == "diagram" and r.get("sketch"))
+    assert dia["sketch"].endswith(".png") and dia["svg"] == dia["sketch"][:-4] + ".svg"
+    assert (project_dir(out) / dia["svg"]).read_text().startswith("<svg ")
+
+
+def test_search_page_sketches(tmp_path):
+    """`--sketches` puts each diagram's sketch in the page, as WebP or gzipped SVG, in a block of
+    its own that the diagram's item names."""
+    import base64
+    import gzip
+    import re
+
+    out = ingest(tmp_path, ("drone.mdzip", make_mdzip()))
+    for fmt in ("svg", "webp"):
+        page = tmp_path / f"{fmt}.html"
+        assert main(["export", "-o", str(out), "--search-page", str(page), "--sketches", fmt]) == 0
+        html = page.read_text()
+        found = re.findall(r'<script type="application/octet-stream" data-sketch="([^"]+)" data-format="(\w+)">'
+                           r'([^<]+)</script>', html)
+        assert found and all(f == fmt for _, f, _ in found)
+        raw = base64.b64decode(found[0][2])
+        assert gzip.decompress(raw).startswith(b"<svg ") if fmt == "svg" else raw[:4] == b"RIFF"
+        data = re.search(r'data-items="\d+">([^<]+)</script>', html).group(1)
+        items = json.loads(gzip.decompress(base64.b64decode(data)))["items"]
+        assert {i for it in items for i in it.get("sk", [])} == {i for i, _, _ in found}

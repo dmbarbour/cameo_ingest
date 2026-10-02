@@ -57,5 +57,11 @@ pre.text { white-space: pre-wrap; word-break: break-word; font-family: inherit; 
 .relations { margin: 0; padding-left: 1.2rem; }
 .phrase { color: var(--muted); }
 .generated, .hint { color: var(--muted); font-style: italic; }
+.sketch { overflow: auto; border: 1px solid var(--line); max-height: 70vh; cursor: zoom-in; margin: .3rem 0; }
+.sketch img, .sketch svg { display: block; max-width: 100%; height: auto; }
+.sketch.zoomed { cursor: zoom-out; }
+.sketch.zoomed img, .sketch.zoomed svg { max-width: none; }
+.sketch svg .linked { cursor: pointer; }
+.sketch svg .linked:hover rect, .sketch svg .linked:hover ellipse { stroke: #c0392b; stroke-width: 2; }
 footer { color: var(--muted); font-size: .75rem; padding: .3rem 1rem; border-top: 1px solid var(--line); }
 @media (max-width: 50rem) { main { grid-template-columns: 1fr; } #results { max-height: 40vh; } }

@@ -290,6 +290,42 @@ Relationship records stay in the workbook: the page shows relations on their ite
 
 **Packaging:** the assets ship in the wheel, which a `uv build` and a listing check.
 
+### CP3 in detail
+
+**The records name the sketches.** A diagram record gets:
+- `sketch`: its PNG, from the diagram's image annotation;
+- `modules`: a large diagram's module PNGs;
+- `svg`: its SVG file, once written (below).
+
+**SVG** (`sketch_svg.py`, `render_svg(ix, graph, title)`). It draws the graph that `sketch`
+draws, in diagram units (a `viewBox`, no pixel budget):
+- **Shapes:** rectangles, ellipses and bars, tagged with their legend numbers, and their names
+  shortened to fit by an estimate of text width.
+- **Connections:** lines dashed or solid, arrowheads hollow or open, and the item-flow mid-arrows.
+- **Other marks:** pins as dots, and connector circles with their labels.
+- **In the browser:** each shape is a group with its element's key (`data-k`) and a tooltip with
+  the full label (`<title>`). The page can therefore open a shape's element, and a reader can
+  see a name that was cut.
+- **When it is written:** `run` writes `diagrams/<name>.svg` beside the PNG whenever it draws
+  (`--render`). Text is XML-escaped.
+
+**The page** (`--sketches none|webp|svg`, default `none` until the trial decides):
+- **The data:** one block per diagram, after the projects' blocks.
+  - `webp`: the PNGs (the overview, and a large diagram's modules) re-encoded losslessly at
+    export.
+  - `svg`: each SVG, gzipped.
+- **Decoding:** only when the diagram is opened.
+- **SVG in the page:** it is parsed with `DOMParser` as SVG, never as HTML, and its shapes
+  open their elements when clicked.
+
+**The measure,** on the samples, for each option:
+- the page's size, and the export's time;
+- the time to show a sketch;
+- side-by-side screenshots of a small diagram, a large one, an activity and an IBD, for the
+  maintainer to choose.
+
+**Version:** 0.8.1 (new per-project files: the SVGs, and the records' sketch fields).
+
 **Checks:**
 - **The workbook** (CP1), read in tests with `zipfile`:
   - its sheets and their row counts;

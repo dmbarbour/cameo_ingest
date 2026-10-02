@@ -10,7 +10,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from . import semantics as sem
-from . import sketch
+from . import sketch, sketch_svg
 from .annotations import Annotation
 from .archive import Project, first_tag
 from .config import IMAGE_PIXELS, MODULES
@@ -85,6 +85,11 @@ def load_layouts(project: Project, ix: ModelIndex, progress: Progress = QUIET) -
     return out
 
 
+def _svg(ix: ModelIndex, graph, title: str) -> bytes | None:
+    svg = sketch_svg.render_svg(ix, graph, title)
+    return svg.encode("utf-8") if svg else None
+
+
 def _draw(path: Path, draw: Callable[[], bytes | None]) -> bool:
     """Write a sketch unless an interrupted attempt already did (a sketch on disk is always
     complete); False when there is nothing to draw."""
@@ -132,6 +137,7 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: Enri
                     drawn = _draw(root / rel, partial(sketch.render_png, ix, graph, title, pixels=image_pixels))
                 if not drawn:
                     continue
+                _draw(root / (rel.removesuffix(".png") + ".svg"), partial(_svg, ix, graph, title))  # for people (KX)
                 tr = writer.view.trace(el).with_(entry=d.streams[0] if d.streams else el.entry, line=None,
                                             derivation=Derivation(method="rendered", inputs=tuple(d.streams)))
                 label = f"Diagram sketch with its modules outlined ({SKETCH})" if part else f"Diagram sketch ({SKETCH})"

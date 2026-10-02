@@ -108,7 +108,7 @@ class TableWriter:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
         p = self.root / "index/catalog.jsonl"  # what the exports search (plan KX-02)
         with p.open("w", encoding="utf-8") as f:
-            for rec in catalog.project_catalog(self.view, self.sink):
+            for rec in catalog.project_catalog(self.view, self.sink, self.root):
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
         p = self.root / "index/elements.jsonl"
         p.parent.mkdir(parents=True, exist_ok=True)
