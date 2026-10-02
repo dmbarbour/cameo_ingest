@@ -69,14 +69,32 @@ def md_plain(text: str) -> str:
     return _MD_ESCAPED.sub(r"\1", text)
 
 
-_BRACKET_ID = re.compile(r"^\s*\[([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+)\]\s*")  # "[REQ-1-OAD-0468] ..." (DOORS)
+# The one pattern for a Markdown link (AR-023): its label may hold the brackets md_inline escapes.
+LINK = re.compile(r"\[((?:[^\[\]\\]|\\.)*)\]\([^)]*\)")
+TRACE = re.compile(r"<sub>trace: `[^`]*`</sub>")
+
+
+def strip_links(text: str) -> str:
+    """Markdown links reduced to their labels."""
+    return LINK.sub(r"\1", text)
+
+
+def flat(text: str) -> str:
+    """Text for matching phrases in: lower case, links reduced to their labels, without trace
+    lines, Markdown's code and bold marks or escapes, spaces collapsed, so that
+    `**headLossLimit** = `2.4`` holds "headLossLimit = 2.4"."""
+    text = strip_links(TRACE.sub("", text))
+    return " ".join(re.sub(r"[`*\\]", "", text.lower()).split())
+
+
+DOORS_ID = re.compile(r"^\s*\[([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+)\]\s*")  # "[REQ-1-OAD-0468] ...": a DOORS id starting a text
 
 
 def requirement_title(name: str | None, rid: str | None, text: str | None) -> str:
     """A requirement's readable title: its name with its id; or, unnamed (as DOORS imports are),
     its id and the start of its text."""
     text = one_line(text or "")
-    m = _BRACKET_ID.match(text)
+    m = DOORS_ID.match(text)
     if m:  # the id in the text is the one people use; the Id tag is often a database number
         rid, text = m.group(1), text[m.end():]
     if name:

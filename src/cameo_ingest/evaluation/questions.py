@@ -21,12 +21,13 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from ..llm import LLM
+from ..plain import plain
 from ..prompts import Slot, Template
+from ..text import DOORS_ID
 
 csv.field_size_limit(1 << 30)
 # The synthetic and fictional projects' element ids start so: they have questions of their own.
 FICTIONAL = ("_kois_", "_abk_", "_rwt_", "_fvx_", "_pct_", "_hal_", "_aqu_")
-_BRACKET_ID = re.compile(r"^\s*\[([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+)\]")  # "[REQ-1-OAD-0468] ..." in DOORS text
 
 
 def _rows(project: Path, table: str) -> list[dict]:
@@ -74,7 +75,7 @@ def _project_questions(name: str, project: Path, per_project: int, seed: int) ->
     # Requirements by id: a bracketed id at the start of the text (DOORS), or else the Id tag.
     by_id = []
     for r in reqs:
-        m = _BRACKET_ID.match(r["text"] or "")
+        m = DOORS_ID.match(r["text"] or "")
         rid = m.group(1) if m else r["req_id"]
         if rid and len(r["text"] or "") > 40 and re.search(r"[A-Za-z]", rid):
             by_id.append((rid, r["id"]))
@@ -133,13 +134,6 @@ QUESTION_WRITER = Template(
 )
 
 
-def _plain(text: str) -> str:
-    """Markdown links reduced to their labels, and the trace line dropped: what the question
-    writer reads."""
-    text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)
-    return re.sub(r"<sub>trace: `[^`]*`</sub>", "", text).strip()
-
-
 def sample_chunks(tree: Path, per_project: int = 6, seed: int = 1, skip_prefix: tuple[str, ...] = FICTIONAL,
                   ) -> list[dict]:
     """Chunks to write questions from: up to `per_project` from each project, of the kinds that
@@ -166,7 +160,7 @@ def natural(tree: Path, llm: LLM, per_project: int = 6, seed: int = 1, concurren
     chunks = sample_chunks(tree, per_project, seed)
 
     def ask(c: dict) -> dict | None:
-        res = llm.ask(QUESTION_WRITER, {"KIND": c["metadata"]["kind"], "PASSAGE": _plain(c["text"])[:6000]},
+        res = llm.ask(QUESTION_WRITER, {"KIND": c["metadata"]["kind"], "PASSAGE": plain(c["text"])[:6000]},
                       project=c["metadata"]["content"], inputs=(c["id"],))
         if res is None:
             return None
@@ -176,7 +170,7 @@ def natural(tree: Path, llm: LLM, per_project: int = 6, seed: int = 1, concurren
         except json.JSONDecodeError:
             return None
         question, quote = (reply.get("question") or "").strip(), (reply.get("quote") or "").strip()
-        if not question or len(quote) < 8 or " ".join(quote.split()) not in " ".join(_plain(c["text"]).split()):
+        if not question or len(quote) < 8 or " ".join(quote.split()) not in " ".join(plain(c["text"]).split()):
             return None
         meta = c["metadata"]
         return {"id": f"llm:{c['id']}", "rule": "source", "template": "llm", "category": meta["kind"], "style": "natural",

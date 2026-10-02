@@ -306,8 +306,8 @@ def build() -> Project:
           evidence="beside the primary school")
     p.ask("q13", "multi-hop", "hard", "Which stakeholder need does FVX-SYS-011, Obstacle Detection, derive from?",
           "Whose concern led to checking for trapped vehicles at the crossings?", ["s11", "sn02", "sn05"], ["u111"],
-          evidence={"s11": "is derived from Stop Road Users", "sn02": "Obstacle Detection is derived from this",
-                    "sn05": "Obstacle Detection is derived from this"})
+          evidence={"s11": "is derived from Stop Road Users", "sn02": "Obstacle Detection (FVX-SYS-011) is derived from this",
+                    "sn05": "Obstacle Detection (FVX-SYS-011) is derived from this"})
     p.ask("q14", "lookup", "medium", "How is the required warning time calculated?",
           "How do engineers decide where the strike-in point goes?", ["wtcalc"], ["s04", "s05"],
           evidence="strikeInDistance / lineSpeed + 5 s margin")

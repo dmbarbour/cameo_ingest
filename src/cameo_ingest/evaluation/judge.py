@@ -12,8 +12,8 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 
 from ..llm import LLM
+from ..plain import plain
 from ..prompts import Slot, Template
-from .questions import _plain
 
 JUDGE = Template(
     id="eval-relevance-judge",
@@ -46,7 +46,7 @@ def judge(llm: LLM, pairs: list[dict], concurrency: int = 16) -> list[dict]:
     can't be read) and "reason"."""
 
     def one(p: dict) -> dict:
-        res = llm.ask(JUDGE, {"QUESTION": p["question"], "PASSAGE": _plain(p["text"])[:4000]},
+        res = llm.ask(JUDGE, {"QUESTION": p["question"], "PASSAGE": plain(p["text"])[:4000]},
                       project="study:retrieval-judging", inputs=(p.get("unit", ""),))
         grade, reason = None, ""
         if res is not None:

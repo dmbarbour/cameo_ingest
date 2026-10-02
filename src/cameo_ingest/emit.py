@@ -34,10 +34,9 @@ from .archive import Project
 from .layout import Layout
 from .ledger import LedgerWriter
 from .model import Element, ModelIndex
-from .provenance import TOOL, ContentInfo, Trace, sha256_text
-from .text import front_matter, md_inline, one_line, plural, requirement_title, shown_value, slug, tidy
+from .provenance import TOOL, ContentInfo, Trace, generated_by, sha256_text
+from .text import front_matter, md_inline, one_line, plural, shown_value, slug, tidy
 
-DIAGRAM_INFO = "DiagramInfo"  # MagicDraw_Profile stereotype holding a diagram's author and dates
 SKIP_MEMBER_ROLES = {
     "ownedComment", "lowerValue", "upperValue", "defaultValue", "specification",
     "generalization", "interfaceRealization", "ownedDiagram",
@@ -177,8 +176,10 @@ class ProjectWriter:
         """Links from `from_file` to the pages of elements that have one, for diagram lists."""
         return dg.Refs(lambda e: _relpath(self.file_of[e], from_file) if self.file_of.get(e) else None)
 
-    def link(self, target_id: str, from_file: str) -> str:
-        label = md_inline(self.ix.label(target_id))
+    def link(self, target_id: str, from_file: str, text: str | None = None) -> str:
+        """A link to the element's page, labelled with `text` or the element's label; the label
+        alone when the element has no page."""
+        label = md_inline(text if text is not None else sem.label(self.ix, target_id))
         dest = self.file_of.get(target_id)
         if not dest:
             return label
@@ -227,13 +228,7 @@ class ProjectWriter:
     def heading(self, el: Element, kind_word: str | None = None) -> str:
         """The plain style's heading: what the element is, its readable name, where it is."""
         ix = self.ix
-        st = [s for s in ix.stereotype_names(el.id) if s != DIAGRAM_INFO]
-        if sem.is_requirement(ix, el):
-            fields = sem.requirement_fields(ix, el)
-            kind_word, name = "Requirement", requirement_title(el.name, fields.get("Id"), fields.get("Text"))
-        else:
-            name = el.name or f"(unnamed {el.kind})"
-        kind_word = kind_word or (st[0] if st else el.kind)
+        name, kind_word = sem.label(ix, el.id), kind_word or sem.kind_word(ix, el)
         owner = ix.qualified_name(el.owner) if el.owner else ""  # not the element's: an unnamed one's ends with its owner
         return f"{kind_word} {one_line(name)} {pl.where(owner, self.content.label)}"
 
@@ -282,18 +277,19 @@ class ProjectWriter:
         chunks of extracted text keep a pure `extracted` provenance. `trace=False` omits the
         trace line, whose locator depends on where the source was found, not on what it says."""
         ix = self.ix
-        st = ix.stereotype_names(el.id)
-        st_txt = " ".join(f"«{s}»" for s in st)
-        name = el.name or (ix.label(el.id) if sem.is_requirement(ix, el) else "")  # an unnamed requirement: id, text
-        title = f"{st_txt + ' ' if st_txt else ''}{md_inline(name) if name else '(unnamed)'}"
+        st_txt = " ".join(f"«{s}»" for s in ix.stereotype_names(el.id))
+        title = f"{st_txt + ' ' if st_txt else ''}{md_inline(sem.label(ix, el.id))}"
         lines = [f'{"#" * level} {title}', ""]
         lines.append(f"- **Kind:** {el.kind}")
         qn = ix.qualified_name(el.id)
         if qn:
             lines.append(f"- **Qualified name:** `{qn}`")
         req = sem.requirement_fields(ix, el) if sem.is_requirement(ix, el) else {}
-        if "Id" in req:
-            lines.append(f"- **Requirement ID:** {req['Id']}")
+        rq = sem.requirement(ix, el)
+        if rq is not None and rq.id:  # the id people use, and a database number apart (AR-010R3)
+            lines.append(f"- **Requirement ID:** {rq.id}")
+            if rq.db_id:
+                lines.append(f"- **Database number:** {rq.db_id}")
         for k in ("isAbstract", "visibility", "isEncapsulated", "isActive"):
             if k in el.attrs and el.attrs[k] not in ("false", "public"):
                 lines.append(f"- **{k}:** {el.attrs[k]}")
@@ -334,11 +330,12 @@ class ProjectWriter:
         if rels:
             lines.append("**Relationships:**")
             for r in rels:
-                conveyed = [md_inline(ix.label(t)) for t in sem.refs(ix.elements[r.id], "conveyed")]
+                conveyed = [md_inline(sem.label(ix, t)) for t in sem.refs(ix.elements[r.id], "conveyed")]
                 extra = f" (conveys {', '.join(conveyed)})" if conveyed else ""
                 # A dependency reads with a verb, so that its direction is not left to an arrow
                 # (FU-021, as FU-013 for diagrams): "is derived from [Y]", "[X] satisfies this".
-                verb = dg.VERBS.get(r.kind.lower()) or dg.VERBS.get(r.metaclass.lower())
+                w = sem.wording(r.kind, r.metaclass)
+                verb = w.forward if w else None
                 if r.source == el.id:
                     shown = f"{verb} {self.link(r.target, from_file)}" if verb else f"→ {self.link(r.target, from_file)}"
                 else:
@@ -362,8 +359,7 @@ class ProjectWriter:
             if a.trace.derivation.method != "llm" or not a.text or a.module is not None or a.parts is not None:
                 continue
             what = f"{el.kind} {self.ix.qualified_name(el.id)}"
-            text = (f"{a.label} of {what} (generated by {a.trace.derivation.model}; not part of the source "
-                    f"model)\n\n{a.text}")
+            text = f"{a.label} of {what} ({generated_by(a.trace.derivation)})\n\n{a.text}"
             self.chunk(kind=f"generated:{a.label.lower().replace(' ', '_')}", title=f"{a.label}: {what}",
                        text=text, file=file, el=el, trace=a.trace, salt=str(i))
 
@@ -372,9 +368,7 @@ class ProjectWriter:
         if a.image:
             out += [f"![{a.label}]({_relpath(a.image, from_file)})", ""]
         if a.text:
-            d = a.trace.derivation
-            who = f"generated by {d.model}" if d.method == "llm" else d.method
-            out += [f"**{a.label}** _({who}; not part of the source model)_:", "", tidy(a.text), ""]
+            out += [f"**{a.label}** _({generated_by(a.trace.derivation)})_:", "", tidy(a.text), ""]
         return out
 
     def tagged_values(self, el: Element) -> list[tuple[str, str, str]]:
@@ -383,7 +377,7 @@ class ProjectWriter:
             for k, vals in app.tags.items():
                 if k in ("Id", "Text") and sem.is_requirement(self.ix, el):
                     continue
-                shown = ", ".join(self.ix.label(v) if v in self.ix.elements else v.strip() for v in vals if v.strip())
+                shown = ", ".join(sem.label(self.ix, v) if v in self.ix.elements else v.strip() for v in vals if v.strip())
                 if shown:
                     out.append((app.name, k, shown_value(shown)))
         return out
@@ -421,11 +415,11 @@ class ProjectWriter:
             if c.kind == "Slot":
                 feat = sem.refs(c, "definingFeature")
                 vals = [sem.value_text(ix, v) for v in sem.children(ix, c, "value")]
-                desc = f"{indent}- slot {md_inline(ix.label(feat[0])) if feat else '?'} = {', '.join(v or '' for v in vals)}"
+                desc = f"{indent}- slot {md_inline(sem.label(ix, feat[0])) if feat else '?'} = {', '.join(v or '' for v in vals)}"
             if c.kind in sem.RELATIONSHIP_KINDS:
                 r = self.rel_by_id.get(c.id)
                 if r:
-                    desc += f": {md_inline(ix.label(r.source))} → {md_inline(ix.label(r.target))}"
+                    desc += f": {md_inline(sem.label(ix, r.source))} → {md_inline(sem.label(ix, r.target))}"
                 flow = sem.flow_label(ix, c)  # a transition's trigger and guard, a flow's guard
                 if flow:
                     desc += f" — {md_inline(flow)}"
@@ -505,9 +499,9 @@ class ProjectWriter:
             lines += self.annotation_md(a, rel)
             if a.trace.derivation.method != "llm" or not a.text:
                 continue
-            names = "; ".join(ix.label(e) for e in ids[:25]) + ("; ..." if len(ids) > 25 else "")
-            text = (f"{a.label} of {what}, {title[0].lower() + title[1:]}, covering {names} (generated by "
-                    f"{a.trace.derivation.model}; not part of the source model)\n\n{a.text}")
+            names = "; ".join(sem.label(ix, e) for e in ids[:25]) + ("; ..." if len(ids) > 25 else "")
+            text = (f"{a.label} of {what}, {title[0].lower() + title[1:]}, covering {names} "
+                    f"({generated_by(a.trace.derivation)})\n\n{a.text}")
             where = {"number": first, "last": last, "of": len(parts), "anchor": f"{rel}#{anchor}", "elements": ids}
             self.chunk(kind="generated:module_summary", title=f"{title}: {what}", text=text, file=rel, el=pkg,
                        trace=a.trace, salt=anchor, extra={"part": where})
@@ -538,7 +532,7 @@ class ProjectWriter:
         if d.owner:
             lines.append(f"- **Owner / context:** {self.link(d.owner, rel)}")
         lines.append(f"- **Qualified name:** `{qn}`")
-        for app in ix.applications(dia_id, DIAGRAM_INFO):  # author and dates
+        for app in ix.applications(dia_id, sem.DIAGRAM_INFO):  # author and dates
             for k, vals in app.tags.items():
                 lines.append(f"- **{k.replace('_', ' ')}:** {', '.join(vals)}")
         lines.append("")
@@ -627,8 +621,8 @@ class ProjectWriter:
                 if a.trace.derivation.method != "llm" or not a.text:
                     continue
                 names = "; ".join(n.label for n in shapes[:25]) + ("; ..." if len(shapes) > 25 else "")
-                text = (f"{a.label} of {what}, {title.lower()}, showing {names} (generated by "
-                        f"{a.trace.derivation.model}; not part of the source model)\n\n{a.text}")
+                text = (f"{a.label} of {what}, {title.lower()}, showing {names} "
+                        f"({generated_by(a.trace.derivation)})\n\n{a.text}")
                 self.chunk(kind="generated:module_description", title=f"{title}: {what}", text=text, file=rel,
                            el=el, trace=a.trace, salt=f"M{m.num}", extra={"module": where})
                 lines += [f"<sub>trace: `{a.trace.locator()}`</sub>", ""]
@@ -639,7 +633,7 @@ class ProjectWriter:
         hold the configuration (scope, row types, columns)."""
         out = []
         for app in self.ix.applications(el.id):
-            if app.name == DIAGRAM_INFO:
+            if app.name == sem.DIAGRAM_INFO:
                 continue
             for k, vals in app.tags.items():
                 shown = [self.ix.qualified_name(v) or v if v in self.ix.elements else shown_value(v) for v in vals]

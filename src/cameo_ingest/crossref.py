@@ -28,16 +28,14 @@ from pathlib import Path
 from typing import Any
 
 from . import plain as pl
+from . import semantics as sem
 from .provenance import TOOL, ContentInfo, chunk_ref, sha256_text, short_id
-from .text import one_line, requirement_title
+from .text import DOORS_ID, one_line, requirement_title
 
 csv.field_size_limit(1 << 30)
 ID = re.compile(r"(?<![\w-])[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+(?![\w-])")  # letters first, a hyphen, and a digit somewhere
-_BRACKET_ID = re.compile(r"^\s*\[([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+)\]")
 SNIPPET = 90  # characters of context either side of a mention
 NOT_IDS = re.compile(r"^(UTF-\d+|UCS-\d+|US-ASCII|ISO-8859-\d+|WINDOWS-\d+|X-[A-Z0-9-]+)$")  # encodings and such
-VERBS = {"satisfy": "satisfies", "verify": "verifies", "refine": "refines", "derivereqt": "is derived from",
-         "trace": "traces to", "allocate": "is allocated to", "copy": "copies", "dependency": "depends on"}
 FILE = "CROSSREF.md"
 
 
@@ -113,7 +111,7 @@ def places(project_dir: Path, content: ContentInfo) -> dict[str, list[Place]]:
 
     req_id: dict[str, str] = {}  # requirement element -> its id
     for r in _rows(project_dir, "requirements"):
-        m = _BRACKET_ID.match(r["text"] or "")
+        m = DOORS_ID.match(r["text"] or "")
         rid = m.group(1) if m else (r["req_id"] or "")
         what = "Requirement " + requirement_title(r["name"] or None, r["req_id"] or None, r["text"])
         if rid and _ids(rid):
@@ -123,7 +121,8 @@ def places(project_dir: Path, content: ContentInfo) -> dict[str, list[Place]]:
         for term in _ids(r["text"]) - {rid}:
             add(term, r["id"], what, "in its text", r["text"], r["trace"])
     for r in _rows(project_dir, "relationships"):  # the other end of a relationship with a requirement
-        verb = VERBS.get(r["kind"].lower(), r["kind"].lower())
+        w = sem.wording(r["kind"])
+        verb = w.forward if w else r["kind"].lower()
         for end, other, phrase in ((r["target_id"], r["source_id"], f"{verb} it"),
                                    (r["source_id"], r["target_id"], f"it {verb} this")):
             e = elements.get(other)
@@ -250,9 +249,7 @@ def threads(project_dir: Path, content: ContentInfo, refs: bool = False) -> list
             children[t].append(s)
             parents[s].append(t)
         elif t in reqs and kind in ("satisfy", "verify", "refine", "trace", "allocate") and s in elements:
-            ends[t].append((VERBS[kind].replace("satisfies", "satisfied by").replace("verifies", "verified by")
-                            .replace("refines", "refined by").replace("traces to", "traced from")
-                            .replace("is allocated to", "allocated from"), s))
+            ends[t].append((sem.RELATIONS[kind].inverse, s))
         locators[r["id"]] = r["trace"]
 
     def title(rid: str) -> str:

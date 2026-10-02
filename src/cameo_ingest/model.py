@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .text import requirement_title
-
 
 @dataclass
 class Element:
@@ -100,16 +98,9 @@ class ModelIndex:
         return [a for a in apps if name is None or a.name == name]
 
     def label(self, id_: str) -> str:
-        """Short human label for an element reference."""
+        """A generic label: the name, or "(unnamed Kind)", or a reference's last part. How an
+        element reads on pages, in chunks and in diagrams is `semantics.label` (AR-010)."""
         el = self.elements.get(id_)
         if el is None:
             return id_.rsplit("#", 1)[-1] if "#" in id_ else id_
-        if el.name:
-            return el.name
-        for app in self.applications(id_):  # an unnamed requirement (DOORS imports): its id and text
-            rid, text = (app.tags.get("Id") or app.tags.get("id") or [None])[0], (
-                app.tags.get("Text") or app.tags.get("text") or [None])[0]
-            if rid or text:
-                return requirement_title(None, rid, text)
-        # Unnamed relationships and literals: describe by type.
-        return f"({el.kind})"
+        return el.name or f"(unnamed {el.kind})"

@@ -62,6 +62,10 @@ def test_fiction_renders_what_cameo_models_hold(fiction_tree):
     assert "— \\[residual below 0.8 mg/L\\]" in pages
     assert "Verify: verifies [RWT-REG-002: The works shall" in pages
     assert "(Class)" not in pages
+    # A DOORS import's id once: the id in its text, and the Id tag as a database number (AR-010R3).
+    assert "- **Requirement ID:** RWT-REG-001\n- **Database number:** 16001" in pages
+    ledger = (project_of(fiction_tree, PROJECTS["rwt"]()) / "LEDGER.md").read_text()
+    assert "- [RWT-REG-001](" in ledger and "(database number: 16001;" in ledger and "**16001**" not in ledger
     chunk = next(c for c in chunks_of(fiction_tree) if c["metadata"].get("element_id") == "_fvx_audio_b"
                  and c["metadata"]["kind"] == "element")
     assert "Notes:\n- Willow Lane: under the noise agreement" in chunk["text"]

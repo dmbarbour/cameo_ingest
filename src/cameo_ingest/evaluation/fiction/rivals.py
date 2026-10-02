@@ -172,11 +172,13 @@ def _satisfies(block: str, req: str) -> list:
             f"satisfied by: {block}", f"{block} → {req}"]
 
 
-def _derives(req: str, rid: str, source: str, root: str) -> list:
-    """`req` (id `rid`) is derived from `source`; `root` is how a thread from the source names it."""
-    return [f"{req} is derived from this", f"Requirement {req}, is derived from it", f"{req} → {source}",
-            [f"{req} ({rid})", f"is derived from {source}"], [f"{rid} {req}", f"derived from: {source}"],
-            [root, f"{req} ({rid})"]]
+def _derives(req: str, rid: str, source: str, thread: str) -> list:
+    """`req` (id `rid`) is derived from `source`. A thread says so by nesting alone, so `thread`
+    is what a thread holding both says besides: its heading ("what derives from X"), or the
+    source's line when the thread starts above it."""
+    title = f"{req} ({rid})"
+    return [f"{title} is derived from this", f"Requirement {req}, is derived from it", f"{title} → {source}",
+            [title, f"is derived from {source}"], [title, f"derived from: {source}"], [thread, title]]
 
 
 def within() -> list[dict]:
@@ -196,12 +198,12 @@ def within() -> list[dict]:
         ("w02", "Which requirements derive from RWT-REG-002 in the first Riverbend proposal, and what satisfies them?",
          "What follows from the virus kill requirement in the first Riverbend design, and which equipment meets it?",
          rwt,
-         [(_derives("UV Dose", "RWT-PRF-04", "RWT-REG-002", "RWT-REG-002: The works"), ["_rwt_prf04", "_rwt_reg002"]),
+         [(_derives("UV Dose", "RWT-PRF-04", "RWT-REG-002", "what derives from RWT-REG-002"), ["_rwt_prf04", "_rwt_reg002"]),
           (_satisfies("UV Reactor", "UV Dose"), ["_rwt_uv", "_rwt_prf04"])]),
         ("w03", "What derives from RWT-REG-001 in Halvorsen's model, and how is it verified?",
          "How does Halvorsen turn the turbidity limit into a check it runs?", hal,
          [(_derives("Membrane Integrity", "HAL-SYS-020", "Treated Water Turbidity",
-                    "Treated Water Turbidity (RWT-REG-001)"), ["_hal_h020", "_hal_c001"]),
+                    "what derives from Treated Water Turbidity (RWT-REG-001)"), ["_hal_h020", "_hal_c001"]),
           (_verifies("Membrane Integrity Test", "Membrane Integrity"), ["_hal_mit", "_hal_h020"])]),
         ("w04", "Which requirements derive from FVX-SYS-003, Barriers, and what satisfies FVX-SYS-003?",
          "What more detailed requirements come from the level crossing barriers, and what provides the barriers?",

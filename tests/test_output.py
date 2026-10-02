@@ -58,7 +58,7 @@ def test_mdzip_end_to_end(tmp_path):
     from cameo_ingest.pipeline import parse_project
 
     ix = parse_project(next(discover(make_mdzip(), "drone.mdzip")))
-    assert ix.label("s1") == "(Abstraction)"  # not an HTML-like "<Abstraction>" (BASE-009R1)
+    assert ix.label("s1") == "(unnamed Abstraction)"  # not an HTML-like "<Abstraction>" (BASE-009R1)
 
 
 def test_provenance_everywhere(tmp_path):
@@ -200,7 +200,7 @@ def test_ledger(tmp_path):
     out = run(tmp_path, "drone.mdzip", make_mdzip())
     proj = project_dir(out)
     ledger = (proj / "LEDGER.md").read_text()
-    assert "**R-1**" in ledger and "The drone shall fly 30 min." in ledger
+    assert "[Endurance (R-1)](" in ledger and "The drone shall fly 30 min." in ledger  # the id once (AR-010R3)
     assert "satisfied by: Battery" in ledger and "refined by: Drone" in ledger
     assert "Drone BDD" in ledger and "SysML Block Definition Diagram" in ledger
     assert f"by-sha256/{proj.name}/LEDGER.md" in (out / "INDEX.md").read_text()

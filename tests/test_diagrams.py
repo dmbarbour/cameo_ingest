@@ -105,15 +105,19 @@ def test_diagram_directions_item_flows_and_labels(tmp_path):
 
     from cameo_ingest import diagrams as dg
     from cameo_ingest.archive import discover
-    from cameo_ingest.diagrams import element_label
+    from cameo_ingest.diagrams import shape_label
     from cameo_ingest.layout import View
     from cameo_ingest.pipeline import parse_project
 
     ix = parse_project(next(discover(make_mdzip(), "drone.mdzip")))
     ix.elements["a1"].name = None  # an unnamed part reads as its type, not ": Battery"
+    def element_label(ix, v):
+        return shape_label(ix, v).full()
+
     assert element_label(ix, View("v", "Part", "a1")) == "Battery"
     assert element_label(ix, View("v", "Diagram", "d1")) == "Drone BDD"  # «DiagramInfo» is not shown
-    assert dg._shown_name(ix, View("v", "Part", "a1")) == "Battery"  # drawn in the sketch too (FU-018)
+    assert shape_label(ix, View("v", "Part", "a1")).shown() == "Battery"  # drawn in the sketch too (FU-018)
+    assert element_label(ix, View("v", "InitialNode", el_id := "a1-initial")) == el_id  # not in the index
     # Unnamed elements that say what they are otherwise (FU-024).
     from cameo_ingest.model import Element
 

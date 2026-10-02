@@ -30,10 +30,10 @@ from typing import Any
 
 from . import crossref
 from . import plain as pl
-from .ledger import _MD_LINK, MAX_CHARS, MAX_ROWS
+from .ledger import MAX_CHARS, MAX_ROWS
 from .provenance import TOOL, ContentInfo, chunk_ref, sha256_bytes, sha256_text, short_id
 from .state import State
-from .text import front_matter, md_inline, md_plain
+from .text import front_matter, md_inline
 
 PROJECTS = "by-sha256"
 INDEX = "INDEX.md"
@@ -205,7 +205,7 @@ def rag_meta(chunk: dict[str, Any], file: str, project: RagProject | None) -> di
     d = prov.get("derivation") or {}
     page = m.get("file")
     out: dict[str, Any] = {
-        "file": file, "title": md_plain(chunk["text"].split("\n", 1)[0].lstrip("# ")), "chunk_id": chunk["id"],
+        "file": file, "title": pl.plain(chunk["text"].split("\n", 1)[0].lstrip("# ")), "chunk_id": chunk["id"],
         "kind": m.get("kind"), "project": project.name if project else None, "project_token": m.get("content"),
         "source_id": project.id if project else None,
         "source_file": project.files[0] if project else None, "source_files": project.files if project else None,
@@ -287,7 +287,7 @@ def _projects_ledger(index_rows: list[tuple[str, str]]) -> list[dict[str, Any]]:
     limit = min(MAX_CHARS, pl.BUDGET - pl.tokens("Projects ledger (part 99 of 99): the Cameo projects in this "
                                                  "output tree, 9999 in all.") - 4)  # in estimated tokens
     for token, row in index_rows:
-        plain = md_plain(_MD_LINK.sub(r"\1", row))
+        plain = pl.plain(row)
         n = pl.tokens(plain) + 1
         if parts[-1] and (len(parts[-1]) >= MAX_ROWS or size + n > limit):
             parts.append([])

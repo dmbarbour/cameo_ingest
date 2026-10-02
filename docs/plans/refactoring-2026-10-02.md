@@ -54,8 +54,9 @@ difference is explained in its status.
 
 **LLM output** (from CP1, RA-20): a copy of the samples' LLM store answers every current
 prompt, and a reference tree is built replaying from it. A replay miss fails the build, which
-is how a checkpoint shows it left the prompts alone; where it changes them on purpose (CP2's
-labels, CP4's inputs), the misses are asked live, once, into the same store.
+is how a checkpoint shows it left the prompts alone. CP2 (labels) and CP4 (inputs) change
+prompts on purpose; CP2 is checked without the LLM, and CP4's one live run asks every changed
+prompt, once, into the same store.
 
 **Retrieval** (from CP1, RA-19): a checkpoint that changes chunk text is measured on the 210
 fictional questions, on the tree as `rag/` presents it: BM25, e5-large and their hybrid,
@@ -121,10 +122,10 @@ LLM and retrieval references this one builds.
 
 | Step | What | Status |
 |---|---|---|
-| RA-18a | **`tests/conftest.py` and `tests/helpers.py`** (AR-022R1). Fixtures in `conftest.py`: `isolated_env` (autouse, every module: today it covers `test_pipeline.py` only), `fake_openai` with `FakeOpenAI`. Helpers in `helpers.py`, imported by tests: `ingest(tmp_path, *sources, args=(), name=...)` (one input or several; flags passed, not hard-coded), `tree()`, `project_dir()`, `provenance()`, `check_invariants()`. `test_llm_live.py` imports from them instead of from `test_pipeline`. | |
-| RA-18b | **Split `test_pipeline.py` by concern** (AR-022R2), moving tests unchanged: `test_output.py` (pages, chunks, provenance, `rag/`, switches, the ledger, reproducibility, `treediff`), `test_diagrams.py` (the diagram tests, with `test_modules.py`'s), `test_xmi.py` (parsing, archives, bundles, budgets), `test_cli.py` (tree rules, destination, status and prune, interrupts, progress, options, preflight), `test_llm.py` (enrichment, templates, the store, replay, budget, breaker, concurrency, quality), `test_samples.py` (the samples, and the slow bundle test), `test_plain.py` (`test_plain_chunk_text`, misfiled in the evaluation tests). The count of tests stays the same. | |
-| RA-18c | **The fiction once per session** (AR-022R3): a session fixture ingests the six fictional projects, in their folders, into one tree; the answer-key, rendering and across-models tests read it. | |
-| RA-19 | **Retrieval on a tree as `rag/` presents it**: `harness.rag_units(tree)` reads `rag/text` with `rag/meta` (element, kind, chunk id), and `retrieval_eval.py --rag` uses it, in place of the one-off scripts that built the `corpus-*` directories. A test on a small tree. | |
+| RA-18a | **`tests/conftest.py` and `tests/helpers.py`** (AR-022R1). Fixtures in `conftest.py`: `isolated_env` (autouse, every module: today it covers `test_pipeline.py` only), `fake_openai` with `FakeOpenAI`. Helpers in `helpers.py`, imported by tests: `ingest(tmp_path, *sources, args=(), name=...)` (one input or several; flags passed, not hard-coded), `tree()`, `project_dir()`, `provenance()`, `check_invariants()`. `test_llm_live.py` imports from them instead of from `test_pipeline`. || Done: `conftest.py` (with live LLM tests exempt from the isolated environment) and `helpers.py` (`ingest()`, with `run()` built on it). The existing tests keep their own setup; new ones use `ingest()` |
+| RA-18b | **Split `test_pipeline.py` by concern** (AR-022R2), moving tests unchanged: `test_output.py` (pages, chunks, provenance, `rag/`, switches, the ledger, reproducibility, `treediff`), `test_diagrams.py` (the diagram tests, with `test_modules.py`'s), `test_xmi.py` (parsing, archives, bundles, budgets), `test_cli.py` (tree rules, destination, status and prune, interrupts, progress, options, preflight), `test_llm.py` (enrichment, templates, the store, replay, budget, breaker, concurrency, quality), `test_samples.py` (the samples, and the slow bundle test), `test_plain.py` (`test_plain_chunk_text`, misfiled in the evaluation tests). The count of tests stays the same. || Done: the tests of `test_pipeline.py` (59 with their parameters) moved unchanged into six modules; 87 tests in all, as before. Also `testpaths = tests`: a bare `pytest` walked `out/` (8.5 GB) for 20 s |
+| RA-18c | **The fiction once per session** (AR-022R3): a session fixture ingests the six fictional projects, in their folders, into one tree; the answer-key, rendering and across-models tests read it. || Done: `fiction_tree`, a session fixture; the fiction tests take 6.5 s instead of 13 |
+| RA-19 | **Retrieval on a tree as `rag/` presents it**: `harness.rag_units(tree)` reads `rag/text` with `rag/meta` (element, kind, chunk id), and `retrieval_eval.py --rag` uses it, in place of the one-off scripts that built the `corpus-*` directories. A test on a small tree. || Done: `harness.rag_units`, `retrieval_eval.py --rag`, a test on the fiction tree |
 | RA-20 | **The LLM reference**: copy the samples' store (`out/tmt-dv/.cache/llm.sqlite`) to `out/ra/llm.sqlite`, fill what the current prompts miss with one live run on the samples and the fiction (at most about $2), then build `out/ra/cp1-llm` replaying from it. Its comparison with a `--no-llm` build shows only the generated chunks and their pages' sections. | |
 
 **Checks:** the tests pass in the same number, faster; `treediff` of `out/ra/ra05` against a
@@ -136,17 +137,34 @@ fresh build shows no difference; the replay build has no misses.
 the index and prompts. Settling them first means each later checkpoint compares against output
 that no longer changes for this reason.
 
+**What stays and what changes.** The pages' wording is the reference where the versions
+disagree; the index and the ledger follow it. Expected differences, each listed in the status:
+- **Unnamed elements** read as what they otherwise say they are (the part a swimlane represents,
+  an action's body or behavior, an event, a comment's text, a value), as diagrams already do;
+  otherwise "(unnamed Class)", as headings already do. Links on pages said "(Class)".
+- **Requirements** are titled one way everywhere: by name, with their id; unnamed, by id and
+  the start of their text. The id is the one people use: a DOORS id at the start of the text
+  (`[RWT-REG-001] …`) over the `Id` tag, which is then a database number. Diagram legends
+  showed the raw tag (`16001`).
+- **«DiagramInfo»** is never a kind word (ledger rows showed it).
+- **The index's** `copy` phrase becomes the pages' ("is a copy of"); its inverse phrases come
+  from the table, not from `.replace()` chains.
+- **Ledger rows** show a requirement's id once (RA-07).
+
 | Step | What | Status |
 |---|---|---|
-| RA-06 | **Labels, requirement ids and relationship wording in `semantics`** (AR-010R1, AR-010R2, AR-011R1). `semantics.requirement(view, el) -> Requirement(id, db_id, text, title)`, with the DOORS id pattern defined once (it is in three places now); `label(view, id)` and `kind_word(view, el)` (one rule for unnamed elements and for «DiagramInfo»); one table `kind -> (forward, inverse)` and `phrase(relationship, from_id)`, replacing `diagrams.VERBS`, `ledger.REQ_LINKS` and `crossref.VERBS`. `ModelIndex.label` goes back to generic. Diagram nodes carry a structured label computed once; the six label functions in `diagrams` collapse into it, and the trigger branch uses `semantics.trigger_text`. Used by emit, ledger, diagrams, pipeline and crossref. | |
-| RA-07 | **A requirement's id once** (AR-010R3): ledger rows and pages show the id once, with the database number as a field; diagram legends show the same label as links. | |
-| RA-08 | **Conversions in `text`** (AR-023): one `strip_links` (handling the escaped brackets `md_inline` writes); `plain.plain` for what a reader sees; `flat()` moves from `evaluation.grading` to `text`, for matching. `text.md_plain` with `ledger._MD_LINK`, `questions._plain` and `retrieval_eval._norm` go; the judges then read passages without link targets. | |
-| AR-012R3 | **One `generated_label(derivation)`** for the "(generated by X; not part of the source model)" sentence, written in six places today. | |
+| CP2a | **The vocabulary in `semantics`** (AR-010R1, AR-011R1). `text.DOORS_ID` is the one pattern for a DOORS id at the start of a text (`crossref` and `evaluation.questions` each have a copy). In `semantics`: `Requirement(id, db_id, text, title)` and `requirement(ix, el)`; `described(ix, el)` (diagrams' `_described`, its trigger branch using `trigger_text`, which also covers change and time events) and `invoked(ix, el)` (an action's behavior, operation, signal, event or feature); `label(ix, id)`: the name, or for an unnamed element its requirement title, what it invokes or what describes it, else "(unnamed Kind)"; `kind_word(ix, el)`: "Requirement", or the first stereotype but «DiagramInfo», or the metaclass; `RELATIONS`, kind to (forward, inverse) phrases ("satisfies", "satisfied by"), and `phrase(kind)`. `ModelIndex.label` becomes generic (the name, or the tail of a reference), for the data layer only. Callers switch: `emit` (links, headings, relationship lines), `ledger` (rows; `REQ_LINKS` goes), `crossref` (its `VERBS` and `_BRACKET_ID` go), `pipeline` (prompt values), `modules`. Tests: each function on the fixture and on hand-made elements (unnamed of each kind, a DOORS requirement, a named one with an `Id`). | |
+| CP2b | **Diagram labels computed once** (AR-010R2). `diagrams.build` gives each node a `Label(stereotype, name, type, description)` from `semantics`; the legend's text, the sketch's name and `describe`'s link label read it. `_name`, `_described`, `element_label`, `_shown_name` and `diagrams.VERBS` go (the verbs to `semantics`). The diagram tests keep their expectations, except requirement nodes (titled, not the raw tag). | |
+| CP2c | **A requirement's id once** (AR-010R3). Ledger rows: `- [title](link) — "text"`, the text without a leading `[id]`, and the database number in the row's parenthesis when there is one; sorted by the id. Pages: "Requirement ID" is the id; a "Database number" field follows when the tag differs. | |
+| CP2d | **Conversions in `text`** (AR-023): `strip_links` (one link pattern, which handles the escaped brackets `md_inline` writes), and `flat()` moved from `evaluation.grading`. `md_plain` with `ledger._MD_LINK` and `questions._plain` go: the projects ledger uses `plain.plain`, and the judges and the question writer read `plain.plain` passages, without link targets. | |
+| CP2e | **One `generated_by(derivation)`** (AR-012R3) for "(generated by X; not part of the source model)", in `provenance`, used in the six places. | |
 
-**Checks:** the comparison's differences are listed by kind and each is accounted for (expected:
-unnamed elements, «DiagramInfo» in ledgers, requirement ids in ledger rows and legends, wording
-where the three tables disagree); retrieval on the fictional questions; the LLM replay misses
-are only diagram descriptions whose legends changed, asked live (cents).
+**Checks:** unit tests for each new function; `out/ra/cp2` (`--no-llm`) against `out/ra/cp1`,
+every difference in the lists above; retrieval on the fictional questions, `out/ra/cp1` against
+`out/ra/cp2`; the replay fixture re-recorded if its prompts changed (cents). The samples' LLM
+prompts change too (labels in legends and in summaries' page text), but they are not asked
+live here: CP4 changes the same prompts again, and one live run there covers both.
+Version 0.6.1.
 
 ### CP3: one chunk path
 

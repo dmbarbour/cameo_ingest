@@ -27,20 +27,8 @@ MAX_ROWS = 60
 MAX_CHARS = 6000
 TEXT_CHARS = 200
 DOC_CHARS = 120
-# SysML requirement relationships, read from the requirement's side:
-# kind -> (phrase when the requirement is the target, phrase when it is the source).
-REQ_LINKS = {
-    "satisfy": ("satisfied by", "satisfies"),
-    "verify": ("verified by", "verifies"),
-    "derivereqt": ("derived into", "derived from"),  # client = derived, supplier = source
-    "refine": ("refined by", "refines"),
-    "trace": ("traced from", "traces to"),
-    "copy": ("copied by", "copies"),
-    "allocate": ("allocated from", "allocated to"),
-}
 
 FILE = "LEDGER.md"
-_MD_LINK = re.compile(r"\[((?:\\.|[^\]\\])+)\]\([^)]*\)")
 
 
 def _clip(text: str, n: int) -> str:
@@ -85,33 +73,36 @@ class LedgerWriter:
         d = self.ix.diagrams[dia_id]
         row = f"- {self.w.link(dia_id, FILE)} — {d.diagram_type or 'diagram'}"
         if d.owner and d.owner in self.ix.elements and self.ix.elements[d.owner].kind not in sem.PACKAGE_KINDS:
-            row += f"; context {md_inline(self.ix.label(d.owner))}"
+            row += f"; context {md_inline(sem.label(self.ix, d.owner))}"
         if d.shown:
             row += f"; {len(d.shown)} elements shown"
         return row
 
     def requirement_row(self, el: Element) -> str:
-        f = sem.requirement_fields(self.ix, el)
-        rid = f.get("Id", "").strip()
-        row = f"- {'**' + rid + '** ' if rid else ''}{self.w.link(el.id, FILE)}"
-        text = f.get("Text", "").strip()
-        if text:
-            row += f" — “{_clip(text, TEXT_CHARS)}”"
+        req = sem.requirement(self.ix, el)
+        assert req is not None
+        # The id once (AR-010R3): an unnamed requirement is linked by its id, since its text follows.
+        row = f"- {self.w.link(el.id, FILE, req.id if req.id and not el.name else None)}"
+        if req.text:
+            row += f" — “{_clip(req.text, TEXT_CHARS)}”"
         links: dict[str, list[str]] = defaultdict(list)
+        if req.db_id:
+            links["database number"].append(req.db_id)
         for r in self.w.rels_by_end.get(el.id, []):
             if r.metaclass not in ("Abstraction", "Dependency", "Realization", "Usage"):
                 continue
             incoming = r.target == el.id
-            phrases = REQ_LINKS.get(r.kind.lower(), (f"{r.kind} from", f"{r.kind} to"))
-            links[phrases[0] if incoming else phrases[1]].append(md_inline(self.ix.label(r.source if incoming else r.target)))
+            w = sem.wording(r.kind)
+            phrase = (w.inverse if incoming else w.forward.removeprefix("is ")) if w else \
+                f"{r.kind} {'from' if incoming else 'to'}"
+            links[phrase].append(md_inline(sem.label(self.ix, r.source if incoming else r.target)))
         if links:
             row += " (" + "; ".join(f"{k}: {', '.join(v[:6])}{' …' if len(v) > 6 else ''}"
                                     for k, v in links.items()) + ")"
         return row
 
     def element_row(self, el: Element) -> str:
-        st = self.ix.stereotype_names(el.id)
-        label = " ".join(f"«{s}»" for s in st) or el.kind
+        label = " ".join(f"«{s}»" for s in sem.shown_stereotypes(self.ix, el.id)) or el.kind
         row = f"- {label} {self.w.link(el.id, FILE)}"
         doc = sem.documentation(self.ix, el)
         if doc:
@@ -191,7 +182,7 @@ class LedgerWriter:
                            and (want_req or e.name)]
                     if want_req:
                         # By requirement ID when every requirement has one; otherwise model order.
-                        ids = [sem.requirement_fields(ix, e).get("Id", "").strip() for e in els]
+                        ids = [sem.requirement(ix, e).id or "" for e in els]
                         if all(ids):
                             els = [e for _, e in sorted(zip(ids, els, strict=True), key=lambda x: _natural_key(x[0]))]
                         rows = [(e.id, self.requirement_row(e)) for e in els]

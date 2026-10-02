@@ -25,7 +25,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from . import semantics as sem
 from .layout import Layout, View
-from .model import Element, ModelIndex
+from .model import ModelIndex
 from .semantics import ItemFlow, Relationship
 from .text import md_inline, one_line
 
@@ -49,93 +49,36 @@ DIRECTED = {
 DASHED = {"Dependency", "Abstraction", "Realization", "Usage", "Include", "Extend", "InterfaceRealization"}
 HOLLOW = {"Generalization", "Realization", "InterfaceRealization"}
 ROUND = {"UseCase", "InitialNode", "ActivityFinalNode", "FlowFinalNode", "PseudoNode"}
-_NOT_SHOWN = "DiagramInfo"  # MagicDraw_Profile metadata on diagrams, not a stereotype to display (FU-003)
-# How a dependency reads from source to target, by stereotype or kind (lower case). A stated
-# rule about arrow direction was not enough for the model (FU-013); words in the line are.
-VERBS = {
-    "derivereqt": "is derived from", "satisfy": "satisfies", "verify": "verifies", "refine": "refines",
-    "trace": "traces to", "allocate": "is allocated to", "copy": "is a copy of", "generalization": "is a kind of",
-    "include": "includes", "extend": "extends", "realization": "realizes", "interfacerealization": "realizes",
-    "usage": "uses", "dependency": "depends on", "abstraction": "depends on",
-}
 
 
-def _stereotypes(ix: ModelIndex, el_id: str) -> list[str]:
-    return [s for s in ix.stereotype_names(el_id) if s != _NOT_SHOWN]
+@dataclass(frozen=True)
+class ShapeLabel:
+    """How a shape's element reads, computed once per shape (AR-010R2)."""
+
+    stereotype: str  # its first shown stereotype, or ""
+    name: str  # its own name (semantics.own_name), or "" when nothing names it
+    type: str  # the label of its type, or ""
+    kind: str  # its metaclass, for an element nothing else names
+
+    def full(self) -> str:
+        """The legend's text: '«stereotype» name : Type'; an unnamed typed element by its type
+        alone (FU-003)."""
+        name = f"{self.name} : {self.type}" if self.name and self.type else self.name or self.type
+        return ((f"«{self.stereotype}» " if self.stereotype else "") + name).strip() or f"(unnamed {self.kind})"
+
+    def shown(self) -> str:
+        """The name drawn in the shape: its own, or its type, as in the legend (FU-018)."""
+        return self.name or self.type
 
 
-def _name(ix: ModelIndex, v: View) -> str:
-    """The element's own name, or for unnamed actions the behavior they invoke."""
+def shape_label(ix: ModelIndex, v: View) -> ShapeLabel:
     el = ix.elements.get(v.element or "")
-    if el is None:
-        return (v.element.rsplit("#", 1)[-1] if v.element and "#" in v.element else v.element) or v.text or ""
-    if el.name:
-        return el.name
-    for role in ("behavior", "operation", "signal", "event", "structuralFeature"):
-        tgt = next((t for r, t in el.refs if r == role), None)
-        if tgt:
-            return ix.label(tgt)
-    return _described(ix, el)
-
-
-def _described(ix: ModelIndex, el: Element) -> str:
-    """What an unnamed element otherwise says it is (FU-024): the part a swimlane or lifeline
-    represents, an opaque action's body, a value action's value, a state invariant's
-    constraint, a comment's text, a requirement's id or text. Empty when nothing does."""
-    def short(text: str | None) -> str:
-        text = one_line(text or "")
-        return text if len(text) <= 80 else text[:79] + "…"
-
-    represents = next((t for r, t in el.refs if r == "represents"), None)
-    if represents:
-        part = ix.elements.get(represents)
-        typ = next((t for r, t in part.refs if r == "type"), None) if part is not None else None
-        if part is not None and typ:
-            return f"{part.name} : {ix.label(typ)}" if part.name else ix.label(typ)
-        return ix.label(represents)
-    if el.kind == "OpaqueAction":
-        return short(el.attrs.get("body"))
-    for trigger in sem.children(ix, el, "trigger"):  # an AcceptEventAction: the event, or its signal
-        event = ix.elements.get(next((t for r, t in trigger.refs if r == "event"), ""))
-        if event is not None:
-            return event.name or ix.label(next((t for r, t in event.refs if r == "signal"), event.id))
-    if el.kind == "Comment":
-        return f'"{short(el.attrs["body"].strip())}"' if el.attrs.get("body") else ""
-    for role in ("value", "invariant"):  # a ValueSpecificationAction's value; a StateInvariant's constraint
-        spec = next(iter(sem.children(ix, el, role)), None)
-        if spec is not None and spec.kind == "Constraint":
-            spec = next(iter(sem.children(ix, spec, "specification")), None)
-        if spec is not None:
-            return short(sem.value_text(ix, spec))
-    if sem.is_requirement(ix, el):
-        fields = sem.requirement_fields(ix, el)
-        return short(fields.get("Id") or fields.get("Text"))
-    return ""
-
-
-def element_label(ix: ModelIndex, v: View) -> str:
-    """'«stereotype» name : Type'; an unnamed typed element is labelled by its type alone
-    (FU-003)."""
-    el = ix.elements.get(v.element or "")
-    if el is None:
-        return _name(ix, v)
-    name = _name(ix, v)
+    if el is None:  # a reference into a used project, or a shape with text only
+        ref = v.element.rsplit("#", 1)[-1] if v.element and "#" in v.element else v.element
+        return ShapeLabel("", ref or v.text or "", "", v.cls)
     t = next((tgt for r, tgt in el.refs if r == "type"), None)
-    if t:
-        name = f"{name} : {ix.label(t)}" if name else ix.label(t)
-    st = _stereotypes(ix, el.id)
-    return ((f"«{st[0]}» " if st else "") + name).strip() or f"({el.kind})"
-
-
-def _shown_name(ix: ModelIndex, v: View) -> str:
-    """The name drawn in a shape: its own, or for an unnamed typed element its type, as in
-    the legend (FU-018)."""
-    name = _name(ix, v)
-    el = ix.elements.get(v.element or "")
-    if not name and el is not None:
-        t = next((tgt for r, tgt in el.refs if r == "type"), None)
-        name = ix.label(t) if t else ""
-    return name or (v.text or "")
+    st = sem.shown_stereotypes(ix, el.id)
+    return ShapeLabel(st[0] if st else "", sem.own_name(ix, el), sem.label(ix, t) if t else "", el.kind)
 
 
 @dataclass
@@ -145,6 +88,7 @@ class Node:
     label: str  # full label, plain text
     depth: int  # nesting among shapes
     parent: int | None = None  # number of the shape this one is nested in
+    shown: str = ""  # the name drawn in the shape
 
 
 @dataclass
@@ -186,15 +130,16 @@ def build(ix: ModelIndex, layout: Layout, rels: dict[str, Relationship],
         owner = g.node_of.get(v.parent or "")
         if v.cls in ATTACHED and owner is not None and owner.view.view_id == v.parent:
             g.node_of[v.view_id or ""] = owner
-            g.pins[v.view_id or ""] = one_line(element_label(ix, v))
+            g.pins[v.view_id or ""] = one_line(shape_label(ix, v).full())
             g.pin_views.append(v)
             continue
         parent = by_id.get(v.parent or "")
         while parent is not None and (parent.view_id or "") not in g.node_of:
             parent = by_id.get(parent.parent or "")
         up = g.node_of[parent.view_id or ""] if parent is not None else None
-        node = Node(len(g.nodes) + 1, v, one_line(element_label(ix, v) if v.element else f'"{v.text}"'),
-                    up.depth + 1 if up else 0, up.num if up else None)
+        lb = shape_label(ix, v)
+        node = Node(len(g.nodes) + 1, v, one_line(lb.full() if v.element else f'"{v.text}"'),
+                    up.depth + 1 if up else 0, up.num if up else None, one_line(lb.shown()))
         g.nodes.append(node)
         g.node_of[v.view_id or ""] = node
 
@@ -259,19 +204,15 @@ def build(ix: ModelIndex, layout: Layout, rels: dict[str, Relationship],
                 # Cameo stores a directed path's target as its first end (FU-001).
                 source, target, at_first = second, first, True
         el = ix.elements.get(v.element or "")
-        stereotypes = _stereotypes(ix, el.id) if el else []
+        stereotypes = sem.shown_stereotypes(ix, el.id) if el else []
         flow = sem.flow_label(ix, el) if el is not None and el.kind in ("Transition", "ControlFlow", "ObjectFlow") else ""
         label = " ".join([f"«{s}»" for s in stereotypes] + ([el.name] if el and el.name else [])
                          + ([flow] if flow and flow != (el.name if el else None) else []))
-        verb = ""
-        if directed:
-            for k in [*stereotypes, rel.metaclass if rel else "", v.cls]:
-                if k.lower() in VERBS:
-                    verb = VERBS[k.lower()]
-                    break
+        w = sem.wording(*stereotypes, rel.metaclass if rel else "", v.cls) if directed else None
+        verb = w.forward if w else ""
         items = []
         for f in flows.get(v.element or "", []):
-            names = ", ".join(ix.label(i) for i in f.items) or ix.label(f.id)
+            names = ", ".join(sem.label(ix, i) for i in f.items) or sem.label(ix, f.id)
             if f.source in ends(source) or f.target in ends(target):
                 names += " →"
             elif f.source in ends(target) or f.target in ends(source):
@@ -309,9 +250,8 @@ def describe(ix: ModelIndex, g: DiagramGraph, refs: Refs = PLAIN, nodes: list[No
         v = n.view
         dest = refs.target(v.element) if v.element and v.element in ix.elements else None
         if dest is not None:  # blocks, requirements...: a link, with the stereotype
-            st = _stereotypes(ix, v.element)
-            described = "" if ix.elements[v.element].name else _name(ix, v)  # unnamed: as the legend reads (FU-024)
-            return (f"«{st[0]}» " if st else "") + f"[{md_inline(described or ix.label(v.element))}]({dest})"
+            st = sem.shown_stereotypes(ix, v.element)
+            return (f"«{st[0]}» " if st else "") + f"[{md_inline(sem.label(ix, v.element))}]({dest})"
         return md_inline(n.label) or v.cls
 
     def end(view: View | None) -> str:
@@ -477,7 +417,7 @@ def render_png(ix: ModelIndex, g: DiagramGraph, title: str, pixels: int = IMAGE_
             d.rectangle([a[0] + 1, a[1] + 1, a[0] + tw + 5, a[1] + FONT_PX + 3], fill="#e4e4e4" if lit(n) else FADED_TAG)
             d.text((a[0] + 3, a[1] + 1), tag, fill=text_fill, font=font)
         room = c[0] - a[0] - tw - 10
-        name = _shown_name(ix, n.view)
+        name = n.shown or n.view.text or ""
         if room > 4 * FONT_PX * 0.5 and c[1] - a[1] >= FONT_PX + 2 and name:
             d.text((a[0] + tw + 8, a[1] + 1), _fit(d, name, font, room), fill=text_fill, font=font)
     big = ImageFont.load_default(size=FONT_PX + 4)

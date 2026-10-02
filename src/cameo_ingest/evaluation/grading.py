@@ -24,17 +24,9 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from ..text import flat
+
 RULES = ("source", "parts", "fact", "element")
-_LINK = re.compile(r"\[((?:[^\[\]\\]|\\.)*)\]\([^)]*\)")
-_TRACE = re.compile(r"<sub>trace: `[^`]*`</sub>")
-
-
-def flat(text: str) -> str:
-    """Lower case, links reduced to their labels, without trace lines, Markdown's code and bold
-    marks or escapes, spaces collapsed: so that `**headLossLimit** = `2.4`` holds
-    "headLossLimit = 2.4", in either chunk style."""
-    text = _LINK.sub(r"\1", _TRACE.sub("", text))
-    return " ".join(re.sub(r"[`*\\]", "", text.lower()).split())
 
 
 def normal(text: str) -> str:
