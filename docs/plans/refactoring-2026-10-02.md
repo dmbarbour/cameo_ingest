@@ -177,6 +177,15 @@ Version 0.6.1.
 differs from the page (each difference listed); generated and ledger headings changed as
 intended; retrieval on the fictional questions.
 
+**Retrieval, CP2 and CP3 together** (`out/ra/retrieval-cp1` against `retrieval-cp3`, the 210
+fictional questions on `rag/`; paired bootstrap, 4,000 rounds):
+- **Single facts (192 questions):** no measure moved significantly but one. e5 + BM25's
+  MRR@10 rose from 0.720 to 0.739 (the change lies between +0.002 and +0.038). Hit@10 is
+  unchanged everywhere, within ±0.026.
+- **Within a model (8) and across models (10):** nothing significant. BM25 alone lost
+  completeness on one within-model question (0.625 to 0.500). The dense, hybrid and reranked
+  systems are unchanged.
+
 ### CP4: the enrichment
 
 **Why together:** each of these changes what the LLM is sent, so one round of new template
@@ -278,6 +287,15 @@ ones especially (RA-21). Version 0.7.1.
     the id.
 - **New files:** `index/ids.jsonl` and `index/threads.jsonl` in each of the 26 projects, and
   `THREADS.md` in the 5 with threads. The manifest lists them.
+
+**Retrieval** (`retrieval-cp3` against `retrieval-cp5`): no measure moved significantly.
+- **Single facts:** hit@10 identical for every system, MRR@10 within ±0.002.
+- **Within a model:** the questions along derivations, where AR-027R2's ancestors could
+  show, are unchanged but for one coverage dip of the reranked BM25 (0.896 to 0.875, within
+  noise). Threads that state their ancestors read correctly, which was the aim (AR-027);
+  retrieval neither gains nor loses by it.
+- **Across models:** e5 coverage dips by one part and e5 + BM25's rises by one, both within
+  noise.
 
 ### CP6: configuration and state
 

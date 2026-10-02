@@ -98,7 +98,7 @@ Four themes run through the findings:
 | AR-015 | Medium | Chunk records are loose dicts made in four places, and packing rows into parts is written three times | By inspection | Fixed |
 | AR-016 | Medium | The `LLM` class mixes transport, store, replay, run policy and report | By inspection | Fixed |
 | AR-017 | Medium | HTTP clients, retries and SQLite caches are written two or three times | By inspection | Fixed |
-| AR-018 | Medium | LLM summary inputs are page Markdown, link targets and all | By inspection | Fixed, its check pending |
+| AR-018 | Medium | LLM summary inputs are page Markdown, link targets and all | By inspection | Fixed |
 | AR-019 | Medium | `diagrams.py` and `modules.py` each carry several unrelated responsibilities | By inspection | Fixed |
 | AR-020 | Medium | `retrieval_eval.main` is library code; `judge_pools` cuts windows again on its own defaults | By inspection | Fixed |
 | AR-021 | Medium | The KOIS project duplicates the fiction builder, and fictional prefixes are listed in four places | By inspection | Fixed |
@@ -107,7 +107,7 @@ Four themes run through the findings:
 | AR-024 | Low | SQL against `state.sqlite` is written outside `state.py` | By inspection | Fixed |
 | AR-025 | Low | The prompt registry is two hand-kept lists, current and retired templates mixed | By inspection | Fixed |
 | AR-026 | Low | Dead code, finished studies left in `scripts/`, and the evaluation in the product wheel | By inspection | Fixed |
-| AR-027 | Medium | A thread split into parts loses its nesting, so a part can misstate what derives from what | Reproduced | Fixed, its measurement pending |
+| AR-027 | Medium | A thread split into parts loses its nesting, so a part can misstate what derives from what | Reproduced | Fixed |
 
 ## Findings
 
@@ -714,9 +714,10 @@ too.
 
 **Severity:** Medium · **Verified:** By inspection · **Where:** `pipeline.py:424-432`
 
-**Status:** Fixed in code on 2026-10-02 (plan RA-12, CP4b). Summaries are sent each section's plain
-text (`Section.text`), and the templates' versions were bumped. The live run, and the
-side-by-side reading of its summaries against CP1's, are in plan RA's CP4 checks.
+**Status:** Fixed on 2026-10-02 (plan RA-12, CP4b). Summaries are sent each section's plain text
+(`Section.text`), and the templates' versions were bumped. The live run made 2,849 new
+requests, none failed, and inputs cut to fit fell from 88 to 12. A side-by-side reading of
+16 package summaries found the new ones as good or better (plan RA, CP4's results).
 
 **What goes to the LLM:** package summaries and part summaries send `writer.section(…)`, the
 page Markdown.
@@ -1012,7 +1013,8 @@ for. Member lists split the same way.
 - AR-027R2 (plan RA-21, CP5d): a later part starts with its first line's ancestors, marked
   "(continued)" (`plain.parts_with_context`), and a test checks it on the crossing's threads.
 
-Its measurement on the within-model questions is in plan RA's CP5 checks.
+Measured on the within-model questions (plan RA, CP5's results): no significant change in
+retrieval. The parts now state their derivations correctly, which was the point.
 
 ## Remediation order
 
