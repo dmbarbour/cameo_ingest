@@ -152,35 +152,69 @@ def across() -> list[dict]:
     out = []
     for qid, literal, paraphrase, groups in rows:
         for style, text in (("literal", literal), ("paraphrase", paraphrase)):
-            out.append({"id": f"across-{qid}-{style}", "fact": f"across-{qid}", "style": style,
+            out.append({"id": f"across-{qid}-{style}", "rule": "parts", "fact": f"across-{qid}", "style": style,
                         "category": "cross-model", "difficulty": "hard", "question": text, "answers": [],
                         "related": [], "evidence": [], "evidence_groups": groups,
                         "project_name": "Riverbend proposals", "note": f"groups: {first}, Halvorsen, Aquila"})
     return out
 
 
+# How the chunks say that one element relates to another, each wording an alternative (a list is
+# phrases that must all be in one window). An element's own chunk, the other end's, a package's
+# list of relationships, the requirements ledger, an index entry and a thread each say it their way.
+def _verifies(test: str, req: str) -> list:
+    return [f"{test} verifies this", f"verifies {req}", f"TestCase {test}, verifies it", f"verified by {test}",
+            f"verified by: {test}", f"{test} → {req}"]
+
+
+def _satisfies(block: str, req: str) -> list:
+    return [f"{block} satisfies this", f"satisfies {req}", f"Block {block}, satisfies it", f"satisfied by {block}",
+            f"satisfied by: {block}", f"{block} → {req}"]
+
+
+def _derives(req: str, rid: str, source: str, root: str) -> list:
+    """`req` (id `rid`) is derived from `source`; `root` is how a thread from the source names it."""
+    return [f"{req} is derived from this", f"Requirement {req}, is derived from it", f"{req} → {source}",
+            [f"{req} ({rid})", f"is derived from {source}"], [f"{rid} {req}", f"derived from: {source}"],
+            [root, f"{req} ({rid})"]]
+
+
 def within() -> list[dict]:
     """Questions whose answer is spread over several elements of one model, along its derivation
     relationships: what derives from a requirement, and what satisfies or verifies that. One
-    evidence group per part of the answer; a thread (plan RF-05) holds them all."""
+    evidence group per part of the answer, each a relationship (not a bare name, which many
+    chunks hold: AR-006), with the elements it relates (`group_elements`); a thread (plan RF-05)
+    holds them all."""
+    fvx, rwt, hal = "Ferrous Valley Level Crossing", "Riverbend Water Treatment Works", \
+        "Riverbend WTW Proposal - Halvorsen Engineering"
     rows = [
         ("w01", "Which tests verify the requirements derived from SN-02, Stop Road Users?",
-         "How is it checked that the level crossings really stop road users?",
-         [["Warning Time Test"], ["Second Train Test"], ["Trapped Vehicle Test"]], "Ferrous Valley Level Crossing"),
+         "How is it checked that the level crossings really stop road users?", fvx,
+         [(_verifies("Warning Time Test", "Warning Time B"), ["_fvx_t_wt", "_fvx_s05"]),
+          (_verifies("Second Train Test", "Second Train"), ["_fvx_t_second", "_fvx_s09"]),
+          (_verifies("Trapped Vehicle Test", "Obstacle Detection"), ["_fvx_t_obst", "_fvx_s11"])]),
         ("w02", "Which requirements derive from RWT-REG-002 in the first Riverbend proposal, and what satisfies them?",
          "What follows from the virus kill requirement in the first Riverbend design, and which equipment meets it?",
-         [["UV Dose"], ["UV Reactor"]], "Riverbend Water Treatment Works"),
+         rwt,
+         [(_derives("UV Dose", "RWT-PRF-04", "RWT-REG-002", "RWT-REG-002: The works"), ["_rwt_prf04", "_rwt_reg002"]),
+          (_satisfies("UV Reactor", "UV Dose"), ["_rwt_uv", "_rwt_prf04"])]),
         ("w03", "What derives from RWT-REG-001 in Halvorsen's model, and how is it verified?",
-         "How does Halvorsen turn the turbidity limit into a check it runs?",
-         [["HAL-SYS-020"], ["Membrane Integrity Test"]], "Riverbend WTW Proposal - Halvorsen Engineering"),
+         "How does Halvorsen turn the turbidity limit into a check it runs?", hal,
+         [(_derives("Membrane Integrity", "HAL-SYS-020", "Treated Water Turbidity",
+                    "Treated Water Turbidity (RWT-REG-001)"), ["_hal_h020", "_hal_c001"]),
+          (_verifies("Membrane Integrity Test", "Membrane Integrity"), ["_hal_mit", "_hal_h020"])]),
         ("w04", "Which requirements derive from FVX-SYS-003, Barriers, and what satisfies FVX-SYS-003?",
          "What more detailed requirements come from the level crossing barriers, and what provides the barriers?",
-         [["FVX-SUB-031"], ["FVX-SUB-032"], ["Barrier Machine"]], "Ferrous Valley Level Crossing"),
+         fvx,
+         [(_derives("Gate Arm Lighting", "FVX-SUB-031", "Barriers", "Barriers (FVX-SYS-003)"), ["_fvx_u31", "_fvx_s03"]),
+          (_derives("Arm Breakaway", "FVX-SUB-032", "Barriers", "Barriers (FVX-SYS-003)"), ["_fvx_u32", "_fvx_s03"]),
+          (_satisfies("Barrier Machine", "Barriers"), ["_fvx_bm_a", "_fvx_bm_b", "_fvx_s03"])]),
     ]
     out = []
-    for qid, literal, paraphrase, groups, project in rows:
+    for qid, literal, paraphrase, project, parts in rows:
         for style, text in (("literal", literal), ("paraphrase", paraphrase)):
-            out.append({"id": f"within-{qid}-{style}", "fact": f"within-{qid}", "style": style,
+            out.append({"id": f"within-{qid}-{style}", "rule": "parts", "fact": f"within-{qid}", "style": style,
                         "category": "multi-fact", "difficulty": "hard", "question": text, "answers": [],
-                        "related": [], "evidence": [], "evidence_groups": groups, "project_name": project})
+                        "related": [], "evidence": [], "evidence_groups": [g for g, _ in parts],
+                        "group_elements": [e for _, e in parts], "project_name": project})
     return out

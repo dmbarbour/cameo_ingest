@@ -527,7 +527,7 @@ class Project:
         for style, text in (("literal", literal), ("paraphrase", paraphrase)):
             if text:
                 self._questions.append({
-                    "id": f"{self.prefix}-{qid}-{style}", "fact": f"{self.prefix}-{qid}", "style": style,
+                    "id": f"{self.prefix}-{qid}-{style}", "rule": "fact", "fact": f"{self.prefix}-{qid}", "style": style,
                     "category": category, "difficulty": difficulty, "question": text,
                     "answers": [self.id(a) for a in answers], "related": [self.id(r) for r in related],
                     "evidence": [evidence] if isinstance(evidence, str) else list(evidence),

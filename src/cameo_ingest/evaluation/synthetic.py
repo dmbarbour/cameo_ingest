@@ -15,7 +15,6 @@ answer them (`answers`) and of those that help (`related`).
 from __future__ import annotations
 
 import io
-import re
 import zipfile
 from xml.sax.saxutils import quoteattr
 
@@ -125,27 +124,13 @@ _QUESTIONS = [
 ]
 
 
-def _flat(text: str) -> str:
-    """Lower case, links reduced to their labels, without Markdown's code and bold marks or
-    escapes, spaces collapsed."""
-    text = re.sub(r"\[((?:[^\[\]\\]|\\.)*)\]\([^)]*\)", r"\1", text)
-    return " ".join(re.sub(r"[`*\\]", "", text.lower()).split())
-
-
-def holds(evidence: list[str], text: str) -> bool:
-    """Whether `text` holds the planted fact: one of the evidence phrases, in any case and
-    whatever the markup (`**headLossLimit** = `2.4`` holds "headLossLimit = 2.4")."""
-    flat = _flat(text)
-    return any(_flat(e) in flat for e in evidence)
-
-
 def _id(key: str) -> str:
     return f"_kois_{key}"
 
 
 QUESTIONS = [
-    {"id": f"{qid}-{style}", "fact": qid, "style": style, "category": cat, "question": text,
-     "answers": [_id(a) for a in answers], "related": [_id(r) for r in related],
+    {"id": f"{qid}-{style}", "rule": "element", "prefix": _id(""), "fact": qid, "style": style, "category": cat,
+     "question": text, "answers": [_id(a) for a in answers], "related": [_id(r) for r in related],
      "evidence": [evidence] if isinstance(evidence, str) else evidence}
     for qid, cat, literal, paraphrase, answers, related, evidence in _QUESTIONS
     for style, text in (("literal", literal), ("paraphrase", paraphrase))

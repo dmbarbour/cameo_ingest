@@ -63,7 +63,7 @@ def _project_questions(name: str, project: Path, per_project: int, seed: int) ->
         return name if name and names[name] == 1 and len(name) <= 80 else None
 
     def add(template: str, question: str, answers: list[str], related: list[str]) -> None:
-        out.append({"id": f"{name}:{template}:{answers[0]}", "template": template, "category": template,
+        out.append({"id": f"{name}:{template}:{answers[0]}", "rule": "element", "template": template, "category": template,
                     "style": "literal", "project": token, "question": question, "answers": answers,
                     "related": related})
 
@@ -179,7 +179,7 @@ def natural(tree: Path, llm: LLM, per_project: int = 6, seed: int = 1, concurren
         if not question or len(quote) < 8 or " ".join(quote.split()) not in " ".join(_plain(c["text"]).split()):
             return None
         meta = c["metadata"]
-        return {"id": f"llm:{c['id']}", "template": "llm", "category": meta["kind"], "style": "natural",
+        return {"id": f"llm:{c['id']}", "rule": "source", "template": "llm", "category": meta["kind"], "style": "natural",
                 "project": meta["content"], "question": question, "quote": quote,
                 "answers": [], "related": [], "answer_chunks": [c["id"]], "source_kind": meta["kind"],
                 "source_element": meta.get("element_id")}  # for corpora whose chunks differ (another chunk style)

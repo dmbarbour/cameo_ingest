@@ -8,10 +8,8 @@ come back (plan RE-05).
 The questions (`--questions`) are the synthetic project's (`cameo_ingest.evaluation.synthetic`),
 the structural ones about the samples (`cameo_ingest.evaluation.questions`), or a JSONL file of
 any form, such as written questions (`scripts/write_questions.py`). All are graded by
-construction (written questions only for their source chunk, until the judges grade the rest):
-- **2:** a window of a chunk about an answering element, or, for the synthetic project, a window
-  of it that holds the planted fact (a ledger or summary quoting it, say): what RAG needs;
-- **1:** a window of a chunk about a related element.
+construction, each by its rule (`cameo_ingest.evaluation.grading`), and the judge panel's grades
+override construction where it judged (`--judgments`).
 
 Each model's windows are embedded through the cache (`--cache`), so a rerun, or a run cut off,
 costs only what is missing. Writes OUT/report.md and OUT/rankings.jsonl (each question's top 10
@@ -22,16 +20,15 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import time
 from collections import Counter, defaultdict
 from pathlib import Path
 
 from cameo_ingest.cli import load_env
 from cameo_ingest.evaluation.embed import MODELS, Embedder, EmbeddingCache
+from cameo_ingest.evaluation.grading import Corpus, Question
 from cameo_ingest.evaluation.harness import (
     BM25,
-    Unit,
     chunk_units,
     fuse,
     group_measures,
@@ -41,55 +38,11 @@ from cameo_ingest.evaluation.harness import (
     windowed,
 )
 from cameo_ingest.evaluation.judge import consensus
-from cameo_ingest.evaluation.questions import _plain, structural
+from cameo_ingest.evaluation.questions import structural
 from cameo_ingest.evaluation.rerank import RERANKERS, Reranker
-from cameo_ingest.evaluation.synthetic import QUESTIONS, holds
+from cameo_ingest.evaluation.synthetic import QUESTIONS
 
-SYNTHETIC = "_kois_"  # the synthetic project's element ids start so
 MEASURES = ("hit@1", "hit@5", "hit@10", "hit@20", "mrr@10", "ndcg@10", "coverage@10", "complete@10")
-
-
-def _norm(text: str) -> str:
-    """Letters and digits only, in lower case: a quote and a window compared whatever their
-    markup (Markdown on the pages, the plain chunk style)."""
-    return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
-
-
-def grades(q: dict, units: list[Unit], judged: dict[str, int] | None = None) -> dict[int, int]:
-    """Grades by construction, overridden by the judge panel's where it judged (`judged`: unit ->
-    grade, for this question)."""
-    out = {}
-    quote = _norm(q.get("quote", ""))
-    sources = set(q.get("answer_chunks", ()))
-    if sources and not any(u.id.split("#w")[0] in sources for u in units):
-        # Another corpus (another chunk style): the source element's chunks stand in for the source chunk.
-        sources = {u.id.split("#w")[0] for u in units if u.element_id and u.element_id == q.get("source_element")}
-    for i, u in enumerate(units):
-        if u.id.split("#w")[0] in sources:  # a written question's source chunk
-            out[i] = 2 if quote and quote in _norm(_plain(u.text)) else 1  # the window with the quote
-        elif "evidence_groups" in q:  # an answer in parts (one per model): a window with any part answers
-            if any(holds(g, u.text) for g in q["evidence_groups"]):
-                out[i] = 2
-        elif "prefix" in q:  # a fictional project's: only a window that holds the fact answers
-            # (an index entry, which spans projects, too: the fictional phrases occur nowhere else)
-            if ((u.element_id or "").startswith(q["prefix"]) or u.kind == "index:id") and (
-                    holds(q["evidence"], u.text)
-                    or holds(q.get("evidence_by_element", {}).get(u.element_id, []), u.text)):
-                out[i] = 2
-            elif u.element_id in q["answers"] or u.element_id in q["related"]:
-                out[i] = 1
-        elif u.element_id in q["answers"] or (
-                "evidence" in q and (u.element_id or "").startswith(SYNTHETIC) and holds(q["evidence"], u.text)):
-            out[i] = 2  # about an answering element, or holding the planted fact (a ledger quoting it, say)
-        elif u.element_id in q["related"]:
-            out[i] = 1
-    if judged:
-        for i, u in enumerate(units):
-            if u.id in judged:
-                out[i] = judged[u.id]
-                if not out[i]:
-                    del out[i]
-    return out
 
 
 def main() -> int:
@@ -178,18 +131,18 @@ def main() -> int:
                                                   for q, r in zip(questions, systems[name], strict=True)]
         print(f"{reranker.model}: {reranker.calls} requests, {reranker.tokens:,} tokens, "
               f"{time.perf_counter() - t0:.0f} s", flush=True)
+    corpus = Corpus(ws)
+    graded = []  # per question: its grades, how many parts its answer has, and the parts each window holds
+    for q in questions:
+        qq = Question.of(q)
+        g = qq.grades(corpus, judged_of.get(q["id"]))
+        graded.append((g, *qq.covers(corpus, g)))
     for name, ranked in systems.items():
         per_q = []
-        for q, ranking in zip(questions, ranked, strict=True):
-            g = grades(q, ws, judged_of.get(q["id"]))
-            if "evidence_groups" in q:
-                parts = q["evidence_groups"]
-                covers = {i: frozenset(k for k, grp in enumerate(parts) if holds(grp, ws[i].text)) for i in g}
-            else:
-                parts, covers = [[]], {i: frozenset([0]) for i, v in g.items() if v == 2}
+        for q, ranking, (g, parts, covers) in zip(questions, ranked, graded, strict=True):
             per_q.append({"id": q["id"], "style": q["style"], "difficulty": q.get("difficulty"),
                           "project_name": q.get("project_name"), **measures(ranking, g),
-                          **group_measures(ranking, covers, len(parts))})
+                          **group_measures(ranking, covers, parts)})
             rankings.append({"system": name, "question": q["id"], "text": q["question"],
                              "top": [{"unit": ws[j].id, "kind": ws[j].kind, "grade": g.get(j, 0),
                                       "text": ws[j].text[:200]} for j in ranking[:10]]})

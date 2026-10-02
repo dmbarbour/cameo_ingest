@@ -85,8 +85,8 @@ Four themes run through the findings:
 | AR-002 | High | An unnamed requirement whose text starts with `[` fails its whole project when a vision model is set | Reproduced | Fixed |
 | AR-003 | High | Plain chunks are made by regex-parsing the page Markdown, which corrupts model text | Reproduced | Partly fixed |
 | AR-004 | Medium | The two chunk styles branch in five places and have drifted: generated and ledger chunks break the plain style's rules | Reproduced | Open |
-| AR-005 | High | Grading by construction lives in a script, untested, with two different rules | By inspection | Open |
-| AR-006 | Medium | The within-model questions' evidence groups are bare names, so their measures are inflated | Measured | Open |
+| AR-005 | High | Grading by construction lives in a script, untested, with two different rules | By inspection | Partly fixed |
+| AR-006 | Medium | The within-model questions' evidence groups are bare names, so their measures are inflated | Measured | Partly fixed |
 | AR-007 | Medium | `ProjectWriter` is a god object, and pipeline and ledger reach into its internals | By inspection | Open |
 | AR-008 | Medium | `ingest_project` mixes six jobs; request kinds are bare strings | By inspection | Open |
 | AR-009 | Medium | Prompt values are built in three modules and two scripts, with wording and limits outside the versioned templates | By inspection | Open |
@@ -237,6 +237,8 @@ Markdown.
 
 **Severity:** High · **Verified:** By inspection · **Where:** `scripts/retrieval_eval.py:58-92, 185-189`, `tests/test_fiction.py:31-34`, `tests/test_evaluation.py:41-42`, `evaluation/synthetic.py`
 
+**Status:** Partly fixed on 2026-10-02. AR-005R1 and R2 are done: `evaluation/grading.py` holds the four rules (`source`, `parts`, `fact`, `element`), each question source states its own, and `Question.of` rejects a question that lacks what its rule grades by. A `Corpus` flattens each window once, and grades are computed once per question, not once per system. `test_grading_rules` tests each rule on hand-made windows, and the answer-key test now grades through `Question.grades`, index entries included. AR-005R3 waits on AR-021.
+
 **Where the grading is:**
 - `grades()`, the coverage logic and `group_measures` are what every measure in plans RE and RF
   rests on.
@@ -273,6 +275,8 @@ The answer-key test restates the rule without the `index:id` case.
 ### AR-006: The within-model questions' evidence groups are bare names, so their measures are inflated
 
 **Severity:** Medium · **Verified:** Measured · **Where:** `evaluation/fiction/rivals.py:166-186` (`within`), `tests/test_fiction.py:38-41`
+
+**Status:** Partly fixed on 2026-10-02. AR-006R1 is done: each part of a within-model answer is a relationship, in the wordings of the chunks that hold it (the element's own chunk, the other end's, a package, the ledger, an index entry, a thread), with the elements it relates. A group's alternative may be several phrases that must all be in one window: a thread states a derivation only by nesting. In a scratch tree, each part is held by 6 or 7 chunks, all of which state the relationship (a bare name was in 13 to 20). The stray check covers groups. AR-006R2 remains.
 
 The within-model questions' groups are element names, not facts:
 - `[["UV Dose"], ["UV Reactor"]]`;

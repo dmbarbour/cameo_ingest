@@ -30,7 +30,8 @@ def test_synthetic_project_answers_its_questions(tmp_path):
     import json
 
     from cameo_ingest.cli import main
-    from cameo_ingest.evaluation.synthetic import QUESTIONS, holds, make_mdzip
+    from cameo_ingest.evaluation.grading import holds
+    from cameo_ingest.evaluation.synthetic import QUESTIONS, make_mdzip
 
     src = tmp_path / "kois.mdzip"
     src.write_bytes(make_mdzip())
@@ -40,6 +41,53 @@ def test_synthetic_project_answers_its_questions(tmp_path):
     for q in QUESTIONS:
         texts = [c["text"] for c in chunks if c["metadata"].get("element_id") in q["answers"]]
         assert any(holds(q["evidence"], t) for t in texts), (q["id"], q["evidence"])
+
+
+def test_grading_rules():
+    """Each rule of grading by construction, on hand-made windows (AR-005)."""
+    from collections import namedtuple
+
+    from cameo_ingest.evaluation.grading import Corpus, Question, holds
+
+    W = namedtuple("W", "id text element_id kind")
+    c = Corpus([
+        W("c1#w0", "Block Pump: lifts **4,500** cubic metres", "_fic_pump", "element"),
+        W("c1#w1", "Block Pump, details: members", "_fic_pump", "element:details"),
+        W("c2", "Ledger: Pump — 4,500 cubic metres", "_fic_led", "ledger"),
+        W("c3", "Index: FIC-1, in 2 models: 4,500 cubic metres", None, "index:id"),
+        W("c4", "Block Tank", "_fic_tank", "element"),
+        W("c5", "Another project's 4,500 cubic metres", "_oth_x", "element"),
+        W("c6", "[Valve](p.md#v) closes in 340 ms\n<sub>trace: `x`</sub>", "_kois_v", "element"),
+    ])
+    fact = {"id": "f", "question": "?", "rule": "fact", "prefix": "_fic_", "evidence": ["4,500 cubic metres"],
+            "answers": ["_fic_pump"], "related": ["_fic_tank"]}
+    # Only windows of the project (or index entries) that hold the fact answer.
+    assert Question.of(fact).grades(c) == {0: 2, 1: 1, 2: 2, 3: 2, 4: 1}
+    # The judge panel overrides construction where it judged.
+    assert Question.of(fact).grades(c, {"c2": 0, "c4": 2}) == {0: 2, 1: 1, 3: 2, 4: 2}
+    # Any window of an answering element answers; in a project with planted facts, so does one holding it.
+    assert Question.of({**fact, "rule": "element", "prefix": ""}).grades(c) == {0: 2, 1: 2, 4: 1}
+    kois = {"id": "k", "question": "?", "rule": "element", "prefix": "_kois_", "answers": ["_kois_k"],
+            "evidence": ["Valve closes in 340 ms"]}
+    assert Question.of(kois).grades(c) == {6: 2}
+    # A written question: its source chunk, the window with the quote first; else its element's chunks.
+    written = {"id": "w", "question": "?", "answer_chunks": ["c1"], "quote": "lifts 4,500 cubic metres",
+               "source_element": "_fic_pump"}
+    assert Question.of(written).rule == "source" and Question.of(written).grades(c) == {0: 2, 1: 1}
+    assert Question.of({**written, "answer_chunks": ["elsewhere"]}).grades(c) == {0: 2, 1: 1}
+    # An answer in parts: any part answers; coverage counts the parts each window holds.
+    parts = Question.of({"id": "p", "question": "?", "evidence_groups": [["4,500 cubic metres"], ["closes in 340 ms"]]})
+    g = parts.grades(c)
+    assert parts.rule == "parts" and g == {0: 2, 2: 2, 3: 2, 5: 2, 6: 2}
+    n, covers = parts.covers(c, g)
+    assert n == 2 and covers[0] == {0} and covers[6] == {1}
+    assert Question.of(fact).covers(c, Question.of(fact).grades(c)) == (1, {0: {0}, 2: {0}, 3: {0}})
+    for bad in ({"evidence_groups": [["x"], []]}, {"rule": "vibes", "answers": ["a"]}, {"rule": "fact", "answers": ["a"]}):
+        with pytest.raises(ValueError):
+            Question.of({"id": "b", "question": "?", **bad})
+    assert holds(["headLossLimit = 2.4"], "**headLossLimit** = `2.4`")
+    assert holds([["derives from X", "UV Dose"]], "Thread: what derives from X\n- UV Dose (P-4)")
+    assert not holds([["derives from X", "UV Dose"]], "Thread: what derives from Y\n- UV Dose (P-4)")
 
 
 def test_search_and_measures():

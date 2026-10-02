@@ -6,10 +6,18 @@ import pytest
 
 from cameo_ingest.cli import main
 from cameo_ingest.evaluation.fiction import PROJECTS
-from cameo_ingest.evaluation.synthetic import holds
+from cameo_ingest.evaluation.grading import Corpus, Question, holds
 
 # Kinds that may quote a fact without being about it: listings, summaries, diagrams.
 QUOTING = ("ledger", "generated", "project", "diagram", "package", "index", "trace")
+
+
+class W:
+    """A chunk as a window to grade."""
+
+    def __init__(self, c: dict):
+        self.id, self.text, self.kind = c["id"], c["text"], c["metadata"]["kind"]
+        self.element_id = c["metadata"].get("element_id")
 
 
 @pytest.mark.parametrize("prefix", sorted(PROJECTS))
@@ -27,17 +35,17 @@ def test_answer_key_holds(tmp_path, prefix, style):
     chunks = [json.loads(line) for line in (out / "chunks.jsonl").open()]
     questions = project.questions()
     assert len({q["id"] for q in questions}) == len(questions)
+    windows = [W(c) for c in chunks]
+    corpus = Corpus(windows)
     for q in questions:
         per = q["evidence_by_element"]
-        answering = [c for c in chunks if c["metadata"].get("element_id") in q["answers"]
-                     and (holds(q["evidence"], c["text"]) or holds(per.get(c["metadata"]["element_id"], []), c["text"]))]
+        grades = Question.of(q).grades(corpus)  # as the evaluation grades it (AR-005)
+        answering = [i for i, g in grades.items() if g == 2 and windows[i].element_id in q["answers"]]
         assert answering, (q["id"], q["evidence"], per)
         for element, phrases in per.items():
-            assert any(holds(phrases, c["text"]) for c in chunks if c["metadata"].get("element_id") == element), \
-                (q["id"], element)
-        strays = [c["title"] for c in chunks if holds(q["evidence"], c["text"])
-                  and c["metadata"].get("element_id") not in q["answers"] + q["related"]
-                  and not c["metadata"]["kind"].startswith(QUOTING)]
+            assert any(holds(phrases, w.text) for w in windows if w.element_id == element), (q["id"], element)
+        strays = [chunks[i]["title"] for i, g in grades.items() if g == 2
+                  and windows[i].element_id not in q["answers"] + q["related"] and not windows[i].kind.startswith(QUOTING)]
         assert not strays, (q["id"], strays)
 
 
@@ -83,8 +91,18 @@ def test_questions_across_the_rival_proposals(tmp_path):
     names = {c["metadata"]["content"]: c["metadata"]["project"] for c in chunks if c["metadata"].get("project")}
     assert list(names.values()).count("Riverbend_Water_Treatment_Works.mdzip") == 3  # three projects, one file name
     for q in ACROSS():
-        for group in q["evidence_groups"]:
+        for k, group in enumerate(q["evidence_groups"]):
             assert any(holds(group, c["text"]) for c in chunks if c["metadata"]["kind"] != "index:id"), (q["id"], group)
+            if "group_elements" not in q:
+                continue
+            # A part is a relationship: held by a chunk of an element it relates, and by no other
+            # element's chunk (AR-006).
+            elements = q["group_elements"][k]
+            assert any(holds(group, c["text"]) for c in chunks if c["metadata"].get("element_id") in elements), \
+                (q["id"], k)
+            strays = [c["title"] for c in chunks if holds(group, c["text"]) and not c["metadata"]["kind"].startswith(QUOTING)
+                      and c["metadata"].get("element_id") not in elements]
+            assert not strays, (q["id"], k, strays)
     entry = [c for c in chunks if c["metadata"]["kind"] == "index:id" and c["metadata"]["term"] == "RWT-REG-003"]
     q = next(q for q in ACROSS() if q["id"] == "across-x02-literal")
     assert entry and all(any(holds(g, c["text"]) for c in entry) for g in q["evidence_groups"])
