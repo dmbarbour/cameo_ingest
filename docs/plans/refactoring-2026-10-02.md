@@ -206,14 +206,26 @@ version; their requests change only where CP2's labels do.
 
 ### CP5: the writer and the tree's outputs
 
+**Threads stay a tree-wide switch** (the maintainer's rule: switches are applied to the tree on
+`run`). Each project now builds its threads, with its own chunks and from its in-memory model,
+into `index/threads.jsonl` and a `THREADS.md` page; the switch decides only whether the tree's
+`chunks.jsonl` and `rag/` include them. Under `rag/`, they move from `_tree` to the project's own
+folder. Their `file` pointed at `CROSSREF.md#thread-…`, an anchor that page never had; it is
+`THREADS.md#…` now.
+
 | Step | What | Status |
 |---|---|---|
-| RA-13 (writer) | **Split `ProjectWriter`** (AR-007R1) into `ProjectView` (semantic indexes and caches, sections by package), `FilePlan` (paths, anchors, links), `PageWriter`, `ChunkSink` (CP3's factory) and `TableWriter`; the ledger takes the view, plan and sink, ending its circular import. | |
-| RA-14 | **Per-project index files, and `rebuild` in steps** (AR-012R1, the rest of R2; AR-014). `index/ids.jsonl` written at build time from the model (identifier, title, what the element is, its main chunk), merged by the tree-level index instead of re-reading CSV tables; chunk metadata names an element's main chunk and an annotation's id, so `quality` reads structure, not text; `rebuild` calls one function per output, each tested; threads made at build time with their project's chunks, so they land in its `rag/` folder; the `exports` docstring fixed. | |
-| RA-21 | **A split thread part names its ancestors** (AR-027R2): each part after the first starts with its first line's ancestors, by name and id only. Measured on the within-model questions. | |
+| CP5a | **Split `ProjectWriter`** (RA-13, AR-007R1) into `ProjectView` (`view.py`: semantic indexes and caches, traces, headings, sections as data), `FilePlan` (`files.py`), `ChunkSink` (`sink.py`), `PageWriter` (`pages.py`) and `TableWriter` (`tables.py`); `ProjectWriter` assembles them. The ledger takes the view, plan, sink and pages, ending its circular import; the enricher takes the view and the plan. || Done: `view.py` (290 lines), `files.py`, `sink.py`, `pages.py`, `tables.py`; `emit.py` keeps the assembly (69 lines) |
+| CP5b | **A DOORS id after a bullet** (from CP2's comparison): TMT has requirement texts starting `- [REQ-1-OAD-1050] …`; `DOORS_ID` takes them. || Done (0.7.1) |
+| CP5c | **Per-project identifier files** (RA-14, AR-012R1). `index/ids.jsonl`, one record per identifier and element (what holds it, how, a snippet, the element's main chunk, its trace), made from the in-memory model with the vocabulary of CP2, not from the CSV tables. `crossref.places` reads these files. || Done: `crossref.project_places`, written by the table writer; `crossref.places` reads `ids.jsonl` |
+| CP5d | **Threads with their project** (AR-014R2, RA-21). Made at build time from the model; their parts each start with their first line's ancestors, by title, so that every part states its derivations (AR-027R2). || Done: `crossref.project_threads` and `thread_chunks`; `plain.parts_with_context`. The text is rendered at tree time, so `--line-refs`, a tree setting, still applies; the crossing's SN-02 thread now reads 'Stop Road Users (SN-02) (continued)' and 'Obstacle Detection (FVX-SYS-011) (continued)' above its second part's first line, which was shown under the wrong parent before AR-027R1 |
+| CP5e | **Structure for `quality`** (the rest of AR-012R2). Generated chunks carry `primary_chunk` (their element's main chunk) and `annotation` (an id shared by its pieces); `quality` joins an answer's pieces by it and takes its reference from the element's own chunks, not from the page with the answer cut out. || Done, with the reference kept as the page: a package summary's rater needs its elements' sections, which the package's own chunks lack. What changed is the answer: its pieces are joined by their `annotation` before it is cut from the page |
+| CP5f | **`rebuild` in steps** (AR-014R1): one function per output (manifest, provenance, `INDEX.md`, the projects ledger, the index across models and `CROSSREF.md`, the tree's chunks, `rag/`), each with a test. || Done: `rebuild` calls `write_manifest`, `write_provenance`, `write_index_page`, `projects_ledger`, `cross_index`, `thread_chunks`, `write_chunks`, `write_rag`; each output is covered by the tests that read it |
 
-**Checks:** the index and `CROSSREF.md` unchanged; threads moved and their text changed only as
-RA-21 says; retrieval on the fictional questions, within-model ones especially.
+**Checks:** a `--no-llm` tree for CP5a (the same as CP4's, but for the heading fix of 9536a08);
+then one for the rest, every difference listed (index entries' wording, threads' place and their
+ancestors, the new files and metadata); retrieval on the fictional questions, the within-model
+ones especially (RA-21). Version 0.7.1.
 
 ### CP6: configuration and state
 
