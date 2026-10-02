@@ -19,9 +19,10 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
-import numpy as np
-
+from . import require
 from .windows import windows
+
+np = require("numpy")
 
 
 @dataclass(frozen=True)

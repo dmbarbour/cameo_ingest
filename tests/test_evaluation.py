@@ -90,10 +90,23 @@ def test_grading_rules():
     assert not holds([["derives from X", "UV Dose"]], "Thread: what derives from Y\n- UV Dose (P-4)")
 
 
+def test_evaluation_extra(monkeypatch):
+    """Without the eval extra, the evaluation says how to install it; grading needs none of it
+    (plan RA-04)."""
+    import sys
+
+    monkeypatch.setitem(sys.modules, "numpy", None)  # as if not installed
+    monkeypatch.delitem(sys.modules, "cameo_ingest.evaluation.harness", raising=False)
+    with pytest.raises(ImportError, match=r'install "cameo-ingest\[eval\]"'):
+        import cameo_ingest.evaluation.harness
+    monkeypatch.delitem(sys.modules, "cameo_ingest.evaluation.grading", raising=False)
+    import cameo_ingest.evaluation.grading  # noqa: F401
+
+
 def test_search_and_measures():
     """BM25 ranks the document with the query's rare words first; fusion keeps what both
     rankings agree on; the measures read graded relevance (plan RE-05)."""
-    pytest.importorskip("numpy")  # the optional eval group
+    pytest.importorskip("numpy")  # the eval extra
     from cameo_ingest.evaluation.harness import BM25, fuse, mean_ci, measures, top
 
     docs = ["the brine valve closes in 340 ms", "the pump station has two pumps", "the valve and the pump"]

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Judge the pooled search results of the retrieval evaluation (plan RE-06).
 
-    uv run --group eval python scripts/judge_pools.py out/all --env .env \\
+    uv run --extra eval python scripts/judge_pools.py out/all --env .env \\
         --judges deepseek-ai/DeepSeek-V3.2 Qwen/Qwen3-235B-A22B-Instruct-2507
 
 Pools every question's top 10 from every system (OUT_RETRIEVAL/<set>/rankings.jsonl), and has each

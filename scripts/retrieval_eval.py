@@ -2,7 +2,7 @@
 """Run retrieval over an output tree for a set of questions, and report how often the answers
 come back (plan RE-05).
 
-    uv run --group eval python scripts/retrieval_eval.py out/all --env .env --models e5-large minilm \\
+    uv run --extra eval python scripts/retrieval_eval.py out/all --env .env --models e5-large minilm \\
         --out out/eval/retrieval/synthetic
 
 The questions (`--questions`) are the synthetic project's (`cameo_ingest.evaluation.synthetic`),

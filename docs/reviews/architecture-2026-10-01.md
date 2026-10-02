@@ -814,7 +814,7 @@ and nothing checks that the current templates are registered.
 
 **Severity:** Low · **Verified:** By inspection · **Where:** various
 
-**Status:** Partly fixed on 2026-10-02 (plan RA-03). AR-026R2: the five finished studies are deleted, as the maintainer decided; the research notes cite tag `studies-2026-10-02`. AR-026R1 and R3 remain (plan RA-05, RA-04).
+**Status:** Partly fixed on 2026-10-02 (plan RA-03, RA-04). AR-026R2: the five finished studies are deleted, as the maintainer decided; the research notes cite tag `studies-2026-10-02`. AR-026R3: the evaluation stays in the package, and its dependencies are the `eval` extra, as the maintainer decided. AR-026R1 remains (plan RA-05).
 
 **Dead code:**
 - `ProjectResult.outputs` and `Outputs.files` (the runner lists files itself), and every append

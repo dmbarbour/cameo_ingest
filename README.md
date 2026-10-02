@@ -418,6 +418,9 @@ uv run pytest -m slow    # the large samples: TMT, TMT-2024x, SAF_FFDS, SAF_Plug
 uv run pytest -m llm     # a real LLM endpoint, from the environment or .env (about 1 min, ~20 requests)
 uv run python scripts/record_llm_fixture.py --env .env   # re-record the LLM replay fixture
 uv run python scripts/make_fictional_projects.py out/eval/fiction   # the fictional projects, and their questions
+uv run --extra eval python scripts/retrieval_eval.py TREE --env .env --questions out/eval/fiction/questions.jsonl --out DIR
+                         # retrieval on those questions; the evaluation needs the extra, cameo-ingest[eval]
+uv run python -m cameo_ingest.treediff BEFORE AFTER   # what a change did to an output tree
 ```
 
 **Fictional projects.** Four invented Cameo projects, ours to share, are built by

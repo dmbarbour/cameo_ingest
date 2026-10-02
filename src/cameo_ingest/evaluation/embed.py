@@ -22,8 +22,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-import numpy as np
+from . import require
 
+np = require("numpy")
 log = logging.getLogger(__name__)
 
 DEEPINFRA = "https://api.deepinfra.com/v1/openai"
@@ -62,9 +63,7 @@ MODELS = {
 @functools.cache
 def tokenizer(model_name: str):
     """The model's own tokenizer, downloaded from Hugging Face once."""
-    from tokenizers import Tokenizer
-
-    return Tokenizer.from_pretrained(model_name)
+    return require("tokenizers").Tokenizer.from_pretrained(model_name)
 
 
 def cut(model_name: str, text: str, limit: int) -> str:

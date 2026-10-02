@@ -16,6 +16,13 @@ dependencies = [
     "tqdm>=4.70.1",
 ]
 
+[project.optional-dependencies]
+# The retrieval evaluation (cameo_ingest.evaluation): not needed for ingesting.
+eval = [
+    "numpy>=2.5.3",
+    "tokenizers>=0.23.2",
+]
+
 [project.scripts]
 cameo-ingest = "cameo_ingest.cli:main"
 
@@ -26,10 +33,6 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
-]
-eval = [
-    "numpy>=2.5.3",
-    "tokenizers>=0.23.2",
 ]
 
 [tool.ruff]
