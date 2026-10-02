@@ -1,8 +1,13 @@
 # Plan: refactoring after the architecture review, 2026-10-02
 
-- **Status:** Approved on 2026-10-02 ("plan is go"), with the cost of RA-12. RA-01 to RA-05 are
-  done; the rest is grouped into checkpoints CP1 to CP8 below, each expanded in detail when it
-  starts.
+- **Status:** Done on 2026-10-02. It was approved that day ("plan is go"), with the cost of RA-12.
+  RA-01 to RA-05 were done first; the rest went in checkpoints CP1 to CP8 below, each expanded in
+  detail when it started, and each checked as its section records.
+  - Every finding of the review is fixed.
+  - Retrieval on the fictional questions held. Within the noise of 210 questions, one MRR gain
+    is significant.
+  - The new summaries were adopted after a reading.
+  - `out/ra/final-llm` is the reference tree with the LLM, at 0.7.2.
 - **Step prefix:** `RA`, so steps are `RA-01`, `RA-02` and so on
 - **Addresses:** the architecture review (`docs/reviews/architecture-2026-10-01.md`), stages 2
   to 4 of its remediation order, with the maintainer's four decisions. Stage 1 (bugs and the
@@ -104,14 +109,14 @@ evaluation follow, each independent of the others.
 
 | Checkpoint | Steps | Output | Status |
 |---|---|---|---|
-| CP1: tests and references | RA-18 (part), RA-19, RA-20 | None | |
-| CP2: one vocabulary | RA-06, RA-07, RA-08, AR-012R3 | Labels, kind words, relationship wording and ledger rows where today's versions disagree; 0.6.1 | |
-| CP3: one chunk path | RA-09, RA-11 | Generated and ledger chunk headings; 0.6.2 | |
-| CP4: the enrichment | AR-009, RA-12, RA-13 (enrichment) | Summaries (new template versions, one live run); 0.7.0 | |
-| CP5: the writer and the tree's outputs | RA-13 (writer), RA-14, RA-21 | Threads in their projects' folders, with their ancestors; chunk metadata; 0.7.1 | |
-| CP6: configuration and state | RA-10, AR-024 | None | |
-| CP7: diagrams and the LLM plumbing | RA-15, RA-16 | None | |
-| CP8: the evaluation | RA-17, RA-18 (rest) | Evaluation only | |
+| CP1: tests and references | RA-18 (part), RA-19, RA-20 | None | Done (bd4cf02) |
+| CP2: one vocabulary | RA-06, RA-07, RA-08, AR-012R3 | Labels, kind words, relationship wording and ledger rows where today's versions disagree; 0.6.1 | Done (c0f7f11) |
+| CP3: one chunk path | RA-09, RA-11 | Generated and ledger chunk headings; 0.6.2 | Done (de79089, d67619c, 9536a08) |
+| CP4: the enrichment | AR-009, RA-12, RA-13 (enrichment) | Summaries (new template versions, one live run); 0.7.0 | Done (420b15d); summaries adopted after a reading |
+| CP5: the writer and the tree's outputs | RA-13 (writer), RA-14, RA-21 | Threads in their projects' folders, with their ancestors; chunk metadata; 0.7.1 | Done (c53584f, 9852aa8) |
+| CP6: configuration and state | RA-10, AR-024 | None | Done (5cc3619) |
+| CP7: diagrams and the LLM plumbing | RA-15, RA-16 | None | Done (981479a, e1bd7f9); 0.7.2 fixed a CP5 ordering bug its check found (86900e2) |
+| CP8: the evaluation | RA-17, RA-18 (rest) | Evaluation only | Done (97007dd, 1f27d16) |
 
 ### CP1: tests and references
 
@@ -364,10 +369,28 @@ Version 0.7.2.
   matches the vector the old path cached. The LLM run is reproduced from `out/ra/llm-cache` with
   no new calls: images and prompts unchanged, from RA-15 as well.
 
+**Results (2026-10-02):**
+- **Live checks:** the SDK's embeddings matched the old path's vectors (to 9e-8) and cache
+  keys. A rerank through `post_json` works, and the live LLM tests pass.
+- **Replay:** the LLM run replayed from `out/ra/llm-cache` with RA-16's code (`out/ra/cp7-llm`)
+  made no calls. 24 projects matched the recording. TMT and TMT-2024x stopped at a
+  `ReplayMiss`: seven requests, every one CP5b's (the Focal Length and Plate Scale legends,
+  and module summaries of the three package pages whose requirements now show their DOORS
+  ids).
+- **Cached run:** the current code (0.7.2), on the same store with a budget of 60 calls
+  (`out/ra/final-llm`), asked 29 new requests and took 6,093 answers from the store. That is
+  6,122 in all, as CP4's run. The new ones are those CP5b requests and what builds on them:
+  - the two diagram descriptions;
+  - five module summaries;
+  - 22 syntheses of the three packages, in both TMT models.
+
+  RA-15 and RA-16 changed no request: the sketches and the prompts are the same.
+  `out/ra/final-llm` is the plan's reference tree with the LLM.
+
 | Step | What | Status |
 |---|---|---|
 | RA-15 | **Diagrams and partitioning** (AR-019): `diagram_graph` (build, nodes, links, labels), `diagram_text`, `sketch` (rendering, frames, presets), `vision` (the pixel budget, one `fit_size` for sketches and images) and `partition` (one base with diagram and package adapters; `_Sequence` calls its base's constructor). | Done; its tree is CP5's (see below) |
-| RA-16 | **The LLM session, HTTP and caches** (AR-016R1, AR-017): `ChatClient` (OpenAI or replay, injectable, so tests stop patching `openai.OpenAI`), `ResponseStore`, `EnrichmentSession` (budget, breaker, outcomes, request log); embeddings through the OpenAI SDK; one `post_json` with retries for the reranker; one `SqliteCache` base, with the store's recovery from a corrupt file; the provider's settings in one place; the `Embedder` counters under a lock. | Done; replay from `out/ra/llm-cache` pending |
+| RA-16 | **The LLM session, HTTP and caches** (AR-016R1, AR-017): `ChatClient` (OpenAI or replay, injectable, so tests stop patching `openai.OpenAI`), `ResponseStore`, `EnrichmentSession` (budget, breaker, outcomes, request log); embeddings through the OpenAI SDK; one `post_json` with retries for the reranker; one `SqliteCache` base, with the store's recovery from a corrupt file; the provider's settings in one place; the `Embedder` counters under a lock. | Done; no request changed (see below) |
 
 ### CP8: the evaluation
 
@@ -409,9 +432,15 @@ of the new code on a tree an old run measured reproduces its report.
   byte, from the caches (the same questions, which hold no KOIS ones).
 - The fiction folder is rebuilt with KOIS only after the plan's comparisons are done.
 
+**Results (2026-10-02):**
+- The suite passes.
+- The new `retrieval_eval` on `out/ra/cp5` (`out/ra/retrieval-cp5-new`) wrote `report.md`,
+  `rankings.jsonl` and `per_question.jsonl` byte for byte as the old script did. It took all
+  its embeddings and rerank scores from the caches, and wrote `run.json` beside them.
+
 | Step | What | Status |
 |---|---|---|
-| RA-17 | **The evaluation as library code** (AR-020, AR-021, AR-005R3): `evaluation/systems.py` and `evaluation/report.py`, the script keeping its arguments; the windows recorded beside the rankings, for `judge_pools`; one module for reading and writing questions, rankings and judgments; the synthetic project ported to the fiction builder (`fiction/orchard.py`), taking the fact rule, its scores rebased, and `synthetic.py` and its script deleted; one `is_fictional(id)` from `fiction.PROJECTS`. | CP8a done (97007dd); CP8b done, its reproduction of `retrieval-cp5` pending |
+| RA-17 | **The evaluation as library code** (AR-020, AR-021, AR-005R3): `evaluation/systems.py` and `evaluation/report.py`, the script keeping its arguments; the windows recorded beside the rankings, for `judge_pools`; one module for reading and writing questions, rankings and judgments; the synthetic project ported to the fiction builder (`fiction/orchard.py`), taking the fact rule, its scores rebased, and `synthetic.py` and its script deleted; one `is_fictional(id)` from `fiction.PROJECTS`. | Done: CP8a (97007dd), CP8b and CP8c (1f27d16); CP8b reproduces `retrieval-cp5` byte for byte |
 | RA-18d | **Tests for untested library code** (AR-022R4): the question generators, the judge's reply parsing, the embedding and rerank caches, with fakes. | Done (CP7 and CP8c) |
 
 ## Not in this plan
