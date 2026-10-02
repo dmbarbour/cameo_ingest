@@ -8,13 +8,13 @@ from pathlib import Path
 from typing import Any
 
 from . import crossref
-from . import diagrams as dg
-from . import modules as mod
+from . import diagram_text as dt
 from . import sections as sx
 from . import semantics as sem
 from .annotations import Annotation
 from .files import FilePlan, relpath
 from .model import Element
+from .partition import Partition
 from .provenance import Derivation, Trace, generated_by
 from .sink import ChunkSink
 from .text import front_matter, md_inline, plural, tidy
@@ -162,7 +162,7 @@ class PageWriter:
         part = self.view.partition(dia_id)
         if graph is not None:
             where = (lambda n: f" (M{part.module_of[n.num]})") if part else None
-            nodes, edges = dg.describe(ix, graph, self.plan.refs(rel), where=where)
+            nodes, edges = dt.describe(ix, graph, self.plan.refs(rel), where=where)
             if part:
                 blocks.append(sx.Block("Modules", [sx.line(
                     "the diagram is large, so its shapes are grouped into modules of connected shapes drawn close "
@@ -194,7 +194,7 @@ class PageWriter:
             if a.module is None:
                 lines += self.annotation_md(a, rel)
         if part is not None and graph is not None:
-            lines += self.module_sections(el, graph, part, rel)
+            lines += self.module_sections(el, part, rel)
         text = "\n".join(lines + trace_line)
         fm = front_matter({
             "title": f"Diagram {d.name}",
@@ -206,7 +206,7 @@ class PageWriter:
         })
         self.write_text(rel, fm + text)
 
-    def module_sections(self, el: Element, g: dg.DiagramGraph, part: mod.Partition, rel: str) -> list[str]:
+    def module_sections(self, el: Element, part: Partition, rel: str) -> list[str]:
         """A section per module of a large diagram: its sketch, description, legend and
         connections; and its description as a chunk that says where in the diagram it is."""
         ix = self.view.ix
@@ -220,13 +220,13 @@ class PageWriter:
             anns = [a for a in self.view.ann.get(el.id, []) if a.module == m.num]
             for a in anns:
                 lines += self.annotation_md(a, rel)
-            legend, inside, edge = mod.module_lists(ix, g, part, m.num, self.plan.refs(rel))
+            legend, inside, edge = dt.module_lists(ix, part, m.num, self.plan.refs(rel))
             lines += [f"**Shapes ({len(legend)}):**"] + legend + [""]
             if inside:
                 lines += [f"**Connections within the module ({len(inside)}):**"] + inside + [""]
             if edge:
                 lines += [f"**Connections with other modules ({len(edge)}):**"] + edge + [""]
-            shapes = [n for n in g.nodes if part.module_of[n.num] == m.num]
+            shapes = [n for n in part.graph.nodes if part.module_of[n.num] == m.num]
             where = {
                 "number": m.num, "of": len(part.modules), "anchor": f"{rel}#{anchor}",
                 "shapes": m.shapes, "elements": list(dict.fromkeys(

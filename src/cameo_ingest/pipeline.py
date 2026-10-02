@@ -9,9 +9,8 @@ from functools import partial
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from . import diagrams as dg
-from . import modules as mod
 from . import semantics as sem
+from . import sketch
 from .annotations import Annotation
 from .archive import Project, first_tag
 from .config import IMAGE_PIXELS, MODULES
@@ -128,9 +127,9 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
                 rel = writer.plan.dia_file[dia_id].removesuffix(".md") + ".png"
                 reused += (root / rel).exists()
                 if part is not None:
-                    drawn = _draw(root / rel, partial(mod.overview_png, ix, graph, part, title, image_pixels))
+                    drawn = _draw(root / rel, partial(sketch.overview_png, ix, part, title, image_pixels))
                 else:
-                    drawn = _draw(root / rel, partial(dg.render_png, ix, graph, title, pixels=image_pixels))
+                    drawn = _draw(root / rel, partial(sketch.render_png, ix, graph, title, pixels=image_pixels))
                 if not drawn:
                     continue
                 tr = writer.view.trace(el).with_(entry=d.streams[0] if d.streams else el.entry, line=None,
@@ -142,7 +141,7 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
                     continue
                 for m in part.modules:
                     mrel = writer.plan.module_image(dia_id, m.num)
-                    if not _draw(root / mrel, partial(mod.module_png, ix, graph, part, m.num, title, image_pixels)):
+                    if not _draw(root / mrel, partial(sketch.module_png, ix, part, m.num, title, image_pixels)):
                         continue
                     annotations[dia_id].append(
                         Annotation(f"Module M{m.num} sketch ({SKETCH})", "", tr, image=mrel, module=m.num))

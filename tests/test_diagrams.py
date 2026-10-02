@@ -103,9 +103,10 @@ def test_diagram_directions_item_flows_and_labels(tmp_path):
     assert "- [3] battery : Battery —[Connector: carries Energy →]— [4] motor : Motor" in page, page
     assert "ConnectorEnd" not in page  # a decoration, not a shape
 
-    from cameo_ingest import diagrams as dg
+    from cameo_ingest import diagram_graph as dg
     from cameo_ingest.archive import discover
-    from cameo_ingest.diagrams import shape_label
+    from cameo_ingest.diagram_graph import shape_label
+    from cameo_ingest.diagram_text import Refs, describe
     from cameo_ingest.layout import View
     from cameo_ingest.pipeline import parse_project
 
@@ -135,13 +136,13 @@ def test_diagram_directions_item_flows_and_labels(tmp_path):
     g = dg.DiagramGraph()
     action = el("OpaqueAction", attrs={"body": "j = 1"})
     g.nodes.append(dg.Node(1, View("v1", "OpaqueAction", action), "j = 1", 0))
-    legend, _ = dg.describe(ix, g, dg.Refs(lambda e: f"page.md#{e}"))
+    legend, _ = describe(ix, g, Refs(lambda e: f"page.md#{e}"))
     assert legend == [f"- [1] OpaqueAction: [j = 1](page.md#{action})"], legend
     # A label that starts with a bracket is text, not a link, when there is no target (AR-002).
     pump = el("Class")
     ix.elements[pump].name = "[Deleted] Pump"
     g.nodes.append(dg.Node(2, View("v2", "Class", pump), "[Deleted] Pump", 0))
-    legend, _ = dg.describe(ix, g)
+    legend, _ = describe(ix, g)
     assert legend[1] == "- [2] Class: \\[Deleted\\] Pump", legend
 
 

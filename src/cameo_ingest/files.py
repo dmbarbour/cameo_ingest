@@ -5,9 +5,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from . import diagrams as dg
 from . import sections as sx
 from . import semantics as sem
+from .diagram_text import Refs
 from .model import Element
 from .text import md_inline, slug
 
@@ -69,9 +69,9 @@ class FilePlan:
         # their case: EMF-style ids (e.g. "_2VHvQXmuEe6Klrv3p62i1g") are case-sensitive.
         return f"{slug(el.name or el.kind, 80).lower()}-{slug(el.id, 200)}"
 
-    def refs(self, from_file: str) -> dg.Refs:
+    def refs(self, from_file: str) -> Refs:
         """Links from `from_file` to the pages of elements that have one, for diagram lists."""
-        return dg.Refs(lambda e: relpath(self.file_of[e], from_file) if self.file_of.get(e) else None)
+        return Refs(lambda e: relpath(self.file_of[e], from_file) if self.file_of.get(e) else None)
 
     def link(self, target_id: str, from_file: str, text: str | None = None) -> str:
         """A link to the element's page, labelled with `text` or the element's label; the label

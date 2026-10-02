@@ -380,8 +380,8 @@ def test_every_template_filled_by_its_builder():
         own, texts = w.view.section_view(pkg).text(), [w.view.section_view(e).text() for e in sections]
         filled = {
             "diagram-description": pv.diagram_description(ix, g, d),
-            "module-description": pv.module_description(ix, g, part, 1, d),
-            "diagram-synthesis": pv.diagram_synthesis(ix, g, part, d, ["It pumps."] * len(part.modules)),
+            "module-description": pv.module_description(ix, part, 1, d),
+            "diagram-synthesis": pv.diagram_synthesis(ix, part, d, ["It pumps."] * len(part.modules)),
             "image-description": pv.image_description(),
             "package-summary": pv.package_summary("\n\n".join([own, *texts])),
             "module-summary": pv.module_summary("Model::P", 1, 2, "x" * (PART_CHARS[1] + 1)),

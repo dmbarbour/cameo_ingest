@@ -21,18 +21,18 @@ from pathlib import Path
 from typing import Any
 
 from . import annotations as an
-from . import diagrams as dg
-from . import modules as mod
 from . import prompt_values as pv
 from .annotations import Annotation
 from .files import FilePlan
 from .llm import LLM
 from .model import Element
+from .partition import Partition, sequence_partition
 from .progress import Progress
 from .prompt_values import Level
 from .prompts import CURRENT, MAX_SUMMARIES, PART_CHARS, SUMMARY_CHARS, Template
 from .provenance import Derivation, Trace
 from .view import ProjectView
+from .vision import fit_image
 
 log = logging.getLogger(__name__)
 
@@ -81,7 +81,7 @@ def _ask_with_image(llm: LLM, template: Template, values: dict[str, str], root: 
     data = (root / rel).read_bytes()
     notes = dict(notes or {})
     if image_pixels:  # the model sees at most image_pixels anyway: send no more (FU-012R3, FU-015)
-        data, mime, scaled = dg.fit_image(data, mime, image_pixels)
+        data, mime, scaled = fit_image(data, mime, image_pixels)
         if scaled:
             notes["scaled"] = scaled
     return llm.ask(template, values, image=data, mime=mime, image_path=rel, notes=notes, **kw)
@@ -102,7 +102,7 @@ def package_parts(view: ProjectView, sections: list[Element], texts: list[str]) 
     parents = [section_of(e.owner) for e in sections]
     links = [(a, b) for r in view.rels
              if (a := section_of(r.source)) is not None and (b := section_of(r.target)) is not None and a != b]
-    return mod.sequence_partition([len(t) + 1 for t in texts], parents, links, *PART_CHARS)
+    return sequence_partition([len(t) + 1 for t in texts], parents, links, *PART_CHARS)
 
 
 class Enricher:
@@ -115,7 +115,7 @@ class Enricher:
         self.images: dict[str, tuple[str, Derivation]] = {}
         self.truncated = 0  # LLM inputs cut short to fit the prompt
         self._first: list[Request] = []
-        self._large_diagrams: list[tuple[str, mod.Partition, Trace, str]] = []
+        self._large_diagrams: list[tuple[str, Partition, Trace, str]] = []
         self._large_packages: list[tuple[str, Trace, list[list[Element]], str]] = []
         self._described: dict[tuple[str, int], str] = {}  # modules of large diagrams, parts of large packages
         self._levels: dict[str, Level] = {}
@@ -142,18 +142,18 @@ class Enricher:
                        project=self.content.token, inputs=(view.trace(el).locator(), tr.locator()), notes=v.notes)
         self._first.append(Request(an.DIAGRAM, dia_id, tr, call))
 
-    def module(self, dia_id: str, part: mod.Partition, num: int, tr: Trace, rel: str) -> None:
+    def module(self, dia_id: str, part: Partition, num: int, tr: Trace, rel: str) -> None:
         """Module `num` of a large diagram, whose sketch is drawn at `rel`."""
         if not self.llm.cfg.vision_model:
             return
         ix, view = self.ix, self.view
-        v = pv.module_description(ix, view.graph(dia_id), part, num, ix.diagrams[dia_id])
+        v = pv.module_description(ix, part, num, ix.diagrams[dia_id])
         call = partial(_ask_with_image, self.llm, CURRENT["module-description"], v.values, self.root, rel,
                        "image/png", project=self.content.token,
                        inputs=(view.trace(ix.elements[dia_id]).locator(), tr.locator()), notes=v.notes)
         self._first.append(Request(an.MODULE, dia_id, tr, call, num))
 
-    def large_diagram(self, dia_id: str, part: mod.Partition, tr: Trace, rel: str) -> None:
+    def large_diagram(self, dia_id: str, part: Partition, tr: Trace, rel: str) -> None:
         """A large diagram, described as a whole from its modules once they are (`rel`: its overview)."""
         self._large_diagrams.append((dia_id, part, tr, rel))
 
@@ -268,7 +268,7 @@ class Enricher:
             if not any(texts):
                 continue  # the module requests got no answer: nor would this one
             el = self.ix.elements[dia_id]
-            v = pv.diagram_synthesis(self.ix, self.view.graph(dia_id), part, self.ix.diagrams[dia_id], texts)  # type: ignore[arg-type]
+            v = pv.diagram_synthesis(self.ix, part, self.ix.diagrams[dia_id], texts)  # type: ignore[arg-type]
             call = partial(_ask_with_image, self.llm, CURRENT["diagram-synthesis"], v.values, self.root, rel,
                            "image/png", project=self.content.token,
                            inputs=(self.view.trace(el).locator(), tr.locator()), notes=v.notes)

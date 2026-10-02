@@ -231,14 +231,28 @@ ones especially (RA-21). Version 0.7.1.
 
 | Step | What | Status |
 |---|---|---|
-| RA-10 | **One config** (AR-013): a `config` module with `TreeSettings` (stored) and `ProjectOptions` (hashed), typed, with defaults in one place, passed as objects from the CLI to runner, pipeline and exports; `ProjectOptions.hash()` keeps today's hashes, so that no project renders again; a helper for on/off flag pairs, with the default in the help. The CLI stops importing `diagrams.IMAGE_PIXELS`, `modules.thresholds` and `prompts.CURRENT`. | |
-| AR-024 | **SQL in `state.py`**: `State` methods for the nine queries in `runner`, `cli` and `exports` (`todo`, `counts`, `status`, `orphans`). | |
+| RA-10 | **One config** (AR-013): a `config` module with `TreeSettings` (stored) and `ProjectOptions` (hashed), typed, with defaults in one place, passed as objects from the CLI to runner, pipeline and exports; `ProjectOptions.hash()` keeps today's hashes, so that no project renders again; a helper for on/off flag pairs, with the default in the help. The CLI stops importing `diagrams.IMAGE_PIXELS`, `modules.thresholds` and `prompts.CURRENT`. | Done (5cc3619) |
+| AR-024 | **SQL in `state.py`**: `State` methods for the nine queries in `runner`, `cli` and `exports` (`todo`, `counts`, `status`, `orphans`). | Done (5cc3619) |
 
 ### CP7: diagrams and the LLM plumbing
 
+**RA-15 in detail.** `diagrams.py` and `modules.py` become five modules. Only `sketch` loads
+Pillow when imported, and only `pipeline` imports `sketch`.
+
+| Module | What it holds |
+|---|---|
+| `diagram_graph` | What a layout's views are (`DECORATION`, `ATTACHED`, `DIRECTED`), `ShapeLabel`, `Node`, `Link`, `DiagramGraph` and `build`. |
+| `diagram_text` | `Refs`, `PLAIN`, `describe`, and a module's lists (`module_lists`, `crossing_lines`). |
+| `vision` | The patch (48 px) and `patch_sides`, which both the sketch's canvas and `fit_image` use to cut their sides to whole patches; `fit_image`. The budget itself stays in `config`. |
+| `sketch` | What is drawn how (`DASHED`, `HOLLOW`, `ROUND`, fonts, margins), `Frame`, `canvas`, `render_png` and its helpers; the presets for large diagrams, `overview_png` and `module_png`, with `colour`. |
+| `partition` | A base `_Graph` that takes nodes, sizes, places, parents and links; its two adapters, `_Shapes` (a diagram's shapes, placed by their rectangles) and `_Sequence` (a package's sections, placed by order), each with its own `weights`; `partition` and `sequence_partition`. A `Partition` holds its graph, so its users pass one thing, not two that must match. |
+
+The output stays the same: a `--no-llm` tree compared with CP6's. Tests follow their code
+(`test_modules.py` becomes `test_partition.py`).
+
 | Step | What | Status |
 |---|---|---|
-| RA-15 | **Diagrams and partitioning** (AR-019): `diagram_graph` (build, nodes, links, labels), `diagram_text`, `sketch` (rendering, frames, presets), `vision` (the pixel budget, one `fit_size` for sketches and images) and `partition` (one base with diagram and package adapters; `_Sequence` calls its base's constructor). | |
+| RA-15 | **Diagrams and partitioning** (AR-019): `diagram_graph` (build, nodes, links, labels), `diagram_text`, `sketch` (rendering, frames, presets), `vision` (the pixel budget, one `fit_size` for sketches and images) and `partition` (one base with diagram and package adapters; `_Sequence` calls its base's constructor). | Done; its `--no-llm` tree check pending |
 | RA-16 | **The LLM session, HTTP and caches** (AR-016R1, AR-017): `ChatClient` (OpenAI or replay, injectable, so tests stop patching `openai.OpenAI`), `ResponseStore`, `EnrichmentSession` (budget, breaker, outcomes, request log); embeddings through the OpenAI SDK; one `post_json` with retries for the reranker; one `SqliteCache` base, with the store's recovery from a corrupt file; the provider's settings in one place; the `Embedder` counters under a lock. | |
 
 ### CP8: the evaluation

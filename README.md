@@ -368,11 +368,12 @@ runner: inputs ─► archive.discover ─► state (contents, sightings) ─►
   detection by stereotype name or `Id`/`Text` tags.
 - **Rich text.** Cameo stores documentation, requirement text and string tags as HTML;
   `richtext.py` converts it to plain text.
-- **Diagrams.** Layout streams hold presentation elements with an `elementID`, absolute
-  `geometry` and link ends. They produce a deterministic node and edge list, which is the
-  authoritative description. They also produce a PNG sketch that a vision model describes,
-  with the node and edge list as context, so a weak model has less room to hallucinate.
-- **Modules and parts** (`modules.py`). Large diagrams are split by Louvain community
+- **Diagrams** (`diagram_graph.py`, `diagram_text.py`, `sketch.py`). Layout streams hold
+  presentation elements with an `elementID`, absolute `geometry` and link ends. They produce a
+  deterministic node and edge list, which is the authoritative description. They also produce
+  a PNG sketch that a vision model describes, with the node and edge list as context, so a
+  weak model has less room to hallucinate.
+- **Modules and parts** (`partition.py`). Large diagrams are split by Louvain community
   detection (`networkx`) on their connections, weighted by how close the shapes are drawn.
   Large packages are split the same way, with document order in place of geometry and
   sizes in characters. LLM requests run in rounds: modules and parts first, then the

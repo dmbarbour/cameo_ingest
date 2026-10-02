@@ -7,8 +7,8 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
-from . import diagrams as dg
-from . import modules as mod
+from . import diagram_graph as dg
+from . import partition as pt
 from . import plain as pl
 from . import sections as sx
 from . import semantics as sem
@@ -51,7 +51,7 @@ class ProjectView:
                     if target != c.owner:
                         self.notes[target].append(c)
         self._graphs: dict[str, dg.DiagramGraph] = {}
-        self._parts: dict[str, mod.Partition | None] = {}
+        self._parts: dict[str, pt.Partition | None] = {}
         self.package_parts: dict[str, list[list[str]]] = {}  # large packages, summarized in parts (element ids)
         self.diagrams_showing: dict[str, list[str]] = defaultdict(list)
         for d in ix.diagrams.values():
@@ -67,11 +67,11 @@ class ProjectView:
             self._graphs[dia_id] = dg.build(self.ix, layout, self.rel_by_id, self.flows)
         return self._graphs[dia_id]
 
-    def partition(self, dia_id: str) -> mod.Partition | None:
+    def partition(self, dia_id: str) -> pt.Partition | None:
         """A large diagram's modules (computed once); None for a diagram drawn whole."""
         if dia_id not in self._parts:
             g = self.graph(dia_id)
-            self._parts[dia_id] = mod.partition(g, *self.modules) if g is not None else None
+            self._parts[dia_id] = pt.partition(g, *self.modules) if g is not None else None
         return self._parts[dia_id]
 
     # -- provenance ------------------------------------------------------------

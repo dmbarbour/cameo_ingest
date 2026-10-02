@@ -58,7 +58,7 @@ def test_samples(tmp_path, sample):
 def check_edge_directions(sample: Path) -> None:
     """Every drawn edge that shows a model relationship between the shapes (or pins) at its
     ends runs from the relationship's source to its target (FU-001)."""
-    from cameo_ingest import diagrams as dg
+    from cameo_ingest import diagram_graph as dg
     from cameo_ingest import semantics as sem
     from cameo_ingest.archive import discover
     from cameo_ingest.pipeline import load_layouts, parse_project
@@ -83,10 +83,11 @@ def check_edge_directions(sample: Path) -> None:
 def check_sketches(sample: Path) -> None:
     """Every diagram can be drawn (FU-016), and every large one split into modules that each
     can be drawn, covering all its shapes once (plan DV)."""
-    from cameo_ingest import diagrams as dg
-    from cameo_ingest import modules as mod
+    from cameo_ingest import diagram_graph as dg
     from cameo_ingest import semantics as sem
+    from cameo_ingest import sketch
     from cameo_ingest.archive import discover
+    from cameo_ingest.partition import partition
     from cameo_ingest.pipeline import load_layouts, parse_project
 
     proj = next(discover(sample.read_bytes(), sample.name))
@@ -96,14 +97,14 @@ def check_sketches(sample: Path) -> None:
     split = 0
     for dia_id, layout in load_layouts(proj, ix).items():
         g = dg.build(ix, layout, rels, flows)
-        dg.render_png(ix, g, dia_id)
-        part = mod.partition(g)
+        sketch.render_png(ix, g, dia_id)
+        part = partition(g)
         if part is None:
             continue
         split += 1
         assert sorted(k for m in part.modules for k in m.shapes) == [n.num for n in g.nodes], dia_id
-        assert mod.overview_png(ix, g, part, dia_id)
-        assert all(mod.module_png(ix, g, part, m.num, dia_id) for m in part.modules)
+        assert sketch.overview_png(ix, part, dia_id)
+        assert all(sketch.module_png(ix, part, m.num, dia_id) for m in part.modules)
     assert split
 
 

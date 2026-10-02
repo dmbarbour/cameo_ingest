@@ -10,10 +10,11 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any
 
-from . import diagrams as dg
-from . import modules as mod
+from . import diagram_text as dt
 from . import semantics as sem
+from .diagram_graph import DiagramGraph
 from .model import Diagram, Element, ModelIndex
+from .partition import Partition
 from .prompts import CURRENT, DIAGRAM_ITEMS, DIGEST_CHARS, OWN_CHARS, PART_CHARS
 from .text import one_line, plural
 
@@ -29,8 +30,8 @@ def diagram_name(d: Diagram) -> str:
     return f"{d.name} ({d.diagram_type or 'unknown type'})"
 
 
-def diagram_description(ix: ModelIndex, g: dg.DiagramGraph, d: Diagram) -> Values:
-    nodes, edges = dg.describe(ix, g)
+def diagram_description(ix: ModelIndex, g: DiagramGraph, d: Diagram) -> Values:
+    nodes, edges = dt.describe(ix, g)
     out = Values({"DIAGRAM": diagram_name(d), "LEGEND": "\n".join(nodes[:DIAGRAM_ITEMS]),
                   "CONNECTIONS": "\n".join(edges[:DIAGRAM_ITEMS]) or "(none)", "CUT_NOTE": ""})
     if max(len(nodes), len(edges)) > DIAGRAM_ITEMS:
@@ -41,21 +42,21 @@ def diagram_description(ix: ModelIndex, g: dg.DiagramGraph, d: Diagram) -> Value
     return out
 
 
-def module_description(ix: ModelIndex, g: dg.DiagramGraph, part: mod.Partition, num: int, d: Diagram) -> Values:
-    legend, lines, boundary = mod.module_lists(ix, g, part, num)
+def module_description(ix: ModelIndex, part: Partition, num: int, d: Diagram) -> Values:
+    legend, lines, boundary = dt.module_lists(ix, part, num)
     return Values({"DIAGRAM": diagram_name(d), "MODULE": f"M{num} of {len(part.modules)}", "LEGEND": "\n".join(legend),
                    "CONNECTIONS": "\n".join(lines) or "(none)", "BOUNDARY": "\n".join(boundary) or "(none)"},
                   {"module": f"M{num} of {len(part.modules)}"})
 
 
-def diagram_synthesis(ix: ModelIndex, g: dg.DiagramGraph, part: mod.Partition, d: Diagram,
+def diagram_synthesis(ix: ModelIndex, part: Partition, d: Diagram,
                       texts: list[str | None]) -> Values:
     """From the modules' descriptions (`texts`, None for a module that got no answer)."""
     modules = "\n\n".join(f"M{m.num} ({len(m.shapes)} shapes): {text or '(not described)'}"
                           for m, text in zip(part.modules, texts, strict=True))
     missing = sum(t is None for t in texts)
     return Values({"DIAGRAM": diagram_name(d), "MODULES": modules,
-                   "CROSSING": "\n".join(mod.crossing_lines(ix, g, part)) or "(none)"},
+                   "CROSSING": "\n".join(dt.crossing_lines(ix, part)) or "(none)"},
                   {"modules": len(part.modules), **({"undescribed": missing} if missing else {})})
 
 

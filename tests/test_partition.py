@@ -1,12 +1,13 @@
-"""Large diagrams split into modules, and the views drawn of them (plan DV)."""
+"""Large diagrams split into modules, and the views drawn of them (plan DV); a package's sections into parts."""
 
 import io
 
 from PIL import Image
 
-from cameo_ingest import diagrams as dg
-from cameo_ingest import modules as mod
-from cameo_ingest.config import MODULES
+from cameo_ingest import diagram_graph as dg
+from cameo_ingest import sketch
+from cameo_ingest.config import IMAGE_PIXELS, MODULES
+from cameo_ingest.partition import partition, sequence_partition
 from cameo_ingest.layout import View
 from cameo_ingest.model import ModelIndex
 
@@ -41,28 +42,28 @@ def two_clusters() -> dg.DiagramGraph:
 
 
 def test_small_diagrams_are_not_split():
-    assert mod.partition(graph(chain(25, 0), [(i, i + 1) for i in range(1, 25)])) is None
+    assert partition(graph(chain(25, 0), [(i, i + 1) for i in range(1, 25)])) is None
 
 
 def test_clusters_become_modules():
     g = two_clusters()
-    part = mod.partition(g)
+    part = partition(g)
     assert part is not None
     assert [m.shapes for m in part.modules] == [list(range(1, 16)), list(range(16, 31))]  # left one first
     assert [m.num for m in part.modules] == [1, 2]
     assert part.modules[0].boundary == [16] and part.modules[1].boundary == [15]
-    assert [(lk.source.view_id, lk.target.view_id) for lk in part.crossing(g)] == [("v15", "v16")]
-    inside, edge = part.links(g, 1)
+    assert [(lk.source.view_id, lk.target.view_id) for lk in part.crossing()] == [("v15", "v16")]
+    inside, edge = part.links(1)
     assert len(inside) == 14 and len(edge) == 1
     assert part.modules[0].box == (0, 0, 700, 240)
-    again = mod.partition(two_clusters())
+    again = partition(two_clusters())
     assert again is not None and [m.shapes for m in again.modules] == [m.shapes for m in part.modules]
 
 
 def test_every_shape_in_one_bounded_module():
     """Unconnected shapes (as on SAF's content diagrams) are grouped by where they sit."""
     rects = [(160 * (i % 9), 120 * (i // 9), 120, 60) for i in range(43)]
-    part = mod.partition(graph(rects, []))
+    part = partition(graph(rects, []))
     assert part is not None
     shapes = [k for m in part.modules for k in m.shapes]
     assert sorted(shapes) == list(range(1, 44))
@@ -75,7 +76,7 @@ def test_containers_do_not_widen_crops():
     crop covers only its own shapes."""
     rects = [(-50, -50, 3900, 400), *chain(15, 0), *chain(15, 3000)]
     links = [(i, i + 1) for i in range(2, 16)] + [(i, i + 1) for i in range(17, 31)] + [(16, 17)]
-    part = mod.partition(graph(rects, links, {i: 1 for i in range(2, 32)}))
+    part = partition(graph(rects, links, {i: 1 for i in range(2, 32)}))
     assert part is not None and len(part.modules) == 2
     assert all(m.box[2] - m.box[0] < 1000 for m in part.modules)
     assert sum(1 in m.shapes for m in part.modules) == 1
@@ -83,25 +84,36 @@ def test_containers_do_not_widen_crops():
 
 def test_module_and_overview_views():
     g = two_clusters()
-    part = mod.partition(g)
+    part = partition(g)
     assert part is not None
     ix = ModelIndex()
-    for png, mode in ((mod.overview_png(ix, g, part, "Activity: big"), "RGB"),
-                      (mod.module_png(ix, g, part, 1, "Activity: big"), "L")):
+    for png, mode in ((sketch.overview_png(ix, part, "Activity: big"), "RGB"),
+                      (sketch.module_png(ix, part, 1, "Activity: big"), "L")):
         assert png is not None
         with Image.open(io.BytesIO(png)) as img:
             w, h = img.size
-            assert img.mode == mode and w * h <= dg.IMAGE_PIXELS and w % 48 == 0 and h % 48 == 0
+            assert img.mode == mode and w * h <= IMAGE_PIXELS and w % 48 == 0 and h % 48 == 0
     # The crop is of module 1 alone, drawn larger than in the whole sketch.
-    whole = dg.render_png(ix, g, "whole")
+    whole = sketch.render_png(ix, g, "whole")
     assert whole is not None
-    with Image.open(io.BytesIO(whole)) as a, Image.open(io.BytesIO(mod.module_png(ix, g, part, 1, "t") or b"")) as b:
+    with Image.open(io.BytesIO(whole)) as a, Image.open(io.BytesIO(sketch.module_png(ix, part, 1, "t") or b"")) as b:
         assert b.size[0] / 700 > a.size[0] / 3700
 
 
 def test_leaving_a_box():
     box = (0, 0, 100, 100)
-    assert dg._leaving([(50, 50), (150, 50)], box) == (100, 50)
-    assert dg._leaving([(50, 50), (50, -50)], box) == (50, 0)
-    assert dg._leaving([(50, 50), (60, 60)], box) is None
-    assert dg._leaving([(50, 50), (60, 50), (60, 200)], box) == (60, 100)
+    assert sketch._leaving([(50, 50), (150, 50)], box) == (100, 50)
+    assert sketch._leaving([(50, 50), (50, -50)], box) == (50, 0)
+    assert sketch._leaving([(50, 50), (60, 60)], box) is None
+    assert sketch._leaving([(50, 50), (60, 50), (60, 200)], box) == (60, 100)
+
+
+def test_a_package_in_parts():
+    """A package's sections grouped into parts of at most `hi` characters, in document order,
+    related sections together even when apart (AR-019: the package adapter shares the base)."""
+    sizes, none = [100.0] * 12, [None] * 12
+    runs = [(i, i + 1) for i in range(5)] + [(i, i + 1) for i in range(6, 11)]
+    assert sequence_partition(sizes, none, runs, 300, 600) == [list(range(6)), list(range(6, 12))]
+    assert sequence_partition(sizes, none, [(0, 11), (1, 10), (2, 9)], 100, 300) == [
+        [0, 11], [1, 10], [2, 9], [3, 4, 5], [6, 7, 8]]
+    assert sequence_partition([10.0] * 3, [None] * 3, [], 300, 600) == [[0, 1, 2]]  # small enough whole

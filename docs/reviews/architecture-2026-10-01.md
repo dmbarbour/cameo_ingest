@@ -99,7 +99,7 @@ Four themes run through the findings:
 | AR-016 | Medium | The `LLM` class mixes transport, store, replay, run policy and report | By inspection | Partly fixed |
 | AR-017 | Medium | HTTP clients, retries and SQLite caches are written two or three times | By inspection | Open |
 | AR-018 | Medium | LLM summary inputs are page Markdown, link targets and all | By inspection | Open |
-| AR-019 | Medium | `diagrams.py` and `modules.py` each carry several unrelated responsibilities | By inspection | Open |
+| AR-019 | Medium | `diagrams.py` and `modules.py` each carry several unrelated responsibilities | By inspection | Fixed |
 | AR-020 | Medium | `retrieval_eval.main` is library code; `judge_pools` cuts windows again on its own defaults | By inspection | Open |
 | AR-021 | Medium | The KOIS project duplicates the fiction builder, and fictional prefixes are listed in four places | By inspection | Open |
 | AR-022 | Medium | The test suite: a 1,168-line module, no `conftest.py`, repeated setup, untested library code | By inspection | Open |
@@ -641,6 +641,13 @@ yet.
 ### AR-019: `diagrams.py` and `modules.py` each carry several unrelated responsibilities
 
 **Severity:** Medium · **Verified:** By inspection · **Where:** `diagrams.py` (582 lines), `modules.py` (369 lines), `pipeline.py:134-154`
+
+**Status:** Fixed on 2026-10-02 (plan RA-15). The two files are now `diagram_graph`,
+`diagram_text`, `sketch`, `vision` and `partition`. Only `sketch` loads Pillow, and only the
+pipeline imports it. `patch_sides` cuts both sketches and scaled images to whole patches. A
+`Partition` holds its graph, and `_Sequence` and `_Shapes` are adapters of one base. CLI
+parsing moved to `config` in CP6, and the verbs to `semantics` in CP2. `Layout.bounds` had
+already gone.
 
 **`diagrams.py` holds:**
 - the vocabulary and labels;
