@@ -83,11 +83,15 @@ def plain(md: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
-def cap(text: str, limit: int = HEADING, more: str = " …") -> str:
-    """`text` cut at a word to about `limit` estimated tokens, the cut marked with `more`."""
+def cap(text: str, limit: int = HEADING, more: str = " …", keep: str = " (project ") -> str:
+    """`text` cut at a word to about `limit` estimated tokens, the cut marked with `more`. What
+    follows the last `keep` stays whole: a heading's project, which says where its text comes
+    from."""
     if tokens(text) <= limit:
         return text
-    return _cut(text, max(limit - tokens(more), 1))[0].rstrip(" ;,") + more
+    head, sep, tail = text.rpartition(keep) if keep and keep in text else (text, "", "")
+    tail = sep + tail
+    return _cut(head, max(limit - tokens(tail) - tokens(more), 1))[0].rstrip(" ;,") + more + tail
 
 
 def where(owner: str, project: str) -> str:

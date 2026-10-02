@@ -214,7 +214,8 @@ class ProjectWriter:
         ix = self.ix
         name, kind_word = sem.label(ix, el.id), kind_word or sem.kind_word(ix, el)
         owner = ix.qualified_name(el.owner) if el.owner else ""  # not the element's: an unnamed one's ends with its owner
-        return f"{kind_word} {one_line(name)} {pl.where(owner, self.content.label)}"
+        # A long name is cut first, so that the heading keeps where the element is (AR-004R2).
+        return f"{kind_word} {pl.cap(one_line(name), pl.HEADING // 2, keep='')} {pl.where(owner, self.content.label)}"
 
     def section_chunks(self, kind: str, el: Element, view: sx.Section, file: str, trace: Trace,
                        heading: str | None = None, extra: dict[str, Any] | None = None) -> None:
