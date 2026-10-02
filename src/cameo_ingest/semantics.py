@@ -350,10 +350,11 @@ def own_name(ix: ModelIndex, el: Element) -> str:
 
 def label(ix: ModelIndex, id_: str) -> str:
     """How a reference to an element reads: its own name, else "(unnamed Kind)". A reference
-    into a used project, which is not in the index, reads as its id's last part."""
+    outside the project reads as its library's or used project's name for it (plan UL), else
+    its id's last part."""
     el = ix.elements.get(id_)
     if el is None:
-        return id_.rsplit("#", 1)[-1] if "#" in id_ else id_
+        return ix.label(id_)
     return own_name(ix, el) or f"(unnamed {el.kind})"
 
 

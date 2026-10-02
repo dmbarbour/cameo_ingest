@@ -95,7 +95,7 @@ def _entry(name: str) -> zipfile.ZipInfo:
     return zipfile.ZipInfo(name, date_time=(2026, 1, 1, 0, 0, 0))
 
 
-def make_mdzip(model: str = MODEL, layout: str = LAYOUT) -> bytes:
+def make_mdzip(model: str = MODEL, layout: str = LAYOUT, extra: dict[str, str] | None = None) -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
         z.writestr(_entry("com.nomagic.magicdraw.uml_model.model"), model)
@@ -103,4 +103,36 @@ def make_mdzip(model: str = MODEL, layout: str = LAYOUT) -> bytes:
         z.writestr(_entry("BINARY-img1"), PNG_RED)
         z.writestr(_entry("BINARY-img2"), PNG_BLUE)
         z.writestr(_entry("Records.properties"), "#Compatibility entry\n")
+        for name, text in (extra or {}).items():
+            z.writestr(_entry(name), text)
     return buf.getvalue()
+
+
+# References outside the project (plan UL): a SysML 1.4 library type, a SysML 1.6 one, an
+# element of a used project (Lib.mdzip) as a part's type, as a tagged value and as a diagram's
+# shape, and the cached copy of that used project that names it (a `proxy.*` entry).
+STRING_14 = ("http://www.omg.org/spec/SysML/20150709/SysML.xmi#_SysML_Libraries_PackageableElement-"
+             "PrimitiveValueTypes_PackageableElement-String_PackageableElement")
+MODEL_EXTERNAL = MODEL.replace("""    <xmi:Extension extender='MagicDraw UML 2024x'><modelExtension>
+     <ownedDiagram xmi:type='uml:Diagram' xmi:id='d1'""", f"""    <ownedAttribute xmi:type='uml:Property' xmi:id='x1' name='serial'><type href='{STRING_14}'/></ownedAttribute>
+    <ownedAttribute xmi:type='uml:Property' xmi:id='x2' name='mass'>
+     <type href='http://www.omg.org/spec/SysML/20181001/SysML.xmi#SysML_dataType.Real'/></ownedAttribute>
+    <ownedAttribute xmi:type='uml:Property' xmi:id='x3' name='motor'><type href='Lib.mdzip#_lib_motor'/></ownedAttribute>
+    <xmi:Extension extender='MagicDraw UML 2024x'><modelExtension>
+     <ownedDiagram xmi:type='uml:Diagram' xmi:id='d1'""").replace("""<MagicDraw_Profile:DiagramInfo xmi:id='st6' base_Diagram='d1' Author='tester'/>""",
+    """<MagicDraw_Profile:DiagramInfo xmi:id='st6' base_Diagram='d1' Author='tester'/>
+ <StandardProfile:Trace xmi:id='st8' base_Class='b2'><supplier href='Lib.mdzip#_lib_cell'/></StandardProfile:Trace>""")
+LAYOUT_EXTERNAL = LAYOUT.replace("</mdOwnedViews>", """ <mdElement elementClass='Class' xmi:id='v9'><elementID href='Lib.mdzip#_lib_motor'/>
+  <geometry>400, 10, 100, 60</geometry></mdElement>
+</mdOwnedViews>""")
+PROXY = ("proxy.local__PROJECT$h0123456789abcdef_resource_com$dnomagic$dmagicdraw$duml_umodel$dshared_umodel"
+         "$dsnapshot")
+PROXY_XMI = """<?xml version="1.0" encoding="ASCII"?>
+<xmi:XMI xmi:version="2.0" xmlns:xmi="http://www.omg.org/XMI" xmlns:uml="http://www.nomagic.com/magicdraw/UML/2.5.1.1">
+  <uml:Package xmi:id="_lib_root" name="Parts Library">
+    <packagedElement xmi:type="uml:Class" xmi:id="_lib_motor" name="Brushless Motor"/>
+    <packagedElement xmi:type="uml:Class" xmi:id="_lib_cell" name="Lithium Cell"/>
+  </uml:Package>
+</xmi:XMI>
+"""
+EXTERNAL = {PROXY: PROXY_XMI}

@@ -215,7 +215,7 @@ class ProjectView:
             for k, vals in app.tags.items():
                 if k in ("Id", "Text") and sem.is_requirement(self.ix, el):
                     continue
-                shown = ", ".join(sem.label(self.ix, v) if v in self.ix.elements else v.strip() for v in vals if v.strip())
+                shown = ", ".join(sem.label(self.ix, v) if self.ix.refers(v) else v.strip() for v in vals if v.strip())
                 if shown:
                     out.append((app.name, k, shown_value(shown)))
         return out
@@ -284,7 +284,8 @@ class ProjectView:
             if app.name == sem.DIAGRAM_INFO:
                 continue
             for k, vals in app.tags.items():
-                shown = [self.ix.qualified_name(v) or v if v in self.ix.elements else shown_value(v) for v in vals]
+                shown = [(self.ix.qualified_name(v) or v) if v in self.ix.elements
+                         else self.ix.label(v) if v in self.ix.external_refs else shown_value(v) for v in vals]
                 if len(shown) > 12:
                     shown = shown[:12] + [f"... ({len(vals) - 12} more)"]
                 out.append(f"- «{app.name}» {k}: {'; '.join(shown)}")

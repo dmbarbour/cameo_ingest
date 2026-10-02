@@ -142,7 +142,7 @@ def project_places(view: ProjectView, chunk_of: dict[str, str]) -> list[dict[str
         locator = view.trace(el).with_(line=app.line).locator()
         for tag, vals in app.tags.items():
             for v in vals:
-                value = ix.qualified_name(v) if v in ix.elements else v
+                value = ix.qualified_name(v) if v in ix.elements else ix.label(v) if v in ix.external_refs else v
                 for term in sorted(_ids(value)):
                     add(term, el.id, what_of(el), f"in its tag {tag}", f"{tag} = {value}", locator)
     return out

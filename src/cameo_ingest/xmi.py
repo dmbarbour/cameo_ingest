@@ -159,6 +159,8 @@ class _Parser:
             ref = self.xattr(node, "idref") or node.get("href")
             if ref:
                 app.tags.setdefault(local, []).append(ref)
+                if node.get("href") and not ref.startswith("#"):
+                    self.ix.external_refs.add(ref)
                 self.stack.append(("ignore", None))
             else:
                 self.stack.append(("stereovalue", (app, local)))

@@ -50,9 +50,8 @@ class ShapeLabel:
 
 def shape_label(ix: ModelIndex, v: View) -> ShapeLabel:
     el = ix.elements.get(v.element or "")
-    if el is None:  # a reference into a used project, or a shape with text only
-        ref = v.element.rsplit("#", 1)[-1] if v.element and "#" in v.element else v.element
-        return ShapeLabel("", ref or v.text or "", "", v.cls)
+    if el is None:  # a reference outside the project (named as plan UL does), or a shape with text only
+        return ShapeLabel("", (ix.label(v.element) if v.element else "") or v.text or "", "", v.cls)
     t = next((tgt for r, tgt in el.refs if r == "type"), None)
     st = sem.shown_stereotypes(ix, el.id)
     return ShapeLabel(st[0] if st else "", sem.own_name(ix, el), sem.label(ix, t) if t else "", el.kind)

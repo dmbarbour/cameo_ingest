@@ -16,6 +16,7 @@ from .archive import Project, first_tag
 from .config import IMAGE_PIXELS, MODULES
 from .emit import ProjectWriter
 from .enrich import Enricher
+from .external import proxy_names
 from .layout import Layout, own_elements, parse_layout
 from .llm import EnrichmentSession
 from .model import ModelIndex
@@ -53,6 +54,8 @@ def parse_project(project: Project, progress: Progress = QUIET) -> ModelIndex:
             with project.open(entry) as f:
                 parse_into(ix, _Counting(f, ph.advance), entry)
         finalize(ix)
+    if ix.external_refs:  # names for references into used projects (plan UL)
+        ix.external = proxy_names(project)
     log.info("%s: %s elements, %s diagrams, %s stereotype applications", project.display_name,
              f"{len(ix.elements):,}", f"{len(ix.diagrams):,}", f"{len(ix.stereotypes):,}")
     return ix

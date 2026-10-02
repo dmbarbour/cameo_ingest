@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .external import external_label
+
 
 @dataclass
 class Element:
@@ -61,6 +63,7 @@ class ModelIndex:
     namespaces: dict[str, str] = field(default_factory=dict)  # prefix -> uri
     exporter: dict[str, str] = field(default_factory=dict)
     external_refs: set[str] = field(default_factory=set)  # href targets outside this project
+    external: dict[str, str] = field(default_factory=dict)  # their names, by id (external.proxy_names)
     _qn_cache: dict[str, str] = field(default_factory=dict, repr=False)
 
     def get(self, id_: str | None) -> Element | None:
@@ -97,10 +100,14 @@ class ModelIndex:
         apps = [self.stereotypes[s] for s in el.stereotypes if s in self.stereotypes]
         return [a for a in apps if name is None or a.name == name]
 
+    def refers(self, value: str) -> bool:
+        """Whether a value (a tagged value, say) is a reference to an element, here or outside."""
+        return value in self.elements or value in self.external_refs
+
     def label(self, id_: str) -> str:
         """A generic label: the name, or "(unnamed Kind)", or a reference's last part. How an
         element reads on pages, in chunks and in diagrams is `semantics.label` (AR-010)."""
         el = self.elements.get(id_)
         if el is None:
-            return id_.rsplit("#", 1)[-1] if "#" in id_ else id_
+            return external_label(self.external, id_)
         return el.name or f"(unnamed {el.kind})"
