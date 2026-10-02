@@ -176,9 +176,10 @@ def _derives(req: str, rid: str, source: str, thread: str) -> list:
     """`req` (id `rid`) is derived from `source`. A thread says so by nesting alone, so `thread`
     is what a thread holding both says besides: its heading ("what derives from X"), or the
     source's line when the thread starts above it."""
-    title = f"{req} ({rid})"
-    return [f"{title} is derived from this", f"Requirement {req}, is derived from it", f"{title} → {source}",
-            [title, f"is derived from {source}"], [title, f"derived from: {source}"], [thread, title]]
+    title = f"{req} ({rid})"  # as requirements are titled from 0.6.1; the forms before it stay, for comparisons
+    return [f"{title} is derived from this", f"{req} is derived from this", f"Requirement {req}, is derived from it",
+            f"{title} → {source}", f"{req} → {source}", [title, f"is derived from {source}"],
+            [title, f"derived from: {source}"], [f"{rid} {req}", f"derived from: {source}"], [thread, title]]
 
 
 def within() -> list[dict]:
