@@ -112,6 +112,64 @@ with a check there.
   - memory and load time in proportion to the corpus;
   - our JavaScript to maintain, which can be tested with Node here.
 
+## A page opened from disk: what browsers allow (2026-10-02)
+
+**Does work:**
+- **Classic scripts:** `<script src="data/x.js">` loads a sibling file from `file://` in
+  Chrome, Edge and Firefox. Data can therefore come in script files that assign it, but not
+  through `fetch`.
+- **Links and images:** relative links and `<img>` work, so a page inside an extracted folder can
+  show sketches and open pages.
+- **Decompression:** `DecompressionStream("gzip")` is in every current browser (Chrome 80,
+  Firefox 113, Safari 16.4; widely available since May 2023). Data can travel gzipped and
+  base64-encoded inside the page.
+- **Scripts in downloaded files:** a downloaded page still runs its scripts. The Mark of the Web
+  restricts Office documents and MHTML, not plain HTML. Policies differ between
+  organisations, so the trial checks this.
+
+**Doesn't work:**
+- **`fetch` and XHR to sibling files** are blocked: Chrome gives the page the `null` origin, and
+  Firefox (since 68) gives each file an origin of its own.
+- **ES modules** (`type="module"`) fail from `file://` (CORS).
+- **Web workers:** Chrome won't start them from a file. Workers from blob URLs behave
+  differently across browsers, so they are not to be relied on. Long work must be cut into
+  slices on the main thread, which lets a progress bar repaint between them.
+- **Persistent storage:** localStorage and IndexedDB are unreliable for `file://` pages, so the
+  page should be fast to rebuild its index each time rather than cache it.
+
+**Zip files on Windows:** double-clicking an HTML file inside a zip, in Explorer's preview,
+extracts that file alone into a temporary folder, and its relative links and scripts break.
+People must use "Extract All" first. A page can detect that it was opened from such a
+temporary folder and say so.
+
+**SharePoint downloads:** a folder download is zipped on the fly, but limited to 10,000 files.
+`rag/text` alone has 85,298, so a bundle must be shipped as one zip file of our own.
+
+**Sizes** on plan RA's reference tree:
+
+| What | Size |
+|---|---|
+| All chunk text | 52 MB, 5.4 MB gzipped (≈7.2 MB as base64 in a page) |
+| Sketches (3,697 PNG) | 43 MB, already compressed |
+| Pages (5,461 Markdown) | 108 MB |
+
+**What follows:**
+- **A single self-contained page holds the whole corpus's text in about 8 MB.** Download speed
+  and file size stop being a concern; load time is mostly decompression, parsing and building
+  the index, which can be measured and shown with progress.
+- **A bundle zip adds what doesn't embed cheaply, the sketches, and the pages if they are
+  wanted.** The page can find out whether the bundle is there by loading a small script beside
+  it, which fails if the file is missing.
+
+**More sources:**
+- [Loading module scripts from `file://` (WHATWG issue 8121)](https://github.com/whatwg/html/issues/8121)
+- [Firefox 68: local files get their own origin](https://www.statsilk.com/support/running-offline-javascript-firefox-68-resolving-cross-origin-request-blocked)
+- [Not allowed to load local resource (blob URL), Chromium issue 366055344](https://issues.chromium.org/issues/366055344)
+- [Compression Streams are now supported on all browsers](https://web.dev/blog/compressionstreams)
+- [Download files and folders from OneDrive or SharePoint (limits)](https://support.microsoft.com/en-us/onedrive/download-files-and-folders-from-onedrive-or-sharepoint)
+- [Warning users about the Windows Explorer zip archive preview (Ben Nadel)](https://www.bennadel.com/blog/4138-warning-users-about-the-windows-explorer-zip-archive-preview-in-javascript.htm)
+- [Mark of the Web](https://en.wikipedia.org/wiki/Mark_of_the_Web)
+
 ## Sources
 
 - [Excel specifications and limits](https://support.microsoft.com/en-us/excel/excel-specifications-and-limits)
