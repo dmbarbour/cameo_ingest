@@ -871,7 +871,7 @@ for. Member lists split the same way.
   questions.
 
 **Status:** Partly fixed on 2026-10-02 (0.5.3). AR-027R1 is done, with a test of a nested list
-split into parts. AR-027R2 remains (plan RA, "Not in this plan").
+split into parts. AR-027R2 remains (plan RA-21, checkpoint CP5).
 
 ## Remediation order
 
