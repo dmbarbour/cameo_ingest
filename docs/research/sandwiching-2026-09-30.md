@@ -19,6 +19,9 @@
     does, in parts (DV-05). Two size bands: 18 packages of 30,000 to 400,000 characters
     (median 47,836), and 14 of TMT's 17 packages of 100,000 to 600,000 characters (median
     178,730, about 45,000 tokens).
+- **Code:** both scripts, and the sandwiched templates (`module-summary@v2`,
+  `package-synthesis@v2`, `package-summary@v3`), were retired on 2026-10-02 (plan RA-03); they
+  are at tag `studies-2026-10-02`.
 - **Measures:**
   - **Adherence:** answers over the word limit, with Markdown, or naming parts by number.
   - **Coverage:** which element names of the input an answer mentions, and from which third of

@@ -275,8 +275,8 @@ hash of their text, so unchanged chunks cost nothing.
 
 | Step | Work | Status |
 |---|---|---|
-| RE-01 | Inventory: chunk lengths in each model's tokens, what fills them (links, names, traces), and how the simulated 512-token windows fall; as a script and a research note. | Done: `scripts/chunk_inventory.py`, `docs/research/chunk-inventory-2026-09-30.md` |
-| RE-02 | Endpoints and the embedding cache: the models on DeepInfra, their input limits, prefixes and speed. | Done: `cameo_ingest.evaluation.embed`, `scripts/embedding_check.py`. Local containers dropped (decision 8) |
+| RE-01 | Inventory: chunk lengths in each model's tokens, what fills them (links, names, traces), and how the simulated 512-token windows fall; as a script and a research note. | Done: `scripts/chunk_inventory.py` (retired; at tag `studies-2026-10-02`), `docs/research/chunk-inventory-2026-09-30.md` |
+| RE-02 | Endpoints and the embedding cache: the models on DeepInfra, their input limits, prefixes and speed. | Done: `cameo_ingest.evaluation.embed`, `scripts/embedding_check.py` (retired; at tag `studies-2026-10-02`). Local containers dropped (decision 8) |
 | RE-03 | Corpora: ingest every sample except TMT-2024x into one tree, with LLM enrichment, reusing TMT's cached answers. | Done: `out/all`, 19 projects, 28,220 chunks; about 400 new LLM requests |
 | RE-04 | Questions: the synthetic project (decision 9), the structural generator and the LLM question writer. A sample goes to the maintainer to spot-check for sense; the generators are fixed where it finds faults. | In progress: the synthetic project (28 questions), 88 structural questions, and two natural sets of 75 (from Markdown chunks, and from plain chunks: `natural-plain`); the spot check (`out/eval/questions/spot-check.md`) awaits the maintainer |
 | RE-05 | The harness: the simulated pipeline (windows over chunks and over pages), indexes, dense, BM25 and hybrid search, measures with confidence intervals, the report and per-question pages. | Done for windows over chunks (`cameo_ingest.evaluation.harness`, `scripts/retrieval_eval.py`); windows over pages to come |

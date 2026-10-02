@@ -105,8 +105,8 @@ Four themes run through the findings:
 | AR-022 | Medium | The test suite: a 1,168-line module, no `conftest.py`, repeated setup, untested library code | By inspection | Open |
 | AR-023 | Low | Five Markdown-to-plain converters and four link patterns | By inspection | Open |
 | AR-024 | Low | SQL against `state.sqlite` is written outside `state.py` | By inspection | Open |
-| AR-025 | Low | The prompt registry is two hand-kept lists, current and retired templates mixed | By inspection | Open |
-| AR-026 | Low | Dead code, finished studies left in `scripts/`, and the evaluation in the product wheel | By inspection | Open |
+| AR-025 | Low | The prompt registry is two hand-kept lists, current and retired templates mixed | By inspection | Fixed |
+| AR-026 | Low | Dead code, finished studies left in `scripts/`, and the evaluation in the product wheel | By inspection | Partly fixed |
 | AR-027 | Medium | A thread split into parts loses its nesting, so a part can misstate what derives from what | Reproduced | Partly fixed |
 
 ## Findings
@@ -787,6 +787,8 @@ counts, status, orphans. The `State` class exists to hold them.
 
 **Severity:** Low · **Verified:** By inspection · **Where:** `prompts.py:525-533`, `evaluation/judge.py:19`, `evaluation/questions.py:111`
 
+**Status:** Fixed on 2026-10-02 (plan RA-03). The retired and rejected templates are gone from the code, as the maintainer decided; they are at tag `studies-2026-10-02`. One tuple of the versions in use makes `CURRENT` and `TEMPLATES`, and refuses two versions of one template (R1). No template is derived from another any more, so R3 needs no check; a test pins each current request by hash instead. The evaluation's templates stay unregistered (plan RA-17).
+
 **The lists:** `CURRENT` and `TEMPLATES` are kept by hand. A duplicate key is silently dropped,
 and nothing checks that the current templates are registered.
 
@@ -811,6 +813,8 @@ and nothing checks that the current templates are registered.
 ### AR-026: Dead code, finished studies left in `scripts/`, and the evaluation in the product wheel
 
 **Severity:** Low · **Verified:** By inspection · **Where:** various
+
+**Status:** Partly fixed on 2026-10-02 (plan RA-03). AR-026R2: the five finished studies are deleted, as the maintainer decided; the research notes cite tag `studies-2026-10-02`. AR-026R1 and R3 remain (plan RA-05, RA-04).
 
 **Dead code:**
 - `ProjectResult.outputs` and `Outputs.files` (the runner lists files itself), and every append
