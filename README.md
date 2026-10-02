@@ -221,7 +221,7 @@ ingested beside the chunks.
 - **Folders:** one per project (`TMT-9ffd7a2c`, its name and the start of its token), and
   `_tree` for the projects ledger.
 - **Files:** one `.txt` file per chunk, named by the sha256 of its text, so names never clash
-  and change only when the text does. With `--chunk-style markdown` the files are `.md`.
+  and change only when the text does.
 - **Metadata:** `rag/meta/` has the same folders, with each file's metadata as `<sha256>.json`,
   for tools that take metadata per file. It is flat:
   - `title` (the chunk's heading), `kind` and `chunk_id`, which joins it to `chunks.jsonl`;
@@ -255,8 +255,8 @@ ingested beside the chunks.
   into 512-token windows then keeps the source with the text.
 - **Updates:** a project's files are written again only when its chunks change.
 
-**Chunk text is plain, for embedding** (from version 0.5.0; `--chunk-style markdown` gives the
-old chunks, as on the pages):
+**Chunk text is plain, for embedding** (from version 0.5.0; the Markdown chunks of earlier
+versions, as on the pages, were retired in 0.6.0):
 - **A heading on every chunk:** what the item is, its name, where it is and the project. For
   example, "Block Movement Channel in M-SysML::Facility::Material Handling System (project
   NIST_M-SysML [50ba80fd])". An unnamed requirement is titled by its id and the start of its text.

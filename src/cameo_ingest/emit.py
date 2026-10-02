@@ -66,10 +66,8 @@ class Outputs:
 class ProjectWriter:
     def __init__(self, content: ContentInfo, project: Project, ix: ModelIndex, root: Path,
                  annotations: dict[str, list[Annotation]] | None = None,
-                 layouts: dict[str, Layout] | None = None, modules: tuple[int, int, int] = mod.DEFAULTS,
-                 chunk_style: str = "plain"):
+                 layouts: dict[str, Layout] | None = None, modules: tuple[int, int, int] = mod.DEFAULTS):
         self.layouts = layouts or {}
-        self.chunk_style = chunk_style  # "plain" (plan RE-08, plain.py) or "markdown" (as on the pages)
         self.modules = modules  # large diagrams: split above N shapes, into MIN to MAX
         self.content = content
         self.project = project
@@ -203,7 +201,7 @@ class ProjectWriter:
 
     def chunk(self, *, kind: str, title: str, text: str, file: str, el: Element | None,
               trace: Trace, extra: dict[str, Any] | None = None, salt: str = "") -> None:
-        if self.chunk_style == "plain" and kind.startswith("generated:") and pl.tokens(text) > pl.BUDGET:
+        if kind.startswith("generated:") and pl.tokens(text) > pl.BUDGET:
             # Generated text too long for one embedding window: in parts, each under its heading.
             first, _, rest = text.partition("\n")
             pieces = pl.parts(first, rest.strip())
@@ -249,13 +247,8 @@ class ProjectWriter:
 
     def section_chunks(self, kind: str, el: Element, md: str, file: str, trace: Trace,
                        heading: str | None = None, extra: dict[str, Any] | None = None) -> None:
-        """An element's (or package's, or diagram's) chunks: its Markdown as one chunk, or in the
-        plain style, its meaning and its details as plain parts under its heading."""
-        if self.chunk_style != "plain":
-            self.chunk(kind=kind, title=f"{el.kind} {self.ix.qualified_name(el.id)}" if kind in ("element", "requirement")
-                       else (extra or {}).pop("title", f"{kind.capitalize()} {self.ix.qualified_name(el.id)}"),
-                       text=md, file=file, el=el, trace=trace, extra=extra)
-            return
+        """An element's (or package's, or diagram's) chunks: its meaning and its details, as plain
+        parts under its heading (plan RE-08)."""
         title = (extra or {}).pop("title", None) or f"{el.kind} {self.ix.qualified_name(el.id)}"
         meaning, details = pl.section(md, heading or self.heading(el))
         for suffix, texts in (("", meaning), (":details", details)):
@@ -266,11 +259,7 @@ class ProjectWriter:
 
     def text_chunks(self, *, kind: str, title: str, text: str, file: str, el: Element | None, trace: Trace,
                     extra: dict[str, Any] | None = None, salt: str = "") -> None:
-        """A chunk of running text (a ledger, the project overview): as it is, or in the plain
-        style, plain and in parts under its first line."""
-        if self.chunk_style != "plain":
-            self.chunk(kind=kind, title=title, text=text, file=file, el=el, trace=trace, extra=extra, salt=salt)
-            return
+        """A chunk of running text (the project overview): plain, in parts under its first line."""
         first, _, rest = pl.plain(text).partition("\n")
         texts = pl.parts(first, rest.strip())
         for k, part in enumerate(texts, 1):

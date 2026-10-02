@@ -11,7 +11,7 @@
                       across every model, with each place (plan RF-03); also as index:id chunks,
                       and, as trace:thread chunks, each model's derivation trees (RF-05)
     rag/              the same chunks as files, for RAG tools that read files rather than
-                      JSONL: text/<project>/<sha256>.txt (.md for Markdown chunks), each
+                      JSONL: text/<project>/<sha256>.txt, each
                       ending with a source line (project and trace), and meta/<project>/
                       <sha256>.json, each file's metadata
 
@@ -145,8 +145,7 @@ def rebuild(state: State, out: Path) -> None:
         projects = [RagProject(sha, p["name"], _merged_metadata(seen[sha]),
                                [_file_ref(s) for s in seen[sha] if not s["missing"]] or [_file_ref(s) for s in seen[sha]])
                     for sha, p in written.items()]
-        write_rag(out, projects, tree_chunks, ".md" if settings.get("chunk_style") == "markdown" else ".txt",
-                  settings.get("rag_source") or "trace")
+        write_rag(out, projects, tree_chunks, settings.get("rag_source") or "trace")
     elif (out / RAG).exists():
         shutil.rmtree(out / RAG)
 
@@ -222,8 +221,7 @@ def rag_meta(chunk: dict[str, Any], file: str, project: RagProject | None) -> di
     return {k: v for k, v in out.items() if v is not None}
 
 
-def _write_files(folder: str, root: Path, chunks: list[dict[str, Any]], project: RagProject | None, ext: str,
-                 form: str) -> None:
+def _write_files(folder: str, root: Path, chunks: list[dict[str, Any]], project: RagProject | None, form: str) -> None:
     """A folder of chunk files under text/, named by the sha256 of their text, and their
     metadata under meta/, at the same path. Two chunks with the same text share a file, and its
     metadata lists both."""
@@ -239,14 +237,13 @@ def _write_files(folder: str, root: Path, chunks: list[dict[str, Any]], project:
         if name in metas:
             metas[name].setdefault("same_text_chunk_ids", []).append(c["id"])
             continue
-        (text_dir / f"{name}{ext}").write_bytes(data)
-        metas[name] = rag_meta(c, f"{name}{ext}", project)
+        (text_dir / f"{name}.txt").write_bytes(data)
+        metas[name] = rag_meta(c, f"{name}.txt", project)
     for name, record in metas.items():
         (meta_dir / f"{name}.json").write_text(json.dumps(record, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
-def write_rag(out: Path, projects: list[RagProject], tree_chunks: list[dict[str, Any]], ext: str,
-              form: str = "trace") -> None:
+def write_rag(out: Path, projects: list[RagProject], tree_chunks: list[dict[str, Any]], form: str = "trace") -> None:
     """rag/: the chunks as files, for RAG tools that read files. Under text/, a folder per
     project (its name and short id, `TMT-9ffd7a2c`) of files named by the sha256 of their text;
     under meta/, the same folders, with each file's metadata as `<sha256>.json`, and
@@ -263,7 +260,7 @@ def write_rag(out: Path, projects: list[RagProject], tree_chunks: list[dict[str,
     keep, sources = {"_tree", "_sources.json"}, {}
     for p in projects:
         src = out / PROJECTS / p.sha / "index" / "chunks.jsonl"
-        stamp = json.dumps([sha256_bytes(src.read_bytes()), p.found_with, p.files, ext, form, TOOL])
+        stamp = json.dumps([sha256_bytes(src.read_bytes()), p.found_with, p.files, ".txt", form, TOOL])
         folder = f"{_safe(PurePosixPath(p.name).stem, 40)}-{p.id}"
         keep.add(folder)
         sources[p.id] = {"project": p.name, "token": f"sha256:{p.sha}", "folder": folder, "files": p.files,
@@ -272,13 +269,13 @@ def write_rag(out: Path, projects: list[RagProject], tree_chunks: list[dict[str,
         if marker.is_file() and marker.read_text(encoding="utf-8") == stamp and (root / "text" / folder).is_dir():
             continue
         with src.open(encoding="utf-8") as f:
-            _write_files(folder, root, [json.loads(line) for line in f], p, ext, form)
+            _write_files(folder, root, [json.loads(line) for line in f], p, form)
         marker.write_text(stamp, encoding="utf-8")
     for top in (root / "text", root / "meta"):
         for old in top.iterdir():
             if old.name not in keep:
                 shutil.rmtree(old) if old.is_dir() else old.unlink()
-    _write_files("_tree", root, tree_chunks, None, ext, form)
+    _write_files("_tree", root, tree_chunks, None, form)
     (root / "meta" / "_sources.json").write_text(json.dumps(sources, ensure_ascii=False, indent=1), encoding="utf-8")
 
 

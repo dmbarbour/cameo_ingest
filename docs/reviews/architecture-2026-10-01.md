@@ -84,7 +84,7 @@ Four themes run through the findings:
 | AR-001 | High | `--no-cross-index` crashes every run, and `--no-threads` deletes `CROSSREF.md` | Reproduced | Fixed |
 | AR-002 | High | An unnamed requirement whose text starts with `[` fails its whole project when a vision model is set | Reproduced | Fixed |
 | AR-003 | High | Plain chunks are made by regex-parsing the page Markdown, which corrupts model text | Reproduced | Partly fixed |
-| AR-004 | Medium | The two chunk styles branch in five places and have drifted: generated and ledger chunks break the plain style's rules | Reproduced | Open |
+| AR-004 | Medium | The two chunk styles branch in five places and have drifted: generated and ledger chunks break the plain style's rules | Reproduced | Partly fixed |
 | AR-005 | High | Grading by construction lives in a script, untested, with two different rules | By inspection | Partly fixed |
 | AR-006 | Medium | The within-model questions' evidence groups are bare names, so their measures are inflated | Measured | Fixed |
 | AR-007 | Medium | `ProjectWriter` is a god object, and pipeline and ledger reach into its internals | By inspection | Open |
@@ -204,6 +204,8 @@ wording change in `emit.section` silently changes how chunks are split into mean
 ### AR-004: The two chunk styles branch in five places and have drifted: generated and ledger chunks break the plain style's rules
 
 **Severity:** Medium · **Verified:** Reproduced · **Where:** `emit.py:202, 250, 267, 381, 525, 646`, `ledger.py:133-155`, `exports.py:148`, `plain.py:108`
+
+**Status:** Partly fixed on 2026-10-02 (0.6.0). AR-004R4: the Markdown chunk style is retired, as the maintainer decided (plan RA-02), and with it the branching between styles. AR-004R1 to R3 remain (plan RA-09).
 
 **Branching:** `chunk_style` is tested in five places. A typo in `!= "plain"` silently selects
 Markdown.

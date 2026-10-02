@@ -902,6 +902,23 @@ def test_instance_packages_summarized_from_a_digest(tmp_path, fake_openai):
     assert "slot battery, set 1 time: an instance of Battery" in prompt
 
 
+def test_current_templates_pinned():
+    """A current template's request never changes under its key: a new text is a new version, so
+    that projects written with the old one are written again (FU-014). Pinned by hash (plan RA-03)."""
+    from cameo_ingest.prompts import CURRENT
+
+    assert {t.key: hashlib.sha256(f"{t.image_first}|{t.text}".encode()).hexdigest()[:16] for t in CURRENT.values()} == {
+        "diagram-description@v4": "a0b0089bca91bbdc",
+        "diagram-synthesis@v2": "864e9e9b3a1a3ce1",
+        "image-description@v2": "abc49bf5c21deb2c",
+        "instances-summary@v1": "af0506cd2f78eb28",
+        "module-description@v2": "3da13ee440c895af",
+        "module-summary@v1": "a94d4fbd2ae1e703",
+        "package-summary@v2": "4f4e4f82d37c385f",
+        "package-synthesis@v1": "c4578c170284ec15",
+    }
+
+
 def test_templates_and_request_log(tmp_path, fake_openai):
     """Prompts are named, versioned templates with described slots (plan LQ-01), and every
     request is logged with what it asked (LQ-02)."""
@@ -1220,6 +1237,13 @@ def test_treediff(tmp_path, capsys):
     for out in (a, b):
         assert main([str(src), "-o", str(out), "--no-llm"]) == 0
     assert not compare(a, b) and treediff([str(a), str(b)]) == 0
+    # Another tool version: masked in the files, and in the manifest's hashes of them.
+    for f in [b / "chunks.jsonl", b / "manifest.json"]:
+        f.write_text(re.sub(r"cameo-ingest/[0-9.]+", "cameo-ingest/9.9.9", f.read_text()))
+    manifest = json.loads((b / "manifest.json").read_text())
+    manifest["projects"][0]["files"][0]["sha256"] = "0" * 64
+    (b / "manifest.json").write_text(json.dumps(manifest))
+    assert not compare(a, b)
     last = json.loads((a / "chunks.jsonl").read_text().splitlines()[-1])["id"]
     chunks = b / "chunks.jsonl"
     lines = chunks.read_text().splitlines()
@@ -1234,3 +1258,21 @@ def test_treediff(tmp_path, capsys):
     assert [c[0] for c in ch.text] == [first["id"]] and ch.metadata == [json.loads(lines[1])["id"]]
     assert ch.removed == [last] and not ch.added
     assert treediff([str(a), str(b)]) == 1 and "+A new line." in capsys.readouterr().out
+
+
+def test_markdown_chunk_style_retired(tmp_path, caplog):
+    """A tree that stored the retired Markdown chunk style runs on with plain chunks (plan RA-02)."""
+    from cameo_ingest.state import State
+
+    out = run(tmp_path, "drone.mdzip", make_mdzip())
+    st = State(out)
+    st.save_settings({**st.settings(), "chunk_style": "markdown"})
+    st.close()
+    assert main(["run", "-o", str(out)]) == 0
+    assert "Markdown chunk style is retired" in caplog.text
+    st = State(out)
+    assert "chunk_style" not in st.settings()
+    st.close()
+    assert not list((out / "rag" / "text").rglob("*.md")) and list((out / "rag" / "text").rglob("*.txt"))
+    with pytest.raises(SystemExit):
+        main([str(tmp_path / "drone.mdzip"), "-o", str(tmp_path / "again"), "--chunk-style", "markdown"])

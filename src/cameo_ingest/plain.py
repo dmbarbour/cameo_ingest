@@ -1,4 +1,4 @@
-"""Plain chunk text for embedding (plan RE-08, decisions 6 and 11; `--chunk-style plain`).
+"""Plain chunk text for embedding (plan RE-08, decisions 6 and 11; the only style since 0.6.0).
 
 The Markdown of the pages serves readers: links with their targets, trace lines, qualified names.
 In a chunk, that apparatus fills the embedding window (45% of the characters, RE-01), and the

@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 from . import plain as pl
 from . import semantics as sem
 from .model import Element
-from .text import front_matter, md_escape, md_inline, md_plain
+from .text import front_matter, md_escape, md_inline
 
 if TYPE_CHECKING:
     from .emit import ProjectWriter
@@ -134,15 +134,13 @@ class LedgerWriter:
         self.md += [f"### {heading} — {where}", ""] + [r for _, r in items] + [""]
         parts: list[list[tuple[str, str]]] = [[]]
         size = 0
-        style_plain = self.w.chunk_style == "plain"  # parts that fit an embedding window (plan RE-08)
-        # A plain part fits an embedding window with its header (estimated tokens); a Markdown one
-        # holds MAX_CHARS characters.
+        # A part fits an embedding window with its header (estimated tokens; plan RE-08).
         header_est = pl.tokens(f"{heading} ledger (part 99 of 99) — Cameo project {self.w.content.label}, {where}. "
                                "9999 entries in this group.")
-        limit = pl.BUDGET - header_est - 4 if style_plain else MAX_CHARS
+        limit = pl.BUDGET - header_est - 4
         for eid, r in items:
-            plain = pl.plain(r) if style_plain else md_plain(_MD_LINK.sub(r"\1", r))
-            n = pl.tokens(plain) + 1 if style_plain else len(plain)
+            plain = pl.plain(r)
+            n = pl.tokens(plain) + 1
             if parts[-1] and (len(parts[-1]) >= MAX_ROWS or size + n > limit):
                 parts.append([])
                 size = 0

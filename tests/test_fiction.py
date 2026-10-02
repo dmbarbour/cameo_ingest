@@ -21,17 +21,16 @@ class W:
 
 
 @pytest.mark.parametrize("prefix", sorted(PROJECTS))
-@pytest.mark.parametrize("style", ["plain", "markdown"])
-def test_answer_key_holds(tmp_path, prefix, style):
-    """Each question's evidence is in a chunk of an answering element (in both chunk styles),
-    and in no chunk of an element that neither answers nor relates to it, so that grading by
-    construction credits only the right windows."""
+def test_answer_key_holds(tmp_path, prefix):
+    """Each question's evidence is in a chunk of an answering element, and in no chunk of an
+    element that neither answers nor relates to it, so that grading by construction credits only
+    the right windows."""
     project = PROJECTS[prefix]()
     src = tmp_path / project.file_name
     src.write_bytes(project.mdzip())
     assert project.mdzip() == src.read_bytes()  # the same bytes every time: the same project token
     out = tmp_path / "out"
-    assert main([str(src), "-o", str(out), "--no-llm", "--no-render", "--chunk-style", style]) == 0
+    assert main([str(src), "-o", str(out), "--no-llm", "--no-render"]) == 0
     chunks = [json.loads(line) for line in (out / "chunks.jsonl").open()]
     questions = project.questions()
     assert len({q["id"] for q in questions}) == len(questions)

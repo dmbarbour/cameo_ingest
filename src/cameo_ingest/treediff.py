@@ -4,8 +4,10 @@
 
 A refactoring step that should change no output must show no difference; a step that changes
 output must show only the expected ones. Every file is compared but the run records (which hold
-times and local paths: `run.json`, `provenance.jsonl`, `state.sqlite` and its companions) and
-work directories, with the tool's version masked. Chunk files (`chunks.jsonl`) are compared
+times and local paths: `run.json`, `provenance.jsonl`, `state.sqlite` and its companions), work
+directories and the `rag/` writer's stamps, with the tool's version masked. The manifest's
+hashes of the files it lists are left out: they hash the version too, and the files themselves
+are compared. Chunk files (`chunks.jsonl`) are compared
 chunk by chunk, by id: which went, which came, and which changed their text or their metadata.
 Build both trees from the same input paths: `rag/meta` names them. Exits 0 when the trees are
 the same, 1 when they differ.
@@ -23,7 +25,8 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
-SKIPPED = {"run.json", "provenance.jsonl", "state.sqlite", "state.sqlite-wal", "state.sqlite-shm", "state.lock"}
+SKIPPED = {"run.json", "provenance.jsonl", "state.sqlite", "state.sqlite-wal", "state.sqlite-shm", "state.lock",
+           ".stamp"}
 _VERSION = re.compile(rb"cameo-ingest/\d+\.\d+\.\d+[\w.+-]*")
 
 
@@ -45,8 +48,15 @@ def kind(rel: str) -> str:
     return {"md": "pages", "csv": "tables", "png": "images", "json": "json", "jsonl": "jsonl"}.get(suffix, "other")
 
 
-def _read(path: Path) -> bytes:
-    return _VERSION.sub(b"cameo-ingest/*", path.read_bytes())
+def _read(path: Path, rel: str = "") -> bytes:
+    data = _VERSION.sub(b"cameo-ingest/*", path.read_bytes())
+    if rel == "manifest.json":
+        m = json.loads(data)
+        for p in m.get("projects", []):
+            for f in p.get("files", []):
+                f.pop("sha256", None)
+        data = json.dumps(m, sort_keys=True).encode()
+    return data
 
 
 def _chunks(path: Path) -> dict[str, dict]:
@@ -103,7 +113,7 @@ def compare(before: Path, after: Path) -> Report:
     for rel in b - a:
         r.added[kind(rel)].append(rel)
     for rel in sorted(a & b):
-        if _read(before / rel) == _read(after / rel):
+        if _read(before / rel, rel) == _read(after / rel, rel):
             continue
         r.changed[kind(rel)].append(rel)
         if rel.endswith("chunks.jsonl"):

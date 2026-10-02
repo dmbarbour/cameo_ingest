@@ -43,7 +43,7 @@ An output tree remembers these choices, so later runs need no flags."""
 
 # Run settings an output tree remembers (never secrets: --env names a file).
 SETTINGS = ("env", "text_model", "vision_model", "llm_timeout", "llm_retries", "llm_max_calls",
-            "llm_concurrency", "cache_dir", "image_pixels", "diagram_modules", "chunk_style", "rag_files",
+            "llm_concurrency", "cache_dir", "image_pixels", "diagram_modules", "rag_files",
             "rag_source", "cross_index", "line_refs", "threads")
 
 PROGRESS_LOGGER = "cameo_ingest.progress"
@@ -148,12 +148,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="split diagrams of more than N shapes into modules of MIN to MAX shapes, each drawn and "
                         "described on its own (default 25:6:25; N = 0 never splits). For tuning: the default "
                         "should serve")
-    g.add_argument("--chunk-style", choices=("markdown", "plain"),
-                   help="chunk text: plain text in parts that fit an embedding window, under a heading that says "
-                        "what and where each item is (plain, the default; docs/research/chunk-styles-2026-10-01.md), "
-                        "or as on the pages (markdown, as before 0.5.0)")
     g.add_argument("--rag-files", dest="rag_files", action="store_const", const=True, default=None,
-                   help="write rag/: every chunk as a file, .txt for plain chunks, ending with its source and "
+                   help="write rag/: every chunk as a .txt file, ending with its source and "
                         "trace, for RAG tools that read files but not JSONL (the default)")
     g.add_argument("--no-rag-files", dest="rag_files", action="store_const", const=False,
                    help="do not write rag/ (chunks.jsonl has the same chunks)")
@@ -281,6 +277,8 @@ def add_inputs(state: State, args: argparse.Namespace) -> tuple[int, int]:
 def effective_settings(args: argparse.Namespace, stored: dict[str, Any]) -> dict[str, Any]:
     """The tree's stored settings, overridden by the flags given on this command line."""
     s = dict(stored)
+    if s.pop("chunk_style", None) == "markdown":  # retired in 0.6.0 (plan RA-02)
+        log.warning("the Markdown chunk style is retired: this tree's chunks will be plain text")
     for key in SETTINGS:
         v = getattr(args, key, None)
         if v is not None:
@@ -344,7 +342,6 @@ def run_tree(args: argparse.Namespace, argv: list[str]) -> int:
         options = {"render": settings.get("render", True), "text_model": cfg.text_model,
                    "vision_model": cfg.vision_model, "max_calls": cfg.max_calls,
                    "image_pixels": settings.get("image_pixels") or IMAGE_PIXELS, "modules": list(modules),
-                   "chunk_style": settings.get("chunk_style") or "plain",
                    "templates": sorted(t.key for t in CURRENT.values()) if cfg.enabled else []}
         runner = Runner(state, out, llm, options, Progress(heartbeat=args.heartbeat),
                         concurrency=settings.get("llm_concurrency") or 1)
