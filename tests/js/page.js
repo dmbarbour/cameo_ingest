@@ -4,7 +4,7 @@ const fs = require("fs");
 const Engine = require("../../src/cameo_ingest/assets/search.js");
 (async () => {
   const html = fs.readFileSync(process.argv[2], "utf8");
-  const blocks = [...html.matchAll(/<script type="application\/octet-stream"[^>]*>([^<]*)<\/script>/g)];
+  const blocks = [...html.matchAll(/<script type="application\/octet-stream" data-project=[^>]*>([^<]*)<\/script>/g)];
   const ix = new Engine.Index();
   for (const [i, b] of blocks.entries()) {
     const data = await Engine.decode(b[1]);

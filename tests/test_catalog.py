@@ -100,8 +100,9 @@ def test_export_names_projects_without_a_catalog(tmp_path, capsys):
 
 
 def test_svg_sketch_names_its_elements(tmp_path):
-    """The SVG sketch draws each shape with its element's key and full label, escaped (KX-05);
-    `run` writes it beside the PNG, and the catalog names both."""
+    """The SVG sketch draws each shape with its element's key and full label, escaped, without
+    the characters XML forbids (KX-05); `run` writes it beside the PNG, and the catalog names
+    both."""
     from xml.etree import ElementTree
 
     from cameo_ingest.diagram_graph import DiagramGraph, Link, Node
@@ -110,17 +111,18 @@ def test_svg_sketch_names_its_elements(tmp_path):
     from cameo_ingest.sketch_svg import render_svg
 
     g = DiagramGraph()
-    for i, (key, label) in enumerate((("a", 'Tank <A> & "B"'), ("b", "Pump")), 1):
+    for i, (key, label) in enumerate((("a", 'Tank <A> & "B"'), ("b", "Pump\x01\x0b\x1f")), 1):
         node = Node(i, View(f"v{i}", "Class", key, rect=(10 + 200 * (i - 1), 10, 120, 50)), label, 0, shown=label)
         g.nodes.append(node)
         g.node_of[f"v{i}"] = node
     g.links.append(Link(View("l", "Dependency", None, points=[(130, 35), (210, 35)]), g.nodes[0].view,
                         g.nodes[1].view, True, "", "depends on", [], False))
-    svg = ElementTree.fromstring(render_svg(ModelIndex(), g, "Class Diagram: x"))
+    svg = ElementTree.fromstring(render_svg(ModelIndex(), g, "Class Diagram: x\x08"))  # well-formed despite them
     ns = {"s": "http://www.w3.org/2000/svg"}
     keyed = svg.findall(".//s:g[@data-k]", ns)
     assert {k.get("data-k") for k in keyed} == {"a", "b"}
-    assert '[1] Tank <A> & "B"' in [t.text for t in svg.iter("{http://www.w3.org/2000/svg}title")]
+    titles = [t.text for t in svg.iter("{http://www.w3.org/2000/svg}title")]
+    assert '[1] Tank <A> & "B"' in titles and "[2] Pump" in titles
     assert svg.findall(".//s:polyline[@stroke-dasharray]", ns)  # a dependency is dashed
 
     out = ingest(tmp_path, ("drone.mdzip", make_mdzip()))  # rendering is on by default

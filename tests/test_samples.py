@@ -81,8 +81,12 @@ def check_edge_directions(sample: Path) -> None:
 
 
 def check_sketches(sample: Path) -> None:
-    """Every diagram can be drawn (FU-016), and every large one split into modules that each
-    can be drawn, covering all its shapes once (plan DV)."""
+    """Every diagram can be drawn (FU-016), as PNG and as well-formed SVG whose shapes name their
+    elements (KX-05), and every large one split into modules that each can be drawn, covering all
+    its shapes once (plan DV)."""
+    from xml.etree import ElementTree
+
+    from cameo_ingest.sketch_svg import render_svg
     from cameo_ingest import diagram_graph as dg
     from cameo_ingest import semantics as sem
     from cameo_ingest import sketch
@@ -98,6 +102,10 @@ def check_sketches(sample: Path) -> None:
     for dia_id, layout in load_layouts(proj, ix).items():
         g = dg.build(ix, layout, rels, flows)
         sketch.render_png(ix, g, dia_id)
+        svg = render_svg(ix, g, dia_id)
+        if svg is not None:
+            keys = {e.get("data-k") for e in ElementTree.fromstring(svg).iter("{http://www.w3.org/2000/svg}g")}
+            assert keys >= {n.view.element for n in g.nodes if n.view.rect and n.view.element}, dia_id
         part = partition(g)
         if part is None:
             continue

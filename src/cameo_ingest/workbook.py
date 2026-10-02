@@ -13,7 +13,6 @@ whatever the corpus. Its document properties are fixed, so the same catalog give
 from __future__ import annotations
 
 import datetime as dt
-import re
 from collections import Counter
 from collections.abc import Iterable
 from pathlib import Path
@@ -22,12 +21,11 @@ from typing import Any
 import xlsxwriter
 
 from .catalog import ProjectCatalog
-from .text import plural
+from .text import plural, xml_safe
 
 # Characters per cell, by sheet; Excel's own limit is 32,767.
 LIMITS = {"search": 1_000, "requirements": 4_000, "elements": 2_000, "summaries": 8_000, "cell": 32_767}
 MAX_ROWS = 1_048_575  # a sheet's rows below its header
-_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")  # not allowed in the file's XML
 
 SHEETS: dict[str, list[tuple[str, int]]] = {  # name -> columns (header, width)
     "Search": [("Type", 12), ("Kind", 16), ("Id", 16), ("Name", 40), ("Project", 28), ("Where", 50),
@@ -57,7 +55,7 @@ REQUIREMENT_COLUMNS = {  # (relationship kind, direction) -> column of the Requi
 
 def cut(text: Any, limit: int) -> str:
     """Text for a cell: control characters dropped, cut to `limit` with "…"."""
-    s = _CONTROL.sub("", "" if text is None else str(text))
+    s = xml_safe("" if text is None else str(text))
     limit = min(limit, LIMITS["cell"])
     return s if len(s) <= limit else s[:limit - 1] + "…"
 
@@ -220,8 +218,8 @@ def _about_sheet(ws, book: xlsxwriter.Workbook, rows: dict[str, int], left_out: 
     lines: list[tuple[str, str, Any]] = [
         ("Catalog of the models", "", title),
         ("What this is", f"Every requirement, diagram, package, named or documented element, relationship and "
-                         f"generated summary of {plural(n_projects, 'model')}, one row each, made by cameo-ingest {version}.",
-         bold),
+                         f"generated summary of {plural(n_projects, 'model')}, one row each, made by "
+                         f"cameo-ingest {version}.", bold),
         ("Search everything", "Desktop Excel: Ctrl+F, then Options, Within: Workbook, and Find All. Where Find "
                               "searches only the open sheet, use the Search sheet: it holds every item.", bold),
         ("Find several words", "The Find sheet lists the rows that hold all the words typed into it, ids and names "

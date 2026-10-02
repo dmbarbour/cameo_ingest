@@ -468,7 +468,9 @@ runner: inputs ─► archive.discover ─► state (contents, sightings) ─►
 
 ```sh
 python3 scripts/fetch_samples.py [--small] [--strict]   # restore public sample models (~105 MB; --small ~11 MB)
-uv run pytest            # synthetic fixtures, plus the samples under 5 MB (about 15 s)
+uv run pytest            # synthetic fixtures, plus the samples under 5 MB (about 15 s); the search
+                         # page's tests need Node, and its browser test Chrome, Chromium or Edge
+                         # (each skipped when missing)
 uv run pytest -m slow    # the large samples: TMT, TMT-2024x, SAF_FFDS, SAF_Plugin (about 1 min)
 uv run pytest -m llm     # a real LLM endpoint, from the environment or .env (about 1 min, ~20 requests)
 uv run python scripts/record_llm_fixture.py --env .env   # re-record the LLM replay fixture

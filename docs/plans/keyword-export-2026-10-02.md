@@ -358,6 +358,22 @@ answer store: 6,122 answers reused, and 5 new requests for the Kestrel Orchard p
   older catalogs, at export;
 - a module's or part's summary names its module or parts.
 
+**Tests of the SVG sketches (0.8.3), at the maintainer's request:**
+- **Unit:** a hand-built graph renders to well-formed SVG. Its shapes carry their keys, its
+  labels are escaped, and characters that XML forbids are dropped, which they weren't before.
+- **Every sample diagram:** the slow sample tests render each one to SVG, parse it, and check
+  that every shape's element is keyed.
+- **A real browser** (`tests/js/browser.js`, headless Chrome over the DevTools pipe; skipped
+  without Chrome or Node):
+  - the page loads and searches;
+  - a diagram's sketch shows its linked shapes, with full names as tooltips;
+  - a click on a shape opens its element, Back returns, and a click on the sketch zooms;
+  - no script errors.
+
+  This test found a bug: shapes didn't open their elements, since their listeners were set on
+  a parsed SVG that the page then copied (`importNode` copies no listeners). Clicks are now
+  handled by the sketch's frame.
+
 **The look of the two options:**
 - **WebP:** the vision model's sketch, with an overview whose modules are coloured. At that size
   its text overlaps, and each module follows as a crop.

@@ -20,7 +20,7 @@ needs_node = pytest.mark.skipif(NODE is None, reason="Node is not installed")
 
 def blocks(page: Path) -> list[dict]:
     html = page.read_text(encoding="utf-8")
-    raw = re.findall(r'<script type="application/octet-stream"[^>]*>([^<]*)</script>', html)
+    raw = re.findall(r'<script type="application/octet-stream" data-project=[^>]*>([^<]*)</script>', html)
     return [json.loads(gzip.decompress(base64.b64decode(b))) for b in raw]
 
 
@@ -83,3 +83,32 @@ def test_page_searches_in_node(page):
     out = json.loads(node(str(JS / "page.js"), str(page), "RWT-REG-001"))
     assert out["projects"] == 7 and out["items"] > 500
     assert any("RWT-REG-001" in n for n in out["names"])
+
+
+CHROME = next((p for p in map(shutil.which, ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser",
+                                              "msedge")) if p), None)
+
+
+@needs_node
+@pytest.mark.skipif(CHROME is None, reason="no Chrome, Chromium or Edge")
+def test_page_in_a_browser(tmp_path):
+    """In headless Chrome: the page loads and searches; a diagram's SVG sketch shows its shapes
+    with their full names as tooltips; a click on a shape opens its element, Back returns, and a
+    click on the sketch zooms it; no script errors."""
+    from helpers import ingest
+
+    from cameo_ingest.evaluation.fiction import PROJECTS
+
+    kois = PROJECTS["kois"]()
+    out = ingest(tmp_path, (kois.file_name, kois.mdzip()))  # sketches drawn
+    page = tmp_path / "search.html"
+    assert main(["export", "-o", str(out), "--search-page", str(page), "--sketches", "svg"]) == 0
+    doc = [i["k"] for i in blocks(page)[0]["items"]].index("_kois_d_req")
+    seen = json.loads(node(str(JS / "browser.js"), CHROME, str(tmp_path / "profile"), str(page), str(doc), "_kois_k7",
+                           "valve closing"))
+    assert seen["ready"].startswith("42 items from 1 model"), seen
+    assert "found" in seen["search"] and seen["first"] == "Valve Closing Time (KOIS-R2)"
+    assert seen["linked"] >= 13  # the diagram's 7 requirements and 6 blocks, each linked
+    assert seen["tooltip"].endswith("Brine Valve K7")
+    assert seen["heading"] == "Brine Valve K7" and seen["hash"].startswith("#d")
+    assert seen["zoomed"] is True and seen["errors"] == []

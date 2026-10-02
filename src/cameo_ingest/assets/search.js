@@ -512,8 +512,11 @@ if (typeof document !== "undefined") {
       const b = sketchBlocks.get(id);
       if (!b) return;
       const frame = el("div", "sketch");
-      frame.addEventListener("click", (e) => {
-        if (!e.target.closest || !e.target.closest("[data-k]")) frame.classList.toggle("zoomed");
+      frame.addEventListener("click", (e) => { // a shape opens its element; anywhere else zooms
+        const shape = e.target.closest ? e.target.closest("g.linked[data-k]") : null;
+        const d = shape ? state.byKey.get(it.p + "\u0000" + shape.getAttribute("data-k")) : undefined;
+        if (d !== undefined) location.hash = "#d" + d;
+        else frame.classList.toggle("zoomed");
       });
       if (i > 0) box.append(el("p", "hint", `Module M${i}`));
       box.append(frame);
@@ -532,13 +535,11 @@ if (typeof document !== "undefined") {
           frame.replaceChildren(el("p", "hint", "This sketch could not be read."));
           return;
         }
-        for (const g of svg.querySelectorAll("[data-k]")) {
-          const d = state.byKey.get(it.p + "\u0000" + g.getAttribute("data-k"));
-          if (d === undefined) continue;
-          g.classList.add("linked");
-          g.addEventListener("click", () => { location.hash = "#d" + d; });
+        const shown = document.importNode(svg, true); // a copy: listeners go on the frame, above
+        for (const g of shown.querySelectorAll("[data-k]")) {
+          if (state.byKey.has(it.p + "\u0000" + g.getAttribute("data-k"))) g.classList.add("linked");
         }
-        frame.replaceChildren(document.importNode(svg, true));
+        frame.replaceChildren(shown);
       });
     });
     return box;

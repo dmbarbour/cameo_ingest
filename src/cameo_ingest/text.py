@@ -33,6 +33,15 @@ def shown_value(value: str, limit: int = VALUE_CHARS) -> str:
     return value
 
 
+# Characters that XML 1.0 forbids, which an .xlsx cell or an SVG can't hold: model text has been
+# seen with vertical tabs and other control characters.
+XML_FORBIDDEN = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]")
+
+
+def xml_safe(text: str) -> str:
+    return XML_FORBIDDEN.sub("", text)
+
+
 def one_line(text: str) -> str:
     """Names, notes and values may span lines; a legend, sketch or digest gives each on one."""
     return " ".join(text.split())

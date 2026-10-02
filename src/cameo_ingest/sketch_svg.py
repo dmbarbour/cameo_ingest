@@ -10,19 +10,29 @@ be cut. Like the PNG, it is not a Cameo rendering: the diagram's page holds its 
 from __future__ import annotations
 
 import math
-from xml.sax.saxutils import escape, quoteattr
+from xml.sax.saxutils import escape as _escape
+from xml.sax.saxutils import quoteattr as _quoteattr
 
 from .diagram_graph import DiagramGraph
 from .layout import View
 from .model import ModelIndex
 from .sketch import DASHED, HOLLOW, ROUND
-from .text import one_line
+from .text import one_line, xml_safe
 
 FONT = 11.0  # diagram units
 CHAR = 0.56 * FONT  # an estimate of a character's width, to shorten names that don't fit
 MARGIN = 10.0
 TITLE = 22.0
 INK, LINE, TAG = "#1f4e79", "#333333", "#e4e4e4"
+
+
+def escape(text: str) -> str:
+    """Text for SVG: escaped, without the characters XML forbids."""
+    return _escape(xml_safe(text))
+
+
+def quoteattr(text: str) -> str:
+    return _quoteattr(xml_safe(text))
 
 
 def _n(v: float) -> str:
