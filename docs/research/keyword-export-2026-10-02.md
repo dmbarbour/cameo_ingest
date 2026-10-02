@@ -90,6 +90,28 @@ with a check there.
 4. **A single-file HTML search page waits.** It is worth building only if the workbook falls
    short.
 
+## After the maintainer's answers (2026-10-02)
+
+- **No SharePoint addresses for now.** Links stay relative, and each item shows its source: the
+  input path, which mirrors SharePoint's folders, and its `--meta` values. Conclusion 2's
+  constraints, on URL length and links per sheet, then matter only once addresses are
+  available.
+- **Downloading a page and opening it is acceptable, if the page says so.** That makes a static
+  page a real option, not a fallback (conclusion 4).
+- **Plan KX builds both** from one set of records, and lets a trial decide.
+
+**What each offers beyond Ctrl+F:**
+- **Excel** has column filters ("contains", wildcards), and, from Excel 2021 or Microsoft 365
+  or on the web, `FILTER` and `SEARCH` formulas, which can list the rows that hold all of the
+  words typed into a cell. It has no relevance ranking, no prefix or typo matching, and no
+  browsing between related items beyond links between sheets.
+- **A page** can rank results (BM25), match prefixes and quoted phrases, and keep ids whole. It
+  can filter by project and kind, highlight the words in snippets, and link an item to its
+  related items. Its costs:
+  - the download step;
+  - memory and load time in proportion to the corpus;
+  - our JavaScript to maintain, which can be tested with Node here.
+
 ## Sources
 
 - [Excel specifications and limits](https://support.microsoft.com/en-us/excel/excel-specifications-and-limits)

@@ -14,7 +14,7 @@ here.
 | [Retrieval evaluation](retrieval-evaluation-2026-09-30.md) | In progress: plain chunks judged better and made the default (0.5.0); fictional projects with answers by construction (RE-10); the spot check remains | The README's RAG advice; chunk sizes |
 | [Related facts brought together](related-facts-2026-10-01.md) | Completed 2026-10-01; facet lists deferred | The maintainer's request to bring related facts and requirements together for keyword search, tracing and provenance |
 | [Refactoring after the architecture review](refactoring-2026-10-02.md) | Done (2026-10-02, 0.7.2): every checkpoint checked; every review finding fixed; retrieval held; the new summaries adopted | AR-003R2 to AR-026: stages 2 to 4 of the review's remediation order, with the maintainer's decisions (Markdown chunks, studies and old templates retired; `cameo-ingest[eval]`) |
-| [Searching the corpus without tools](keyword-export-2026-10-02.md) | Proposed 2026-10-02: a workbook (`CATALOG.xlsx`) with links into SharePoint; decisions await the maintainer | The tentative plan for keyword search and an export; plan RE's finding that embeddings rarely find a requirement by its id |
+| [Searching the corpus without tools](keyword-export-2026-10-02.md) | Proposed 2026-10-02, revised with the maintainer's answers: a workbook and a static search page from one set of records, then a trial | The tentative plan for keyword search and an export; plan RE's finding that embeddings rarely find a requirement by its id |
 
 ## Tentative
 
