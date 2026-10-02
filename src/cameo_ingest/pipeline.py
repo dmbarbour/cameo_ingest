@@ -370,7 +370,7 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
                     llm.skip(writer.trace(el).locator(), "skipped_trivial",
                              f"{len(graph.nodes)} shape(s), {len(graph.links)} connection(s)")
                 elif llm.cfg.vision_model:
-                    nodes, edges = dg.describe(ix, graph, lambda e: ix.label(e))
+                    nodes, edges = dg.describe(ix, graph)
                     notes, cut_note = {}, ""
                     if max(len(nodes), len(edges)) > DIAGRAM_CONTEXT_ITEMS:
                         truncated += 1

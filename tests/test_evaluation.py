@@ -89,6 +89,24 @@ def test_plain_chunk_text():
     assert len(long) > 2 and all(p.startswith("H (part ") and pl.tokens(p) <= 300 for p in long)
     cut = pl.parts("H", "x" * 3000, budget=300)  # a line too long for any part is cut into parts that fit
     assert len(cut) > 1 and all(pl.tokens(p) <= 300 for p in cut) and sum(p.count("x") for p in cut) == 3000
+    # Only emit's markup goes; model text keeps its operators, quotes and '#' lines (AR-003).
+    md = ("### Constraint Mass\n\n- **Kind:** Constraint\n\n**Documentation:**\n\n#1 priority is safety.\n"
+          "> 5 bar: trip\nx**2 + y**2 < r**2\n\n**Requirement text:**\n\n> > 5 bar: trip\n\n"
+          "**Specification (OCL2.0):**\n\n```\nself.mass <= 2 * self.tare * 1.5\n```\n\n"
+          "**Members:**\n- *part* Property **pump\\*2** : [Pump](p.md#pump)\n\n"
+          "**Table / matrix configuration** (rows are computed by Cameo):\n- «DiagramTable» scope = P\n\n"
+          "**Summary** _(rule-based; not part of the source model)_:\n\nIt weighs *little*.\n")
+    header, bs = pl.blocks(md)
+    assert header == ["- **Kind:** Constraint"]
+    assert [n for n, _ in bs] == ["Documentation", "Requirement text", "Specification (OCL2.0)", "Members",
+                                  "Table / matrix configuration", "Summary"], bs
+    meaning, _ = pl.section(md, "Constraint Mass (project p)")
+    assert meaning == [("Constraint Mass (project p)\n\nDocumentation:\n#1 priority is safety.\n> 5 bar: trip\n"
+                        "x**2 + y**2 < r**2\nRequirement text: > 5 bar: trip\n"
+                        "Specification (OCL2.0): self.mass <= 2 * self.tare * 1.5\n"
+                        "Table / matrix configuration:\n- «DiagramTable» scope = P\nSummary: It weighs *little*.\n"
+                        "Members:\n- part Property pump*2 : Pump")], meaning
+    assert pl.plain("- **16001** [R-1](l.md#r) — “a * b * c”") == "- 16001 R-1 — “a * b * c”"
 
 
 def test_panel_consensus():

@@ -81,9 +81,9 @@ Four themes run through the findings:
 
 | ID | Severity | Title | Verified | Status |
 |---|---|---|---|---|
-| AR-001 | High | `--no-cross-index` crashes every run, and `--no-threads` deletes `CROSSREF.md` | Reproduced | Open |
-| AR-002 | High | An unnamed requirement whose text starts with `[` fails its whole project when a vision model is set | Reproduced | Open |
-| AR-003 | High | Plain chunks are made by regex-parsing the page Markdown, which corrupts model text | Reproduced | Open |
+| AR-001 | High | `--no-cross-index` crashes every run, and `--no-threads` deletes `CROSSREF.md` | Reproduced | Fixed |
+| AR-002 | High | An unnamed requirement whose text starts with `[` fails its whole project when a vision model is set | Reproduced | Fixed |
+| AR-003 | High | Plain chunks are made by regex-parsing the page Markdown, which corrupts model text | Reproduced | Partly fixed |
 | AR-004 | Medium | The two chunk styles branch in five places and have drifted: generated and ledger chunks break the plain style's rules | Reproduced | Open |
 | AR-005 | High | Grading by construction lives in a script, untested, with two different rules | By inspection | Open |
 | AR-006 | Medium | The within-model questions' evidence groups are bare names, so their measures are inflated | Measured | Open |
@@ -114,6 +114,8 @@ Four themes run through the findings:
 
 **Severity:** High · **Verified:** Reproduced · **Where:** `src/cameo_ingest/exports.py:112-130`
 
+**Status:** Fixed on 2026-10-02. The index and threads have independent blocks in `exports.rebuild`; `test_tree_switches` runs every combination of index, threads and `rag/` on and off.
+
 The threads block (RF-05) was inserted between the index's computation and the code that writes
 `CROSSREF.md`, so that code now hangs on the threads switch:
 - **With `--no-cross-index` and threads on:** `crossref.page(merged)` runs with `merged`
@@ -131,6 +133,8 @@ No test sets either switch. The commits are unpushed.
 ### AR-002: An unnamed requirement whose text starts with `[` fails its whole project when a vision model is set
 
 **Severity:** High · **Verified:** Reproduced · **Where:** `src/cameo_ingest/diagrams.py:295-306` (`describe.ref`), `pipeline.py:373`
+
+**Status:** Fixed on 2026-10-02. `describe` takes a `Refs` (an element's link target, or none) and writes a label as text when there is no target. The diagram test covers a label starting `[Deleted]`.
 
 `describe(…, link)` decides whether its callback gave Markdown by inspecting the string:
 `if linked.startswith("["): … linked[linked.rindex(']('):]`.
@@ -158,6 +162,8 @@ This was introduced by a pushed commit (`cb0c6ba`).
 ### AR-003: Plain chunks are made by regex-parsing the page Markdown, which corrupts model text
 
 **Severity:** High · **Verified:** Reproduced · **Where:** `src/cameo_ingest/plain.py:31-140`, `emit.py:247-262`, `text.py:49` (`md_escape`)
+
+**Status:** Partly fixed on 2026-10-02 (0.5.3). AR-003R1 is done: `plain` removes only the emphasis emit writes (bold labels and names, a member's role, an annotation's origin); quotes are removed only from the requirement text; `#` lines are kept inside blocks; a block's name keeps its parenthesis unless it is a count; and the table configuration and annotation labels start blocks of their own. A test covers each case. AR-003R2 remains.
 
 **How the chunks are made:**
 - `emit.section` renders a page section as Markdown.

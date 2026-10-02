@@ -254,8 +254,14 @@ def test_diagram_directions_item_flows_and_labels(tmp_path):
     g = dg.DiagramGraph()
     action = el("OpaqueAction", attrs={"body": "j = 1"})
     g.nodes.append(dg.Node(1, View("v1", "OpaqueAction", action), "j = 1", 0))
-    legend, _ = dg.describe(ix, g, lambda e: f"[{ix.label(e)}](page.md#{e})")
+    legend, _ = dg.describe(ix, g, dg.Refs(lambda e: f"page.md#{e}"))
     assert legend == [f"- [1] OpaqueAction: [j = 1](page.md#{action})"], legend
+    # A label that starts with a bracket is text, not a link, when there is no target (AR-002).
+    pump = el("Class")
+    ix.elements[pump].name = "[Deleted] Pump"
+    g.nodes.append(dg.Node(2, View("v2", "Class", pump), "[Deleted] Pump", 0))
+    legend, _ = dg.describe(ix, g)
+    assert legend[1] == "- [2] Class: \\[Deleted\\] Pump", legend
 
 
 def test_provenance_everywhere(tmp_path):
@@ -443,6 +449,24 @@ def test_rag_files(tmp_path):
     assert not any("Source: sha256:" in t or "drone.mdzip" in t for t in texts)
     assert main(["run", "-o", str(out), "--no-rag-files"]) == 0
     assert not rag.exists()
+
+
+def test_tree_switches(tmp_path):
+    """Each tree-level switch works alone and with the others, run after run (AR-001)."""
+    src = tmp_path / "drone.mdzip"
+    src.write_bytes(make_mdzip())
+    out = tmp_path / "out"
+    assert main([str(src), "-o", str(out), "--no-llm", "--no-render"]) == 0
+    for index in (True, False):
+        for threads in (True, False):
+            for rag in (True, False):
+                flags = ["--cross-index" if index else "--no-cross-index", "--threads" if threads else "--no-threads",
+                         "--rag-files" if rag else "--no-rag-files"]
+                assert main(["run", "-o", str(out), *flags]) == 0, flags
+                kinds = {json.loads(line)["metadata"]["kind"] for line in (out / "chunks.jsonl").open()}
+                assert (out / "CROSSREF.md").exists() == index, flags
+                assert ("index:id" in kinds) == index and (out / "rag").exists() == rag, flags
+                assert threads or "trace:thread" not in kinds, flags
 
 
 def test_destination_from_the_environment(tmp_path, monkeypatch, capsys):

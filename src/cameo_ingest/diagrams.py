@@ -18,6 +18,7 @@ import io
 import itertools
 import math
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from PIL import Image, ImageDraw, ImageFont
@@ -285,23 +286,33 @@ def build(ix: ModelIndex, layout: Layout, rels: dict[str, Relationship],
     return g
 
 
-def describe(ix: ModelIndex, g: DiagramGraph, link, nodes: list[Node] | None = None,
+@dataclass(frozen=True)
+class Refs:
+    """How `describe` refers to elements: `target(id)` is the link to an element's page, or None
+    for no link (an element without a page, or text for an LLM request). Deciding by the target,
+    never by what a label looks like, keeps a label that starts with "[" from passing for a link
+    (AR-002)."""
+
+    target: Callable[[str], str | None] = lambda _id: None
+
+
+PLAIN = Refs()  # no links
+
+
+def describe(ix: ModelIndex, g: DiagramGraph, refs: Refs = PLAIN, nodes: list[Node] | None = None,
              links: list[Link] | None = None, where=None) -> tuple[list[str], list[str]]:
-    """Markdown bullet lines for (legend, connections). `link(id)` renders a reference to
-    an element; plain `ix.label` gives plain text, as in the LLM request. `nodes` and `links`
-    narrow the lists (to a module), indenting from the shallowest shape; `where(node)` adds
-    text after each shape, such as its module."""
+    """Markdown bullet lines for (legend, connections). `refs` links shapes to element pages;
+    without targets (PLAIN) the lists are as in the LLM request. `nodes` and `links` narrow the
+    lists (to a module), indenting from the shallowest shape; `where(node)` adds text after each
+    shape, such as its module."""
 
     def ref(n: Node) -> str:
         v = n.view
-        if v.element and v.element in ix.elements:
-            linked = link(v.element)
-            if linked.startswith("["):  # blocks, requirements...: a link, with the stereotype
-                st = _stereotypes(ix, v.element)
-                described = "" if ix.elements[v.element].name else _name(ix, v)
-                if described:  # an unnamed element: the link reads as the legend does (FU-024)
-                    linked = f"[{md_inline(described)}{linked[linked.rindex(']('):]}"
-                return (f"«{st[0]}» " if st else "") + linked
+        dest = refs.target(v.element) if v.element and v.element in ix.elements else None
+        if dest is not None:  # blocks, requirements...: a link, with the stereotype
+            st = _stereotypes(ix, v.element)
+            described = "" if ix.elements[v.element].name else _name(ix, v)  # unnamed: as the legend reads (FU-024)
+            return (f"«{st[0]}» " if st else "") + f"[{md_inline(described or ix.label(v.element))}]({dest})"
         return md_inline(n.label) or v.cls
 
     def end(view: View | None) -> str:

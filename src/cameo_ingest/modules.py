@@ -331,25 +331,24 @@ def module_png(ix: ModelIndex, g: DiagramGraph, part: Partition, num: int, title
 
 # -- text -----------------------------------------------------------------------------------------
 def module_lists(ix: ModelIndex, g: DiagramGraph, part: Partition, num: int,
-                 link=None) -> tuple[list[str], list[str], list[str]]:
+                 refs: dg.Refs = dg.PLAIN) -> tuple[list[str], list[str], list[str]]:
     """Module `num`'s (legend, connections within it, connections with other modules), as
-    Markdown bullet lines; plain text unless `link(id)` renders links. Shapes of other modules
+    Markdown bullet lines; without links unless `refs` gives them. Shapes of other modules
     read '[n] label (in M<j>)'."""
-    link = link or ix.label
     shapes = set(part.modules[num - 1].shapes)
     inside, edge = part.links(g, num)
 
     def where(n: dg.Node) -> str:
         return "" if n.num in shapes else f" (in M{part.module_of[n.num]})"
 
-    legend, lines = dg.describe(ix, g, link, nodes=[n for n in g.nodes if n.num in shapes], links=inside)
-    _, boundary = dg.describe(ix, g, link, nodes=[], links=edge, where=where)
+    legend, lines = dg.describe(ix, g, refs, nodes=[n for n in g.nodes if n.num in shapes], links=inside)
+    _, boundary = dg.describe(ix, g, refs, nodes=[], links=edge, where=where)
     return legend, lines, boundary
 
 
-def crossing_lines(ix: ModelIndex, g: DiagramGraph, part: Partition, link=None) -> list[str]:
+def crossing_lines(ix: ModelIndex, g: DiagramGraph, part: Partition, refs: dg.Refs = dg.PLAIN) -> list[str]:
     """Connections between modules, each end followed by '(in M<j>)'."""
-    return dg.describe(ix, g, link or ix.label, nodes=[], links=part.crossing(g),
+    return dg.describe(ix, g, refs, nodes=[], links=part.crossing(g),
                        where=lambda n: f" (in M{part.module_of[n.num]})")[1]
 
 

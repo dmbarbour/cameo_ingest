@@ -182,6 +182,10 @@ class ProjectWriter:
         # their case: EMF-style ids (e.g. "_2VHvQXmuEe6Klrv3p62i1g") are case-sensitive.
         return f"{slug(el.name or el.kind, 80).lower()}-{slug(el.id, 200)}"
 
+    def refs(self, from_file: str) -> dg.Refs:
+        """Links from `from_file` to the pages of elements that have one, for diagram lists."""
+        return dg.Refs(lambda e: _relpath(self.file_of[e], from_file) if self.file_of.get(e) else None)
+
     def link(self, target_id: str, from_file: str) -> str:
         label = md_inline(self.ix.label(target_id))
         dest = self.file_of.get(target_id)
@@ -566,7 +570,7 @@ class ProjectWriter:
         part = self.partition(dia_id)
         if graph is not None:
             where = (lambda n: f" (M{part.module_of[n.num]})") if part else None
-            nodes, edges = dg.describe(ix, graph, lambda e: self.link(e, rel), where=where)
+            nodes, edges = dg.describe(ix, graph, self.refs(rel), where=where)
             if part:
                 lines += [(f"**Modules ({len(part.modules)}):** the diagram is large, so its shapes are grouped into "
                           "modules of connected shapes drawn close together, each drawn and described on its own "
@@ -625,7 +629,7 @@ class ProjectWriter:
             anns = [a for a in self.ann.get(el.id, []) if a.module == m.num]
             for a in anns:
                 lines += self.annotation_md(a, rel)
-            legend, inside, edge = mod.module_lists(ix, g, part, m.num, lambda e: self.link(e, rel))
+            legend, inside, edge = mod.module_lists(ix, g, part, m.num, self.refs(rel))
             lines += [f"**Shapes ({len(legend)}):**"] + legend + [""]
             if inside:
                 lines += [f"**Connections within the module ({len(inside)}):**"] + inside + [""]

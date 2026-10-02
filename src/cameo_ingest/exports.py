@@ -15,7 +15,7 @@
                       ending with a source line (project and trace), and meta/<project>/
                       <sha256>.json, each file's metadata
 
-Only provenance.jsonl names local paths; the others name inputs by file name.
+Only provenance.jsonl and rag/meta name local paths; the others name inputs by file name.
 """
 
 from __future__ import annotations
@@ -117,17 +117,17 @@ def rebuild(state: State, out: Path) -> None:
             for term, ps in crossref.places(out / PROJECTS / sha, ContentInfo(sha, p["name"])).items():
                 merged[term] += ps
         tree_chunks += crossref.entries(merged, refs=settings.get("line_refs", False))
+        fm = front_matter({"title": "Identifiers across the models in this tree", "kind": "crossref",
+                           "provenance": {"tool": TOOL, "derivation": "assembled", "projects": len(written)}})
+        (out / crossref.FILE).write_text(fm + crossref.page(merged), encoding="utf-8")
+    elif (out / crossref.FILE).exists():
+        (out / crossref.FILE).unlink()
     if settings.get("threads", True):  # derivation trees within each model (plan RF-05)
         for sha, p in written.items():
             for c in crossref.threads(out / PROJECTS / sha, ContentInfo(sha, p["name"]),
                                       refs=settings.get("line_refs", False)):
                 c["metadata"]["source_metadata"] = _merged_metadata(seen[sha])
                 tree_chunks.append(c)
-        fm = front_matter({"title": "Identifiers across the models in this tree", "kind": "crossref",
-                           "provenance": {"tool": TOOL, "derivation": "assembled", "projects": len(written)}})
-        (out / crossref.FILE).write_text(fm + crossref.page(merged), encoding="utf-8")
-    elif (out / crossref.FILE).exists():
-        (out / crossref.FILE).unlink()
 
     with (out / "chunks.jsonl").open("w", encoding="utf-8") as f:
         for sha in written:
