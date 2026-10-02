@@ -8,8 +8,9 @@
     chunks.jsonl      all projects' chunks, with each project's --meta values joined in
                       (`metadata.source_metadata`: key -> sorted list of values)
     CROSSREF.md       identifiers (requirement ids, ids in text) held by two elements or more,
-                      across every model, with each place (plan RF-03); also as index:id chunks,
-                      and, as trace:thread chunks, each model's derivation trees (RF-05)
+                      across every model, with each place (plan RF-03); also as index:id chunks.
+                      Each model's derivation trees (RF-05), made with the project, join its
+                      chunks as trace:thread chunks when the tree's setting is on
     rag/              the same chunks as files, for RAG tools that read files rather than
                       JSONL: text/<project>/<sha256>.txt, each
                       ending with a source line (project and trace), and meta/<project>/
@@ -65,89 +66,131 @@ def _merged_metadata(seen: list[dict[str, Any]]) -> dict[str, list[str]]:
     return {k: sorted(v) for k, v in sorted(merged.items())}
 
 
-def rebuild(state: State, out: Path) -> None:
-    rows = state.db.execute("SELECT * FROM project_status ORDER BY name, sha256").fetchall()
-    written = {r["content_sha256"]: r for r in state.written()}
-    seen = {r["sha256"]: sightings(state, r["sha256"]) for r in rows}
+@dataclass
+class Tree:
+    """What the root files are made from: every project's status, the written ones, where each
+    was found, and the tree's settings."""
 
+    out: Path
+    rows: list[Any]  # project_status
+    written: dict[str, Any]  # content sha256 -> its row
+    seen: dict[str, list[dict[str, Any]]]  # content sha256 -> its sightings
+    settings: dict[str, Any]
+
+
+def rebuild(state: State, out: Path) -> None:
+    """Every root file, one function each (AR-014R1)."""
+    rows = state.db.execute("SELECT * FROM project_status ORDER BY name, sha256").fetchall()
+    tree = Tree(out, rows, {r["content_sha256"]: r for r in state.written()},
+                {r["sha256"]: sightings(state, r["sha256"]) for r in rows}, state.settings())
+    write_manifest(tree, state)
+    write_provenance(tree)
+    index_rows = write_index_page(tree)
+    tree_chunks = projects_ledger(index_rows) + cross_index(tree)
+    threads = thread_chunks(tree)
+    write_chunks(tree, threads, tree_chunks)
+    if tree.settings.get("rag_files", True):
+        projects = [RagProject(sha, p["name"], _merged_metadata(tree.seen[sha]),
+                               [_file_ref(s) for s in tree.seen[sha] if not s["missing"]]
+                               or [_file_ref(s) for s in tree.seen[sha]])
+                    for sha, p in tree.written.items()]
+        write_rag(out, projects, tree_chunks, tree.settings.get("rag_source") or "trace", threads)
+    elif (out / RAG).exists():
+        shutil.rmtree(out / RAG)
+
+
+def write_manifest(tree: Tree, state: State) -> None:
     manifest: dict[str, Any] = {"tool": TOOL, "projects": [], "failed": []}
-    for sha, p in written.items():
+    for sha, p in tree.written.items():
         manifest["projects"].append({
             "token": f"sha256:{sha}", "dir": f"{PROJECTS}/{sha}", "name": p["name"],
             "summary": json.loads(p["summary"]),
             "files": [{"path": f["path"], "sha256": f["sha256"]} for f in state.files(sha)],
         })
     manifest["failed"] = [{"token": f"sha256:{r['sha256']}", "name": r["name"], "error": r["error"]}
-                          for r in rows if r["status"] == "failed"]
-    (out / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
+                          for r in tree.rows if r["status"] == "failed"]
+    (tree.out / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
 
-    with (out / "provenance.jsonl").open("w", encoding="utf-8") as f:
-        for r in rows:
+
+def write_provenance(tree: Tree) -> None:
+    with (tree.out / "provenance.jsonl").open("w", encoding="utf-8") as f:
+        for r in tree.rows:
             f.write(json.dumps({"token": f"sha256:{r['sha256']}", "name": r["name"], "status": r["status"],
-                                "sightings": seen[r["sha256"]]}, ensure_ascii=False) + "\n")
+                                "sightings": tree.seen[r["sha256"]]}, ensure_ascii=False) + "\n")
 
-    index_rows = []  # (token, markdown row)
-    for sha, p in written.items():
+
+def write_index_page(tree: Tree) -> list[tuple[str, str]]:
+    """INDEX.md; returns its rows, (token, Markdown row), for the projects ledger."""
+    index_rows = []
+    for sha, p in tree.written.items():
         s = json.loads(p["summary"])
         version = s.get("exporter", {}).get("exporterVersion", "unknown version")
         index_rows.append((f"sha256:{sha}", (
             f"- [{md_inline(p['name'])}]({PROJECTS}/{sha}/README.md) ([ledger]({PROJECTS}/{sha}/LEDGER.md)) "
             f"`sha256:{sha[:16]}`: saved by {version}; {s['elements']} elements, {s['diagrams']} diagrams, "
-            f"{s['requirements']} requirements; found in {_found_in(seen[sha])}")))
+            f"{s['requirements']} requirements; found in {_found_in(tree.seen[sha])}")))
     lines = ["# Cameo projects in this output tree", "",
-             (f"{len(written)} project(s) written. Each project's directory is named by its content token "
+             (f"{len(tree.written)} project(s) written. Each project's directory is named by its content token "
               f"(`{PROJECTS}/<sha256>`). Where each was found is listed below by file name, and with full "
               "paths and `--meta` values in `provenance.jsonl`."), "", "## Projects", ""]
     lines += [row for _, row in index_rows] or ["None yet."]
-    others = [r for r in rows if r["status"] != "written"]
+    others = [r for r in tree.rows if r["status"] != "written"]
     if others:
         lines += ["", "## Not written", ""]
         lines += [f"- {md_inline(r['name'])} `sha256:{r['sha256'][:16]}`: {r['status']}"
-                  + (f" ({r['error']})" if r["error"] else "") + f"; found in {_found_in(seen[r['sha256']])}"
+                  + (f" ({r['error']})" if r["error"] else "") + f"; found in {_found_in(tree.seen[r['sha256']])}"
                   for r in others]
     fm = front_matter({"title": "Cameo projects in this output tree", "kind": "index",
-                       "provenance": {"tool": TOOL, "state": "state.sqlite", "projects": len(written)}})
-    (out / INDEX).write_text(fm + "\n".join(lines) + "\n", encoding="utf-8")
+                       "provenance": {"tool": TOOL, "state": "state.sqlite", "projects": len(tree.written)}})
+    (tree.out / INDEX).write_text(fm + "\n".join(lines) + "\n", encoding="utf-8")
 
-    settings = state.settings()
-    tree_chunks = _projects_ledger(index_rows)
-    if settings.get("cross_index", True):  # identifiers across the models (plan RF-03)
-        merged: dict[str, list[crossref.Place]] = defaultdict(list)
-        for sha, p in written.items():
-            for term, ps in crossref.places(out / PROJECTS / sha, ContentInfo(sha, p["name"])).items():
-                merged[term] += ps
-        tree_chunks += crossref.entries(merged, refs=settings.get("line_refs", False))
-        fm = front_matter({"title": "Identifiers across the models in this tree", "kind": "crossref",
-                           "provenance": {"tool": TOOL, "derivation": "assembled", "projects": len(written)}})
-        (out / crossref.FILE).write_text(fm + crossref.page(merged), encoding="utf-8")
-    elif (out / crossref.FILE).exists():
-        (out / crossref.FILE).unlink()
-    if settings.get("threads", True):  # derivation trees within each model (plan RF-05)
-        for sha, p in written.items():
-            for c in crossref.threads(out / PROJECTS / sha, ContentInfo(sha, p["name"]),
-                                      refs=settings.get("line_refs", False)):
-                c["metadata"]["source_metadata"] = _merged_metadata(seen[sha])
-                tree_chunks.append(c)
+    return index_rows
 
-    with (out / "chunks.jsonl").open("w", encoding="utf-8") as f:
-        for sha in written:
-            meta = _merged_metadata(seen[sha])
-            with (out / PROJECTS / sha / "index" / "chunks.jsonl").open(encoding="utf-8") as src:
-                for line in src:
-                    c = json.loads(line)
-                    c["metadata"]["file"] = f"{PROJECTS}/{sha}/{c['metadata']['file']}"
-                    c["metadata"]["source_metadata"] = meta
-                    f.write(json.dumps(c, ensure_ascii=False) + "\n")
+
+def cross_index(tree: Tree) -> list[dict[str, Any]]:
+    """The index of identifiers across the models (plan RF-03): CROSSREF.md, and its entries as
+    chunks; or neither, when the tree's setting is off."""
+    if not tree.settings.get("cross_index", True):
+        if (tree.out / crossref.FILE).exists():
+            (tree.out / crossref.FILE).unlink()
+        return []
+    merged: dict[str, list[crossref.Place]] = defaultdict(list)
+    for sha, p in tree.written.items():
+        for term, ps in crossref.places(tree.out / PROJECTS / sha, ContentInfo(sha, p["name"])).items():
+            merged[term] += ps
+    fm = front_matter({"title": "Identifiers across the models in this tree", "kind": "crossref",
+                       "provenance": {"tool": TOOL, "derivation": "assembled", "projects": len(tree.written)}})
+    (tree.out / crossref.FILE).write_text(fm + crossref.page(merged), encoding="utf-8")
+    return crossref.entries(merged, refs=tree.settings.get("line_refs", False))
+
+
+def thread_chunks(tree: Tree) -> dict[str, list[dict[str, Any]]]:
+    """Each project's threads (plan RF-05), as chunks, by content sha256: made at build time with
+    the project, included when the tree's setting is on (AR-014R2)."""
+    if not tree.settings.get("threads", True):
+        return {}
+    out = {}
+    for sha, p in tree.written.items():
+        path = tree.out / PROJECTS / sha / "index" / "threads.jsonl"
+        records = [json.loads(line) for line in path.open(encoding="utf-8")] if path.is_file() else []
+        out[sha] = crossref.thread_chunks(records, ContentInfo(sha, p["name"]),
+                                          refs=tree.settings.get("line_refs", False))
+    return out
+
+
+def write_chunks(tree: Tree, threads: dict[str, list[dict[str, Any]]], tree_chunks: list[dict[str, Any]]) -> None:
+    """chunks.jsonl: each project's chunks and threads, with its --meta values; then the tree's own."""
+    with (tree.out / "chunks.jsonl").open("w", encoding="utf-8") as f:
+        for sha in tree.written:
+            meta = _merged_metadata(tree.seen[sha])
+            with (tree.out / PROJECTS / sha / "index" / "chunks.jsonl").open(encoding="utf-8") as src:
+                project_chunks = [json.loads(line) for line in src]
+            for c in project_chunks + threads.get(sha, []):
+                c = {**c, "metadata": {**c["metadata"], "file": f"{PROJECTS}/{sha}/{c['metadata']['file']}",
+                                       "source_metadata": meta}}
+                f.write(json.dumps(c, ensure_ascii=False) + "\n")
         for c in tree_chunks:
             f.write(json.dumps(c, ensure_ascii=False) + "\n")
-
-    if settings.get("rag_files", True):
-        projects = [RagProject(sha, p["name"], _merged_metadata(seen[sha]),
-                               [_file_ref(s) for s in seen[sha] if not s["missing"]] or [_file_ref(s) for s in seen[sha]])
-                    for sha, p in written.items()]
-        write_rag(out, projects, tree_chunks, settings.get("rag_source") or "trace")
-    elif (out / RAG).exists():
-        shutil.rmtree(out / RAG)
 
 
 @dataclass
@@ -243,7 +286,8 @@ def _write_files(folder: str, root: Path, chunks: list[dict[str, Any]], project:
         (meta_dir / f"{name}.json").write_text(json.dumps(record, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
-def write_rag(out: Path, projects: list[RagProject], tree_chunks: list[dict[str, Any]], form: str = "trace") -> None:
+def write_rag(out: Path, projects: list[RagProject], tree_chunks: list[dict[str, Any]], form: str = "trace",
+              threads: dict[str, list[dict[str, Any]]] | None = None) -> None:
     """rag/: the chunks as files, for RAG tools that read files. Under text/, a folder per
     project (its name and short id, `TMT-9ffd7a2c`) of files named by the sha256 of their text;
     under meta/, the same folders, with each file's metadata as `<sha256>.json`, and
@@ -260,7 +304,9 @@ def write_rag(out: Path, projects: list[RagProject], tree_chunks: list[dict[str,
     keep, sources = {"_tree", "_sources.json"}, {}
     for p in projects:
         src = out / PROJECTS / p.sha / "index" / "chunks.jsonl"
-        stamp = json.dumps([sha256_bytes(src.read_bytes()), p.found_with, p.files, ".txt", form, TOOL])
+        extra = (threads or {}).get(p.sha, [])  # the project's threads, when the tree includes them
+        stamp = json.dumps([sha256_bytes(src.read_bytes()), p.found_with, p.files, ".txt", form, TOOL,
+                            sha256_bytes(json.dumps(extra, sort_keys=True).encode())])
         folder = f"{_safe(PurePosixPath(p.name).stem, 40)}-{p.id}"
         keep.add(folder)
         sources[p.id] = {"project": p.name, "token": f"sha256:{p.sha}", "folder": folder, "files": p.files,
@@ -269,7 +315,7 @@ def write_rag(out: Path, projects: list[RagProject], tree_chunks: list[dict[str,
         if marker.is_file() and marker.read_text(encoding="utf-8") == stamp and (root / "text" / folder).is_dir():
             continue
         with src.open(encoding="utf-8") as f:
-            _write_files(folder, root, [json.loads(line) for line in f], p, form)
+            _write_files(folder, root, [json.loads(line) for line in f] + extra, p, form)
         marker.write_text(stamp, encoding="utf-8")
     for top in (root / "text", root / "meta"):
         for old in top.iterdir():
@@ -279,7 +325,7 @@ def write_rag(out: Path, projects: list[RagProject], tree_chunks: list[dict[str,
     (root / "meta" / "_sources.json").write_text(json.dumps(sources, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
-def _projects_ledger(index_rows: list[tuple[str, str]]) -> list[dict[str, Any]]:
+def projects_ledger(index_rows: list[tuple[str, str]]) -> list[dict[str, Any]]:
     """The index as `ledger:projects` chunks: one self-describing list, split like the
     per-project ledgers."""
     parts = pl.pack([(token, pl.plain(row)) for token, row in index_rows],

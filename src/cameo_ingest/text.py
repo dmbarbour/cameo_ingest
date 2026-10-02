@@ -94,7 +94,7 @@ def flat(text: str) -> str:
     return " ".join(re.sub(r"[`*\\]", "", text.lower()).split())
 
 
-DOORS_ID = re.compile(r"^\s*\[([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+)\]\s*")  # "[REQ-1-OAD-0468] ...": a DOORS id starting a text
+DOORS_ID = re.compile(r"^\s*(?:[-–•*]\s+)?\[([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+)\]\s*")  # "[REQ-1-OAD-0468] ...", "- [REQ-...] ...": a DOORS id starting a text
 
 
 def requirement_title(name: str | None, rid: str | None, text: str | None) -> str:

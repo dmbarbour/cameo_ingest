@@ -38,6 +38,9 @@ def test_requirements_read_one_way():
     assert (named.id, named.db_id, named.title) == ("R-1", None, "Endurance (R-1)")
     # The id in the text is the one people use; the tag is then a database number.
     assert (doors.id, doors.db_id, doors.text) == ("RWT-REG-001", "16001", "The turbidity shall stay low.")
+    from cameo_ingest.text import requirement_title
+
+    assert requirement_title(None, "11130", "- [REQ-1-OAD-1050] Focal length") == "REQ-1-OAD-1050: Focal length"
     assert doors.title == "RWT-REG-001: The turbidity shall stay low."
     assert sem.requirement(ix, ix.elements["blk"]) is None
 

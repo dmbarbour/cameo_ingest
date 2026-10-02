@@ -102,3 +102,24 @@ def test_questions_across_the_rival_proposals(fiction_tree):
     q = next(q for q in ACROSS() if q["id"] == "within-w03-literal")
     threads = [c for c in chunks if c["metadata"]["kind"] == "trace:thread"]
     assert any(all(holds(g, c["text"]) for g in q["evidence_groups"]) for c in threads)
+
+
+def test_threads_live_with_their_project(fiction_tree):
+    """A project's threads are made with it (THREADS.md, index/threads.jsonl) and, the tree's
+    setting on, join its chunks and its rag/ folder, not the tree's (AR-014R2). A part after the
+    first starts with its first line's ancestors, so that it says what its lines derive from
+    (AR-027R2)."""
+    crossing = project_of(fiction_tree, PROJECTS["fvx"]())
+    assert (crossing / "THREADS.md").is_file() and (crossing / "index" / "threads.jsonl").read_text()
+    threads = [c for c in chunks_of(fiction_tree) if c["metadata"]["kind"] == "trace:thread"
+               and c["metadata"]["content"] == f"sha256:{crossing.name}"]
+    assert threads and all(c["metadata"]["file"].startswith(f"by-sha256/{crossing.name}/THREADS.md#thread-")
+                           for c in threads)
+    folder = next(d for d in (fiction_tree / "rag" / "meta").iterdir() if d.name.endswith(crossing.name[:8]))
+    in_folder = {json.loads(m.read_text())["chunk_id"] for m in folder.glob("*.json")}
+    assert {c["id"] for c in threads} <= in_folder
+    parts = [c for c in threads if c["metadata"].get("parts", 1) > 1 and c["metadata"]["part"] > 1]
+    assert parts, "a thread long enough to split"
+    for c in parts:
+        body = c["text"].split("\n\n", 1)[1]
+        assert body.startswith("- ") and body.splitlines()[0].endswith(" (continued)"), body[:200]

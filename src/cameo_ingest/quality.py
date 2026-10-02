@@ -74,20 +74,25 @@ def collect_items(out: Path, store_path: Path) -> tuple[list[dict[str, Any]], in
     could not (answered before the log existed: run again to log them)."""
     store = LLMStore(store_path, readonly=True)
     items, unexplained = [], 0
+    answers: dict[str, list[dict[str, Any]]] = {}  # an answer's pieces, by its annotation id (AR-012R2)
     for line in (out / "chunks.jsonl").open(encoding="utf-8"):
         c = json.loads(line)
+        if c["metadata"]["kind"].startswith("generated:"):
+            answers.setdefault(c["metadata"].get("annotation") or c["id"], []).append(c)
+    for answer_id, pieces in answers.items():
+        c = pieces[0]
         meta = c["metadata"]
-        if not meta["kind"].startswith("generated:"):
-            continue
         d = meta["provenance"]["derivation"]
         req = store.request(d["model"], d["prompt_sha256"])
         if req is None:
             unexplained += 1
             continue
-        response = c["text"].split("\n\n", 1)[1]
+        # A long answer is split at lines into pieces, each under its heading: joined again.
+        response = "\n".join(p["text"].split("\n\n", 1)[1]
+                              for p in sorted(pieces, key=lambda p: p["metadata"].get("piece", 1)))
         sha = meta["content"].removeprefix("sha256:")
         items.append({
-            "id": c["id"],
+            "id": answer_id,
             "kind": meta["kind"].removeprefix("generated:"),
             "template": req["template"],
             "model": d["model"],

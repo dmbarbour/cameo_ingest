@@ -10,6 +10,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from . import crossref
 from . import semantics as sem
 from .files import FilePlan
 from .sink import ChunkSink
@@ -93,8 +94,18 @@ class TableWriter:
         self.write_csv("tables/diagrams.csv", ["id", "name", "diagram_type", "uml_type", "owner", "elements_shown",
                                                 "file", "trace"], rows)
 
-    def write_indices(self) -> None:
+    def write_indices(self, threads: list[dict[str, Any]]) -> None:
         ix = self.view.ix
+        p = self.root / "index/threads.jsonl"  # derivation trees, which the tree's chunks include or not
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with p.open("w", encoding="utf-8") as f:
+            for t in threads:
+                f.write(json.dumps(t, ensure_ascii=False) + "\n")
+        p = self.root / "index/ids.jsonl"  # identifiers, for the index across models (AR-012R1)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with p.open("w", encoding="utf-8") as f:
+            for rec in crossref.project_places(self.view, self.sink.main):
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
         p = self.root / "index/elements.jsonl"
         p.parent.mkdir(parents=True, exist_ok=True)
         with p.open("w", encoding="utf-8") as f:

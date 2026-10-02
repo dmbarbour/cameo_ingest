@@ -25,13 +25,17 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from . import chunks
 from . import plain as pl
 from . import semantics as sem
+from .model import Element
 from .provenance import TOOL, ContentInfo, chunk_ref, short_id
-from .text import DOORS_ID, one_line, requirement_title
+from .text import one_line
+
+if TYPE_CHECKING:
+    from .view import ProjectView
 
 csv.field_size_limit(1 << 30)
 ID = re.compile(r"(?<![\w-])[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+(?![\w-])")  # letters first, a hyphen, and a digit somewhere
@@ -79,70 +83,79 @@ def _snippet(text: str, term: str) -> str:
     return ("…" if a else "") + text[a:b].strip() + ("…" if b < len(text) else "")
 
 
-def places(project_dir: Path, content: ContentInfo) -> dict[str, list[Place]]:
-    """Every identifier in one project, with the elements that hold it."""
-    chunk_of: dict[str, str] = {}  # element -> its first chunk (its meaning, not its details)
-    chunks = project_dir / "index" / "chunks.jsonl"
-    if chunks.is_file():
-        for line in chunks.open(encoding="utf-8"):
-            c = json.loads(line)
-            el, kind = c["metadata"].get("element_id"), c["metadata"]["kind"]
-            if el and kind in ("element", "requirement", "package", "diagram") and el not in chunk_of:
-                chunk_of[el] = c["id"]
-    elements = {e["id"]: e for e in _rows(project_dir, "elements")}
-    req_text = {r["id"]: r["text"] for r in _rows(project_dir, "requirements")}
-    out: dict[str, list[Place]] = defaultdict(list)
+def project_places(view: ProjectView, chunk_of: dict[str, str]) -> list[dict[str, Any]]:
+    """Every identifier in one project, with the elements that hold it, from the in-memory model
+    (AR-012R1): the records of its `index/ids.jsonl`, which the index across models merges."""
+    ix = view.ix
+    out: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
 
     def add(term: str, el_id: str, what: str, how: str, text: str, locator: str) -> None:
         if (term, el_id) in seen:
             return
         seen.add((term, el_id))
-        out[term].append(Place(content.sha256, content.label, el_id, what, how, _snippet(text, term),
-                               chunk_of.get(el_id), locator))
+        out.append({"term": term, "element_id": el_id, "what": what, "how": how, "snippet": _snippet(text, term),
+                    "chunk_id": chunk_of.get(el_id), "locator": locator})
 
-    def kind_of(e: dict[str, str]) -> str:
-        st = [s for s in (e.get("stereotypes") or "").split(";") if s]
-        return st[0] if st else (e.get("type") or "").removeprefix("uml:")
-
-    def what_of(e: dict[str, str]) -> str:
-        if e["id"] in req_text:
-            return "Requirement " + requirement_title(e["name"] or None, None, req_text[e["id"]])
-        return f"{kind_of(e)} {e['name'] or '(unnamed)'}"
+    def what_of(el: Element) -> str:
+        return f"{sem.kind_word(ix, el)} {one_line(sem.label(ix, el.id))}"
 
     req_id: dict[str, str] = {}  # requirement element -> its id
-    for r in _rows(project_dir, "requirements"):
-        m = DOORS_ID.match(r["text"] or "")
-        rid = m.group(1) if m else (r["req_id"] or "")
-        what = "Requirement " + requirement_title(r["name"] or None, r["req_id"] or None, r["text"])
-        if rid and _ids(rid):
-            req_id[r["id"]] = rid
-            add(rid, r["id"], "Requirement" + (f" {r['name']}" if r["name"] else ""), "its id",  # the text follows
-                r["text"] or what, r["trace"])
-        for term in _ids(r["text"]) - {rid}:
-            add(term, r["id"], what, "in its text", r["text"], r["trace"])
-    for r in _rows(project_dir, "relationships"):  # the other end of a relationship with a requirement
-        w = sem.wording(r["kind"])
-        verb = w.forward if w else r["kind"].lower()
-        for end, other, phrase in ((r["target_id"], r["source_id"], f"{verb} it"),
-                                   (r["source_id"], r["target_id"], f"it {verb} this")):
-            e = elements.get(other)
-            if end in req_id and e is not None and other != end:
-                text = e.get("documentation") or req_text.get(other, "") or e["name"]
-                add(req_id[end], other, what_of(e), phrase, text, r["trace"])
-    for e in elements.values():
-        what = what_of(e)
-        for term in _ids(e["name"]):
-            add(term, e["id"], what, "in its name", e["name"], e["trace"])
-        for term in _ids(e["documentation"]):
-            add(term, e["id"], what, "in its documentation", e["documentation"], e["trace"])
-    for t in _rows(project_dir, "tagged_values"):
-        e = elements.get(t["element_id"])
-        if e is None:
+    for el in ix.elements.values():
+        req = sem.requirement(ix, el)
+        if req is None:
             continue
-        what = what_of(e)
-        for term in _ids(t["value"]):
-            add(term, e["id"], what, f"in its tag {t['tag']}", f"{t['tag']} = {t['value']}", t["trace"])
+        text = sem.requirement_fields(ix, el).get("Text", "")
+        locator = view.trace(el).locator()
+        if req.id and _ids(req.id):
+            req_id[el.id] = req.id
+            add(req.id, el.id, "Requirement" + (f" {el.name}" if el.name else ""), "its id",  # the text follows
+                text or req.title, locator)
+        for term in _ids(text) - {req.id}:
+            add(term, el.id, what_of(el), "in its text", text, locator)
+    for r in view.rels:  # the other end of a relationship with a requirement
+        w = sem.wording(r.kind)
+        verb = w.forward if w else r.kind.lower()
+        locator = view.trace(ix.elements[r.id]).locator()
+        for end, other, phrase in ((r.target, r.source, f"{verb} it"), (r.source, r.target, f"it {verb} this")):
+            el = ix.elements.get(other)
+            if end in req_id and el is not None and other != end:
+                req = sem.requirement(ix, el)
+                text = sem.documentation(ix, el) or (sem.requirement_fields(ix, el).get("Text", "") if req else "") \
+                    or el.name or ""
+                add(req_id[end], other, what_of(el), phrase, text, locator)
+    for el in ix.elements.values():
+        name, doc = el.name or "", sem.documentation(ix, el)
+        if not (_ids(name) or _ids(doc)):
+            continue
+        locator = view.trace(el).locator()
+        for term in _ids(name):
+            add(term, el.id, what_of(el), "in its name", name, locator)
+        for term in _ids(doc):
+            add(term, el.id, what_of(el), "in its documentation", doc, locator)
+    for app in ix.stereotypes.values():
+        el = ix.elements.get(app.base)
+        if el is None:
+            continue
+        locator = view.trace(el).with_(line=app.line).locator()
+        for tag, vals in app.tags.items():
+            for v in vals:
+                value = ix.qualified_name(v) if v in ix.elements else v
+                for term in _ids(value):
+                    add(term, el.id, what_of(el), f"in its tag {tag}", f"{tag} = {value}", locator)
+    return out
+
+
+def places(project_dir: Path, content: ContentInfo) -> dict[str, list[Place]]:
+    """Every identifier in one project, with the elements that hold it, as its build recorded them
+    (`index/ids.jsonl`)."""
+    out: dict[str, list[Place]] = defaultdict(list)
+    path = project_dir / "index" / "ids.jsonl"
+    if path.is_file():
+        for line in path.open(encoding="utf-8"):
+            r = json.loads(line)
+            out[r["term"]].append(Place(content.sha256, content.label, r["element_id"], r["what"], r["how"],
+                                        r["snippet"], r["chunk_id"], r["locator"]))
     return out
 
 
@@ -210,93 +223,112 @@ def page(index: dict[str, list[Place]]) -> str:
 
 # -- threads: derivation trees within a model (plan RF, RF-05) ------------------------------------
 THREAD_DEPTH = 4  # levels of derivation shown below a thread's root
+THREADS = "THREADS.md"  # each project's page of them
 
 
-def _chunk_ids(project_dir: Path) -> dict[str, str]:
-    """Each element's first chunk: its meaning, not its details."""
-    out: dict[str, str] = {}
-    path = project_dir / "index" / "chunks.jsonl"
-    if path.is_file():
-        for line in path.open(encoding="utf-8"):
-            c = json.loads(line)
-            el, kind = c["metadata"].get("element_id"), c["metadata"]["kind"]
-            if el and kind in ("element", "requirement", "package", "diagram") and el not in out:
-                out[el] = c["id"]
-    return out
-
-
-def threads(project_dir: Path, content: ContentInfo, refs: bool = False) -> list[dict[str, Any]]:
-    """A chunk (in parts) per derivation tree of requirements in one model: from a requirement that
-    others derive from, and nothing above it, down through what derives from it (to THREAD_DEPTH
-    levels), each with what satisfies, verifies and refines it. A question such as "which tests
-    verify the requirements derived from SN-02?" then finds its whole answer in one place, where
-    otherwise it is spread over a requirement, its children and their tests. Models without derive
-    relationships have none."""
-    reqs = {r["id"]: r for r in _rows(project_dir, "requirements")}
-    elements = {e["id"]: e for e in _rows(project_dir, "elements")}
-    chunk_of = _chunk_ids(project_dir)
+def project_threads(view: ProjectView, chunk_of: dict[str, str]) -> list[dict[str, Any]]:
+    """Each derivation tree of requirements in one model, from the in-memory model (AR-014R2): from
+    a requirement that others derive from, and nothing above it, down through what derives from it
+    (to THREAD_DEPTH levels), each with what satisfies, verifies and refines it. The records of the
+    project's `index/threads.jsonl`: a line per requirement, as text without and with the chunk
+    references that `--line-refs` adds. Models without derive relationships have none."""
+    ix = view.ix
+    reqs = {el.id: req for el in ix.elements.values() if (req := sem.requirement(ix, el)) is not None}
     children: dict[str, list[str]] = defaultdict(list)
     parents: dict[str, list[str]] = defaultdict(list)
     ends: dict[str, list[tuple[str, str]]] = defaultdict(list)  # requirement -> [(verb, element)]
-    locators: dict[str, str] = {}
-    for r in _rows(project_dir, "relationships"):
-        kind, s, t = r["kind"].lower(), r["source_id"], r["target_id"]
-        if kind == "derivereqt" and s in reqs and t in reqs:
-            children[t].append(s)
-            parents[s].append(t)
-        elif t in reqs and kind in ("satisfy", "verify", "refine", "trace", "allocate") and s in elements:
-            ends[t].append((sem.RELATIONS[kind].inverse, s))
-        locators[r["id"]] = r["trace"]
-
-    def title(rid: str) -> str:
-        r = reqs[rid]
-        return requirement_title(r["name"] or None, r["req_id"] or None, r["text"])
+    for r in view.rels:
+        kind, s_, t = r.kind.lower(), r.source, r.target
+        if kind == "derivereqt" and s_ in reqs and t in reqs:
+            children[t].append(s_)
+            parents[s_].append(t)
+        elif t in reqs and kind in ("satisfy", "verify", "refine", "trace", "allocate") and s_ in ix.elements:
+            ends[t].append((sem.RELATIONS[kind].inverse, s_))
 
     def ref(el: str) -> str:
-        return f" [{chunk_ref(content.sha256, chunk_of[el])}]" if refs and el in chunk_of else ""
+        return f" [{chunk_ref(view.content.sha256, chunk_of[el])}]" if el in chunk_of else ""
 
     def name(el: str) -> str:
-        e = elements.get(el) or {}
-        return title(el) if el in reqs else (e.get("name") or "(unnamed)")
+        return reqs[el].title if el in reqs else one_line(sem.label(ix, el))
 
     def owner(el: str) -> str:
-        return (elements.get(el) or {}).get("qualified_name", "").rsplit("::", 2)[-2:][0]
+        return ix.qualified_name(el).rsplit("::", 2)[-2:][0]
 
-    def walk(rid: str, depth: int, lines: list[str], seen: set[str]) -> None:
+    def walk(rid: str, depth: int, lines: list[dict[str, Any]], seen: set[str]) -> None:
         if rid in seen or depth > THREAD_DEPTH:
             return
         seen.add(rid)
-        text = one_line(reqs[rid]["text"] or "") if reqs[rid]["name"] else ""  # an unnamed one's title has it
+        el = ix.elements[rid]
+        text = one_line(sem.requirement_fields(ix, el).get("Text", "")) if el.name else ""  # an unnamed one's title has it
         text = text if len(text) <= 120 else text[:119].rsplit(" ", 1)[0] + "…"
-        line = "  " * depth + f"- {title(rid)}" + (f": {text}" if text else "") + ref(rid)
-        by_verb: dict[str, list[str]] = defaultdict(list)
+        head = f"- {reqs[rid].title}" + (f": {text}" if text else "")
+        plain, refs = [head], [head + ref(rid)]
+        by_verb: dict[str, list[tuple[str, str]]] = defaultdict(list)  # verb -> [(shown, element)]
         related = ends.get(rid, [])
-        names = [name(el) for _, el in related]
-        for verb, el in related:  # where two share a name (a variant's blocks), their package tells them apart
-            shown = name(el) + (f" (in {owner(el)})" if names.count(name(el)) > 1 and owner(el) else "")
-            by_verb[verb].append(f"{shown}{ref(el)}")
+        names = [name(e) for _, e in related]
+        for verb, e in related:  # where two share a name (a variant's blocks), their package tells them apart
+            by_verb[verb].append((name(e) + (f" (in {owner(e)})" if names.count(name(e)) > 1 and owner(e) else ""), e))
         if by_verb:
-            line += "; " + "; ".join(f"{verb} {', '.join(els)}" for verb, els in sorted(by_verb.items()))
-        lines.append(line)
-        for child in sorted(children.get(rid, []), key=title):
+            plain.append("; " + "; ".join(f"{verb} {', '.join(sh for sh, _ in els)}" for verb, els in sorted(by_verb.items())))
+            refs.append("; " + "; ".join(f"{verb} {', '.join(sh + ref(e) for sh, e in els)}"
+                                         for verb, els in sorted(by_verb.items())))
+        lines.append({"depth": depth, "id": rid, "title": reqs[rid].title, "text": "".join(plain),
+                      "text_refs": "".join(refs)})
+        for child in sorted(children.get(rid, []), key=name):
             walk(child, depth + 1, lines, seen)
 
     out = []
     for root in sorted(r for r in children if not parents.get(r)):
-        lines: list[str] = []
+        lines: list[dict[str, Any]] = []
         seen: set[str] = set()
         walk(root, 0, lines, seen)
-        if len(seen) < 2:
-            continue
-        heading = (f"Thread: what derives from {title(root)}, in {content.label}, {len(seen)} requirements")
-        texts = pl.parts(heading, "\n".join(lines))
+        if len(seen) >= 2:
+            out.append({"root": root, "title": reqs[root].title, "requirements": len(seen),
+                        "element_ids": sorted(seen), "locator": view.trace(ix.elements[root]).locator(),
+                        "lines": lines})
+    return out
+
+
+def _thread_heading(t: dict[str, Any], content: ContentInfo) -> str:
+    return f"Thread: what derives from {t['title']}, in {content.label}, {t['requirements']} requirements"
+
+
+def thread_chunks(threads: list[dict[str, Any]], content: ContentInfo, refs: bool = False) -> list[dict[str, Any]]:
+    """A chunk (in parts) per thread, its `file` relative to the project. A part after the first
+    starts with its first line's ancestors, by title, so that each part says what its lines derive
+    from (AR-027R2): a question such as "which tests verify the requirements derived from SN-02?"
+    then finds its whole answer in a thread, where otherwise it is spread over a requirement, its
+    children and their tests."""
+    out = []
+    for t in threads:
+        rows = [("  " * ln["depth"]) + (ln["text_refs"] if refs else ln["text"]) for ln in t["lines"]]
+        context: list[list[str]] = []
+        above: list[str] = []  # the titles of the lines above the current one, by depth
+        for ln in t["lines"]:
+            above = above[:ln["depth"]]
+            context.append([f"{'  ' * d}- {title} (continued)" for d, title in enumerate(above)])
+            above.append(ln["title"])
+        texts = pl.parts_with_context(_thread_heading(t, content), rows, context)
         for k, text in enumerate(texts, 1):
-            out.append(chunks.make((content.sha256, "trace:thread", root, str(k)),
-                                   f"Thread: {title(root)}" + (f" (part {k} of {len(texts)})" if len(texts) > 1 else ""),
+            out.append(chunks.make((content.sha256, "trace:thread", t["root"], str(k)),
+                                   f"Thread: {t['title']}" + (f" (part {k} of {len(texts)})" if len(texts) > 1 else ""),
                                    text, {
-                "kind": "trace:thread", "file": f"{FILE}#{_anchor('thread-' + root)}", "content": content.token,
-                "element_id": root, "element_ids": sorted(seen),
-                "provenance": {"derivation": {"method": "assembled", "tool": TOOL}, "locator": reqs[root]["trace"]},
+                "kind": "trace:thread", "file": f"{THREADS}#{_anchor('thread-' + t['root'])}", "content": content.token,
+                "element_id": t["root"], "element_ids": t["element_ids"],
+                "provenance": {"derivation": {"method": "assembled", "tool": TOOL}, "locator": t["locator"]},
                 **({"part": k, "parts": len(texts)} if len(texts) > 1 else {}),
             }))
     return out
+
+
+def threads_page(threads: list[dict[str, Any]], content: ContentInfo) -> str:
+    """THREADS.md: a project's threads, for reading, with each line's chunk reference."""
+    lines = [f"# Threads: derivation trees in {content.label}", "",
+             ("Each requirement that others derive from (and nothing above it), with what derives from it, "
+              "level by level, and what satisfies, verifies or refines each. `[9ffd7a2c:14d101e0b1d2]` is the "
+              "project's short id and the element's chunk id, as in `chunks.jsonl`."), ""]
+    for t in threads:
+        lines += [f'<a id="{_anchor("thread-" + t["root"])}"></a>', "",
+                  f"## {_thread_heading(t, content).removeprefix('Thread: ')}", ""]
+        lines += [("  " * ln["depth"]) + ln["text_refs"] for ln in t["lines"]] + [""]
+    return "\n".join(lines)

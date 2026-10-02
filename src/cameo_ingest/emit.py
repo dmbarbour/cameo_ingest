@@ -21,6 +21,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
+from . import crossref
 from . import modules as mod
 from .annotations import Annotation
 from .archive import Project
@@ -63,6 +64,13 @@ class ProjectWriter:
             self.pages.write_diagram(dia_id, rel)
             tick()
         ledger = LedgerWriter(self.view, self.plan, self.sink, self.pages)
-        for step in (self.pages.write_readme, ledger.write, self.tables.write_tables, self.tables.write_indices):
+        for step in (self.pages.write_readme, ledger.write, self.tables.write_tables, self._write_indices):
             step()
             tick()
+
+    def _write_indices(self) -> None:
+        """The indices, once every chunk is made; and the project's threads, for which the
+        tree decides whether its chunks include them (AR-014R2)."""
+        threads = crossref.project_threads(self.view, self.sink.main)
+        self.pages.write_threads(threads)
+        self.tables.write_indices(threads)

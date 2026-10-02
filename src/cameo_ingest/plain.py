@@ -132,6 +132,32 @@ def parts(heading: str, text: str, budget: int = BUDGET) -> list[str]:
     return [f"{heading} (part {k} of {len(chunks)})\n\n{c}" for k, c in enumerate(chunks, 1)]
 
 
+def parts_with_context(heading: str, lines: list[str], context: list[list[str]], budget: int = BUDGET) -> list[str]:
+    """As `parts`, for a nested list: a part that starts at line i starts with `context[i]`, the
+    lines it needs to be read alone (its ancestors, say)."""
+    heading = cap(heading, budget // 4)
+    room = max(budget - tokens(heading) - 8, 40)
+    out: list[list[str]] = [[]]
+    size = 0
+    for i, line in enumerate(lines):
+        n = tokens(line) + 1
+        if size + n > room and out[-1]:
+            out.append(context[i][:])
+            size = sum(tokens(c) + 1 for c in context[i])
+        while tokens(line) > max(room - size, 20):  # a line too long for any part: cut it
+            head, line = _cut(line, max(room - size, 20))
+            out[-1].append(head)
+            out.append(context[i][:])
+            size = sum(tokens(c) + 1 for c in context[i])
+        out[-1].append(line)
+        size += tokens(line) + 1
+    texts = [re.sub(r"\A(?:[ \t]*\n)+", "", "\n".join(p)).rstrip() for p in out]
+    texts = [t for t in texts if t]
+    if len(texts) <= 1:
+        return [f"{heading}\n\n{texts[0]}" if texts else heading]
+    return [f"{heading} (part {k} of {len(texts)})\n\n{t}" for k, t in enumerate(texts, 1)]
+
+
 def pack[K](rows: list[tuple[K, str]], header: str, budget: int = BUDGET, max_rows: int = 60) -> list[list[tuple[K, str]]]:
     """Rows (a key and a line of text each) into parts, in order, that fit an embedding window
     under a header as long as `header` (the longest a part's header gets), at most `max_rows` a

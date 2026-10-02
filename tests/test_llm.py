@@ -40,6 +40,10 @@ def test_llm_enrichment_is_labelled(tmp_path, fake_openai):
     assert sum(c["metadata"]["kind"] == "generated:image_description" for c in chunks) == 2
     extracted = [c for c in chunks if not c["metadata"]["kind"].startswith("generated:")]
     assert not any("gemma-4" in c["text"] for c in extracted)
+    # Structure, not text (AR-012R2): what each answer is about, and an id its pieces share.
+    ids = {c["id"] for c in extracted}
+    dia_chunk = next(c for c in gen if c["metadata"]["kind"] == "generated:diagram_description")
+    assert dia_chunk["metadata"]["primary_chunk"] in ids and dia_chunk["metadata"]["annotation"] == dia_chunk["id"]
 
 
 def large_package_model() -> str:

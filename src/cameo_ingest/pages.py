@@ -5,7 +5,9 @@ from __future__ import annotations
 
 from collections import defaultdict
 from pathlib import Path
+from typing import Any
 
+from . import crossref
 from . import diagrams as dg
 from . import modules as mod
 from . import sections as sx
@@ -242,6 +244,13 @@ class PageWriter:
                            extra={"covers": where})
                 lines += [f"<sub>trace: `{a.trace.locator()}`</sub>", ""]
         return lines
+
+    def write_threads(self, threads: list[dict[str, Any]]) -> None:
+        """THREADS.md: the project's derivation trees, when it has any (plan RF-05)."""
+        if threads:
+            fm = front_matter({"title": f"Threads in {self.view.content.name}", "kind": "threads",
+                               "provenance": self.view.file_provenance(trace=self.view.trace().to_dict())})
+            self.write_text(crossref.THREADS, fm + crossref.threads_page(threads, self.view.content))
 
     def write_readme(self) -> None:
         ix = self.view.ix

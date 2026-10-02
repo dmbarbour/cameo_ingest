@@ -20,9 +20,14 @@ class ChunkSink:
     def __init__(self, view: ProjectView):
         self.view = view
         self.chunks: list[dict[str, Any]] = []  # written to index/chunks.jsonl
+        self.main: dict[str, str] = {}  # element id -> its main chunk (its meaning, not its details)
 
     def chunk(self, *, kind: str, title: str, text: str, file: str, el: Element | None,
               trace: Trace, extra: dict[str, Any] | None = None, salt: str = "") -> None:
+        if kind.startswith("generated:"):  # what it is about, and the pieces of one answer (AR-012R2)
+            extra = {**(extra or {}), "annotation": chunks.chunk_id(self.view.content.sha256, kind,
+                                                                    el.id if el else file, salt),
+                     "primary_chunk": self.main.get(el.id) if el else None}
         if kind.startswith("generated:") and pl.tokens(text) > pl.BUDGET:
             # Generated text too long for one embedding window: in parts, each under its heading.
             first, _, rest = text.partition("\n")
@@ -47,6 +52,8 @@ class ChunkSink:
             "provenance": trace.to_dict(),
             **(extra or {}),
         }))
+        if el is not None and kind in ("element", "requirement", "package", "diagram") and el.id not in self.main:
+            self.main[el.id] = self.chunks[-1]["id"]
 
     def section_chunks(self, kind: str, el: Element, view: sx.Section, file: str, trace: Trace,
                        heading: str | None = None, extra: dict[str, Any] | None = None) -> None:
