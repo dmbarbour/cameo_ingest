@@ -106,7 +106,7 @@ Four themes run through the findings:
 | AR-023 | Low | Five Markdown-to-plain converters and four link patterns | By inspection | Open |
 | AR-024 | Low | SQL against `state.sqlite` is written outside `state.py` | By inspection | Open |
 | AR-025 | Low | The prompt registry is two hand-kept lists, current and retired templates mixed | By inspection | Fixed |
-| AR-026 | Low | Dead code, finished studies left in `scripts/`, and the evaluation in the product wheel | By inspection | Partly fixed |
+| AR-026 | Low | Dead code, finished studies left in `scripts/`, and the evaluation in the product wheel | By inspection | Fixed |
 | AR-027 | Medium | A thread split into parts loses its nesting, so a part can misstate what derives from what | Reproduced | Partly fixed |
 
 ## Findings
@@ -814,7 +814,7 @@ and nothing checks that the current templates are registered.
 
 **Severity:** Low · **Verified:** By inspection · **Where:** various
 
-**Status:** Partly fixed on 2026-10-02 (plan RA-03, RA-04). AR-026R2: the five finished studies are deleted, as the maintainer decided; the research notes cite tag `studies-2026-10-02`. AR-026R3: the evaluation stays in the package, and its dependencies are the `eval` extra, as the maintainer decided. AR-026R1 remains (plan RA-05).
+**Status:** Fixed on 2026-10-02 (plan RA-03 to RA-05). AR-026R2: the five finished studies are deleted, as the maintainer decided; the research notes cite tag `studies-2026-10-02`. AR-026R3: the evaluation stays in the package, and its dependencies are the `eval` extra, as the maintainer decided. AR-026R1: the dead code is gone, and short ids come from `short_id()` and `chunk_ref()`; `md_escape` is `tidy`. The ledger now counts with `text.plural` (thousands separated).
 
 **Dead code:**
 - `ProjectResult.outputs` and `Outputs.files` (the runner lists files itself), and every append

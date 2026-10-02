@@ -248,7 +248,7 @@ def test_diagram_directions_item_flows_and_labels(tmp_path):
     assert element_label(ix, View("v", "SwimlaneHeader", el("ActivityPartition", refs=[("represents", "a1")]))) \
         == "Battery"  # the part it represents is unnamed here: its type
     assert element_label(ix, View("v", "OpaqueAction", el("OpaqueAction", attrs={"body": "j = 1\nk = 2"}))) == "j = 1 k = 2"
-    assert element_label(ix, View("v", "Note", el("Comment", attrs={"body": "<p>Check <b>this</b></p>"}))) \
+    assert element_label(ix, View("v", "Note", el("Comment", attrs={"body": "Check this\n"}))) \
         == '"Check this"'
     # An unnamed element with a page is linked by the same label as in the legend.
     g = dg.DiagramGraph()

@@ -31,7 +31,7 @@ from typing import Any
 from . import crossref
 from . import plain as pl
 from .ledger import _MD_LINK, MAX_CHARS, MAX_ROWS
-from .provenance import TOOL, ContentInfo, sha256_bytes, sha256_text
+from .provenance import TOOL, ContentInfo, chunk_ref, sha256_bytes, sha256_text, short_id
 from .state import State
 from .text import front_matter, md_inline, md_plain
 
@@ -162,7 +162,7 @@ class RagProject:
     @property
     def id(self) -> str:
         """Its short logical id: the start of its token, as in its folder's name."""
-        return self.sha[:8]
+        return short_id(self.sha)
 
 
 def _file_ref(sighting: dict[str, Any]) -> str:
@@ -188,7 +188,7 @@ def rag_text(chunk: dict[str, Any], project: RagProject | None, form: str = "tra
     meta = chunk["metadata"]
     locator = (meta.get("provenance") or {}).get("locator")
     if project is not None and form == "id":
-        source = f"[{project.id}:{chunk['id'][:12]}]"
+        source = f"[{chunk_ref(project.sha, chunk['id'])}]"
     else:
         source = locator
     lines = [chunk["text"].rstrip(), ""] + ([f"Source: {source}"] if source else [])

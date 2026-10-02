@@ -22,7 +22,7 @@ import csv
 import json
 from collections import defaultdict
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -35,8 +35,7 @@ from .layout import Layout
 from .ledger import LedgerWriter
 from .model import Element, ModelIndex
 from .provenance import TOOL, ContentInfo, Trace, sha256_text
-from .richtext import to_text
-from .text import front_matter, md_escape, md_inline, one_line, plural, requirement_title, shown_value, slug
+from .text import front_matter, md_inline, one_line, plural, requirement_title, shown_value, slug, tidy
 
 DIAGRAM_INFO = "DiagramInfo"  # MagicDraw_Profile stereotype holding a diagram's author and dates
 SKIP_MEMBER_ROLES = {
@@ -57,12 +56,6 @@ class Annotation:
     parts: tuple[int, int] | None = None  # about this run of a large package's parts
 
 
-@dataclass
-class Outputs:
-    files: list[Path] = field(default_factory=list)
-    chunks: list[dict[str, Any]] = field(default_factory=list)
-
-
 class ProjectWriter:
     def __init__(self, content: ContentInfo, project: Project, ix: ModelIndex, root: Path,
                  annotations: dict[str, list[Annotation]] | None = None,
@@ -74,7 +67,7 @@ class ProjectWriter:
         self.ix = ix
         self.root = root
         self.ann = annotations if annotations is not None else {}
-        self.out = Outputs()
+        self.chunks: list[dict[str, Any]] = []  # written to index/chunks.jsonl
         self.rels = sem.relationships(ix)
         self.rel_by_id = {r.id: r for r in self.rels}
         self.rels_by_end: dict[str, list[sem.Relationship]] = defaultdict(list)
@@ -197,7 +190,6 @@ class ProjectWriter:
         p = self.root / rel
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(text, encoding="utf-8")
-        self.out.files.append(p)
 
     def chunk(self, *, kind: str, title: str, text: str, file: str, el: Element | None,
               trace: Trace, extra: dict[str, Any] | None = None, salt: str = "") -> None:
@@ -214,7 +206,7 @@ class ProjectWriter:
     def _chunk(self, kind: str, title: str, text: str, file: str, el: Element | None, trace: Trace,
                extra: dict[str, Any] | None, salt: str) -> None:
         cid = sha256_text(f"{self.content.sha256}|{kind}|{el.id if el else file}|{salt}")[:24]
-        self.out.chunks.append({
+        self.chunks.append({
             "id": cid,
             "title": title,
             "text": text,
@@ -271,7 +263,7 @@ class ProjectWriter:
         """How many times `write_all` calls `tick`."""
         return len(self.pkg_file) + len(self.dia_file) + 4
 
-    def write_all(self, tick: Callable[[], None] = lambda: None) -> Outputs:
+    def write_all(self, tick: Callable[[], None] = lambda: None) -> None:
         """Write every file; `tick` is called after each page and each of the four
         project-wide steps (README, ledger, tables, indices)."""
         for pkg_id, rel in self.pkg_file.items():
@@ -283,7 +275,6 @@ class ProjectWriter:
         for step in (self.write_readme, LedgerWriter(self).write, self.write_tables, self.write_indices):
             step()
             tick()
-        return self.out
 
     # -- element sections ------------------------------------------------------
     def section(self, el: Element, from_file: str, level: int, generated: bool = True, trace: bool = True) -> str:
@@ -306,9 +297,9 @@ class ProjectWriter:
         for k in ("isAbstract", "visibility", "isEncapsulated", "isActive"):
             if k in el.attrs and el.attrs[k] not in ("false", "public"):
                 lines.append(f"- **{k}:** {el.attrs[k]}")
-        t = sem.type_label(ix, el)
-        if t:
-            lines.append(f"- **Type:** {self.link(sem.refs(el, 'type')[0], from_file)}")
+        types = sem.refs(el, "type")
+        if types:
+            lines.append(f"- **Type:** {self.link(types[0], from_file)}")
         classifiers = sem.refs(el, "classifier")  # what an instance specification is an instance of (FU-022)
         if classifiers:
             lines.append("- **Classifier:** " + ", ".join(self.link(c, from_file) for c in classifiers))
@@ -317,13 +308,13 @@ class ProjectWriter:
             lines.append("- **Specializes:** " + ", ".join(self.link(g.target, from_file) for g in gens))
         lines.append("")
         if "Text" in req:
-            lines += ["**Requirement text:**", "", "> " + md_escape(req["Text"]).replace("\n", "\n> "), ""]
+            lines += ["**Requirement text:**", "", "> " + tidy(req["Text"]).replace("\n", "\n> "), ""]
         doc = sem.documentation(ix, el)
         if doc:
-            lines += ["**Documentation:**", "", md_escape(doc), ""]
-        notes = [to_text(c.attrs["body"]) for c in self.notes.get(el.id, [])]  # a diagram's notes about it
+            lines += ["**Documentation:**", "", tidy(doc), ""]
+        notes = [c.attrs["body"].strip() for c in self.notes.get(el.id, [])]  # a diagram's notes about it
         if notes:
-            lines += ["**Notes:**", ""] + [f"- {md_escape(one_line(n))}" for n in notes if n] + [""]
+            lines += ["**Notes:**", ""] + [f"- {tidy(one_line(n))}" for n in notes if n] + [""]
         spec = next(iter(sem.children(ix, el, "specification")), None)
         if spec is not None and sem.value_text(ix, spec):
             lang = spec.attrs.get("language", "")
@@ -383,7 +374,7 @@ class ProjectWriter:
         if a.text:
             d = a.trace.derivation
             who = f"generated by {d.model}" if d.method == "llm" else d.method
-            out += [f"**{a.label}** _({who}; not part of the source model)_:", "", md_escape(a.text), ""]
+            out += [f"**{a.label}** _({who}; not part of the source model)_:", "", tidy(a.text), ""]
         return out
 
     def tagged_values(self, el: Element) -> list[tuple[str, str, str]]:
@@ -447,7 +438,7 @@ class ProjectWriter:
                 desc += f" — `{sem.value_text(ix, c)}`"  # a guard, say: the value is the point
             doc = sem.documentation(ix, c)
             if doc:
-                desc += " — " + md_escape(doc).replace("\n", " ")
+                desc += " — " + tidy(doc).replace("\n", " ")
             out.append(desc)
             out += self.members(c, from_file, depth + 1)
         return out
@@ -553,7 +544,7 @@ class ProjectWriter:
         lines.append("")
         doc = sem.documentation(ix, el)
         if doc:
-            lines += ["**Documentation:**", "", md_escape(doc), ""]
+            lines += ["**Documentation:**", "", tidy(doc), ""]
         layout = self.layouts.get(dia_id)
         graph = self.graph(dia_id)
         part = self.partition(dia_id)
@@ -715,7 +706,6 @@ class ProjectWriter:
             w = csv.writer(f)
             w.writerow(header)
             w.writerows(rows)
-        self.out.files.append(p)
 
     def write_tables(self) -> None:
         ix = self.ix
@@ -795,7 +785,6 @@ class ProjectWriter:
                     "file": self.file_of.get(el.id), "provenance": self.trace(el).to_dict(),
                 }
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-        self.out.files.append(p)
 
         def tree(eid: str, seen: set[str]) -> dict[str, Any] | None:
             el = ix.elements.get(eid)
@@ -819,12 +808,10 @@ class ProjectWriter:
              "roots": [t for r in ix.roots if (t := tree(r, seen))]}
         p = self.root / "index/hierarchy.json"
         p.write_text(json.dumps(h, ensure_ascii=False, indent=1), encoding="utf-8")
-        self.out.files.append(p)
         p = self.root / "index/chunks.jsonl"
         with p.open("w", encoding="utf-8") as f:
-            for c in self.out.chunks:
+            for c in self.chunks:
                 f.write(json.dumps(c, ensure_ascii=False) + "\n")
-        self.out.files.append(p)
 
 
 def _relpath(dest: str, from_file: str) -> str:

@@ -26,7 +26,6 @@ from PIL import Image, ImageDraw, ImageFont
 from . import semantics as sem
 from .layout import Layout, View
 from .model import Element, ModelIndex
-from .richtext import to_text
 from .semantics import ItemFlow, Relationship
 from .text import md_inline, one_line
 
@@ -101,7 +100,7 @@ def _described(ix: ModelIndex, el: Element) -> str:
         if event is not None:
             return event.name or ix.label(next((t for r, t in event.refs if r == "signal"), event.id))
     if el.kind == "Comment":
-        return f'"{short(to_text(el.attrs.get("body")))}"' if el.attrs.get("body") else ""
+        return f'"{short(el.attrs["body"].strip())}"' if el.attrs.get("body") else ""
     for role in ("value", "invariant"):  # a ValueSpecificationAction's value; a StateInvariant's constraint
         spec = next(iter(sem.children(ix, el, role)), None)
         if spec is not None and spec.kind == "Constraint":

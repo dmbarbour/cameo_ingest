@@ -39,7 +39,6 @@ class View:
     first: str | None = None  # view ids at the ends of a path
     second: str | None = None
     parent: str | None = None  # view id of the enclosing view
-    depth: int = 0
 
     @property
     def is_path(self) -> bool:
@@ -55,20 +54,6 @@ class Layout:
 
     def elements(self) -> list[str]:
         return list(dict.fromkeys(v.element for v in self.views if v.element))
-
-    def bounds(self) -> tuple[float, float, float, float] | None:
-        xs, ys = [], []
-        for v in self.views:
-            if v.rect:
-                x, y, w, h = v.rect
-                xs += [x, x + w]
-                ys += [y, y + h]
-            for x, y in v.points:
-                xs.append(x)
-                ys.append(y)
-        if not xs:
-            return None
-        return min(xs), min(ys), max(xs), max(ys)
 
 
 def _local(attr: str) -> str:
@@ -109,13 +94,13 @@ def parse_layout(stream: IO[bytes]) -> Layout:
     tree = etree.parse(stream, parser)
     out = Layout()
 
-    def walk(node, parent_view: str | None, depth: int) -> None:
+    def walk(node, parent_view: str | None) -> None:
         for md in node.iterchildren("mdElement"):
             cls = md.get("elementClass") or ""
             if cls in NON_VISUAL:
                 continue
             vid = _attr(md, "id")
-            view = View(view_id=vid, cls=cls, element=None, parent=parent_view, depth=depth)
+            view = View(view_id=vid, cls=cls, element=None, parent=parent_view)
             for child in md.iterchildren():
                 tag = child.tag if isinstance(child.tag, str) else ""
                 if tag == "elementID":
@@ -130,10 +115,10 @@ def parse_layout(stream: IO[bytes]) -> Layout:
                     view.second = _idref(child)
             out.views.append(view)
             for owned in md.iterchildren("mdOwnedViews"):
-                walk(owned, vid, depth + 1)
+                walk(owned, vid)
 
     root = tree.getroot()
     if root is None:
         return out
-    walk(root, None, 0)
+    walk(root, None)
     return out

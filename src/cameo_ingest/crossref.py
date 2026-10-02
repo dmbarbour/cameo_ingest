@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from . import plain as pl
-from .provenance import TOOL, ContentInfo, sha256_text
+from .provenance import TOOL, ContentInfo, chunk_ref, sha256_text, short_id
 from .text import one_line, requirement_title
 
 csv.field_size_limit(1 << 30)
@@ -153,7 +153,7 @@ def _heading(term: str, ps: list[Place]) -> str:
 
 
 def _line(p: Place, refs: bool) -> str:
-    ref = f"[{p.project[:8]}:{p.chunk_id[:12]}]" if refs and p.chunk_id else f"[{p.project[:8]}]"
+    ref = f"[{chunk_ref(p.project, p.chunk_id)}]" if refs and p.chunk_id else f"[{short_id(p.project)}]"
     return f"- {p.what}, {p.how}: {p.snippet} {ref}"
 
 
@@ -186,7 +186,7 @@ def entries(index: dict[str, list[Place]], refs: bool = False) -> list[dict[str,
                     "kind": "index:id", "file": f"{FILE}#{_anchor(term)}", "term": term,
                     "contents": sorted({f"sha256:{p.project}" for p in ps}),
                     "element_ids": [p.element_id for p in ps],
-                    "chunk_refs": [f"{p.project[:8]}:{p.chunk_id}" for p in ps if p.chunk_id],
+                    "chunk_refs": [f"{short_id(p.project)}:{p.chunk_id}" for p in ps if p.chunk_id],
                     "provenance": {"derivation": {"method": "assembled", "tool": TOOL,
                                                   "inputs": [p.locator for p in ps]},
                                    "locator": f"{FILE}#{_anchor(term)}"},
@@ -260,7 +260,7 @@ def threads(project_dir: Path, content: ContentInfo, refs: bool = False) -> list
         return requirement_title(r["name"] or None, r["req_id"] or None, r["text"])
 
     def ref(el: str) -> str:
-        return f" [{content.sha256[:8]}:{chunk_of[el][:12]}]" if refs and el in chunk_of else ""
+        return f" [{chunk_ref(content.sha256, chunk_of[el])}]" if refs and el in chunk_of else ""
 
     def name(el: str) -> str:
         e = elements.get(el) or {}

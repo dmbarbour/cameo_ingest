@@ -222,11 +222,6 @@ def multiplicity(ix: ModelIndex, el: Element) -> str | None:
     return lo if lo == hi else f"{lo}..{hi}"
 
 
-def type_label(ix: ModelIndex, el: Element) -> str | None:
-    t = refs(el, "type")
-    return ix.label(t[0]) if t else None
-
-
 def relationships(ix: ModelIndex) -> list[Relationship]:
     out: list[Relationship] = []
     for el in ix.elements.values():

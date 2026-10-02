@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 from . import plain as pl
 from . import semantics as sem
 from .model import Element
-from .text import front_matter, md_escape, md_inline
+from .text import front_matter, md_inline, plural, tidy
 
 if TYPE_CHECKING:
     from .emit import ProjectWriter
@@ -44,12 +44,8 @@ _MD_LINK = re.compile(r"\[((?:\\.|[^\]\\])+)\]\([^)]*\)")
 
 
 def _clip(text: str, n: int) -> str:
-    text = " ".join(md_escape(text).split())
+    text = " ".join(tidy(text).split())
     return text if len(text) <= n else text[: n - 1].rstrip() + "…"
-
-
-def _plural(n: int, word: str) -> str:
-    return f"{n} {word}" if n == 1 else f"{n} {word}s"
 
 
 def _natural_key(text: str) -> list:
@@ -81,8 +77,8 @@ class LedgerWriter:
 
     def package_row(self, pkg: Element) -> str:
         n_el, n_req, n_dia = self.counts(pkg)
-        parts = [_plural(n_el, "element")] + ([_plural(n_req, "requirement")] if n_req else []) + \
-                ([_plural(n_dia, "diagram")] if n_dia else [])
+        parts = [plural(n_el, "element")] + ([plural(n_req, "requirement")] if n_req else []) + \
+                ([plural(n_dia, "diagram")] if n_dia else [])
         return f"- {self.w.link(pkg.id, FILE)} `{self.ix.qualified_name(pkg.id)}` — {', '.join(parts)}"
 
     def diagram_row(self, dia_id: str) -> str:

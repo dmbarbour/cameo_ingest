@@ -46,7 +46,9 @@ def front_matter(meta: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def md_escape(text: str) -> str:
+def tidy(text: str) -> str:
+    """Model text as it goes on a page: line ends normalized, outer white space stripped. It is
+    not escaped; the plain chunks remove only the markup emit writes (AR-003)."""
     return text.replace("\r\n", "\n").strip()
 
 

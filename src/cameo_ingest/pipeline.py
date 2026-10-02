@@ -15,7 +15,7 @@ from . import diagrams as dg
 from . import modules as mod
 from . import semantics as sem
 from .archive import Project, first_tag
-from .emit import Annotation, Outputs, ProjectWriter, slug
+from .emit import Annotation, ProjectWriter, slug
 from .layout import Layout, parse_layout
 from .llm import LLM
 from .model import Element, ModelIndex
@@ -39,7 +39,6 @@ DIAGRAM_CONTEXT_ITEMS = 150  # shapes, and connections, listed with a diagram im
 
 @dataclass
 class ProjectResult:
-    outputs: Outputs
     summary: dict[str, Any] = field(default_factory=dict)
 
 
@@ -344,7 +343,6 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
                     drawn = _draw(root / rel, partial(dg.render_png, ix, graph, title, pixels=image_pixels))
                 if not drawn:
                     continue
-                writer.out.files.append(root / rel)
                 tr = writer.trace(el).with_(entry=d.streams[0] if d.streams else el.entry, line=None,
                                             derivation=Derivation(method="rendered", inputs=tuple(d.streams)))
                 label = f"Diagram sketch with its modules outlined ({SKETCH})" if part else f"Diagram sketch ({SKETCH})"
@@ -355,7 +353,6 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
                         mrel = writer.module_image(dia_id, m.num)
                         if not _draw(root / mrel, partial(mod.module_png, ix, graph, part, m.num, title, image_pixels)):
                             continue
-                        writer.out.files.append(root / mrel)
                         annotations[dia_id].append(
                             Annotation(f"Module M{m.num} sketch ({SKETCH})", "", tr, image=mrel, module=m.num))
                         if llm.cfg.vision_model:
@@ -405,7 +402,6 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
         rel = f"images/{slug(PurePosixPath(entry).name, 100)}.{mime.split('/')[1]}"
         writer.root.joinpath(rel).parent.mkdir(parents=True, exist_ok=True)
         writer.root.joinpath(rel).write_bytes(project.read(entry))
-        writer.out.files.append(writer.root / rel)
         tr = base.with_(entry=entry)
         image_notes.append((entry, rel, tr))
         if llm.cfg.vision_model:
@@ -546,7 +542,7 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
         writer.write_text("images.md", fm + "\n".join(lines))
 
     with progress.phase(f"{project.display_name}: writing", writer.write_steps(), "step") as ph:
-        out = writer.write_all(tick=ph.advance)
+        writer.write_all(tick=ph.advance)
 
     summary = {
         "name": content.name,
@@ -559,4 +555,4 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM,
         "requirements": sum(1 for e in ix.elements.values() if sem.is_requirement(ix, e)),
         "images": len(image_notes),
     }
-    return ProjectResult(out, summary)
+    return ProjectResult(summary)

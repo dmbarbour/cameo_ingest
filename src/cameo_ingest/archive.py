@@ -16,7 +16,7 @@ import re
 import zipfile
 import zlib
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import PurePosixPath
 
 log = logging.getLogger(__name__)
@@ -60,7 +60,6 @@ class Project:
     _zip: zipfile.ZipFile | None = None
     _bare: bytes | None = None
     _budget: _Budget | None = None
-    notes: list[str] = field(default_factory=list)
 
     @property
     def chain(self) -> tuple[str, ...]:

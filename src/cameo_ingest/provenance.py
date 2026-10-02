@@ -41,6 +41,18 @@ def utc_now() -> str:
 LABEL_CHARS = 32  # of a file name, in chunk text
 
 
+
+def short_id(sha256: str) -> str:
+    """A project's short id: the start of its content hash ("9ffd7a2c"), which names its rag/
+    folder and, in chunk text, the project; rag/meta/_sources.json resolves it."""
+    return sha256.removeprefix("sha256:")[:8]
+
+
+def chunk_ref(project_sha256: str, chunk_id: str) -> str:
+    """A chunk named in another chunk's text: its project's short id and the start of its id
+    ("9ffd7a2c:14d101e0b1d2"), which chunks.jsonl resolves."""
+    return f"{short_id(project_sha256)}:{chunk_id[:12]}"
+
 @dataclass(frozen=True)
 class ContentInfo:
     """What a project's output is about: the content's hash and the file name under
@@ -55,6 +67,10 @@ class ContentInfo:
         return f"sha256:{self.sha256}"
 
     @property
+    def short_id(self) -> str:
+        return short_id(self.sha256)
+
+    @property
     def label(self) -> str:
         """How chunk text names the project: the start of its file name and its short id, as in
         "TMT [9ffd7a2c]". File names can be very long, and files of the same name can hold
@@ -64,7 +80,7 @@ class ContentInfo:
         if len(stem) > LABEL_CHARS:
             cut = max(stem.rfind(c, 0, LABEL_CHARS) for c in " _-.")
             stem = stem[:cut if cut > LABEL_CHARS // 2 else LABEL_CHARS].rstrip(" _-.") + "…"
-        return f"{stem} [{self.sha256[:8]}]"
+        return f"{stem} [{self.short_id}]"
 
 
 @dataclass(frozen=True)
