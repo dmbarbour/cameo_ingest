@@ -449,9 +449,8 @@ runner: inputs ─► archive.discover ─► state (contents, sightings) ─►
 - **Used projects** (`proxy.*` entries) aren't ingested. References into them, such as
   SysML library types, show as raw ids or hrefs. The next step is to read the proxies only
   for labels.
-- **`.mdzipx` SVGs.** The next step is to link them to diagrams and use them in place of
-  the sketch, since they are real renderings. That needs a sample file and an SVG
-  rasterizer such as `cairosvg` or `resvg`.
+- **`.mdzipx` SVGs** are deferred indefinitely: no sample exists, among the maintainer's files
+  or in public. Their nested `.mdzip` is ingested as usual.
 - **Attachments** (`BINARY-*` PNG, JPEG or PDF) are listed at project level but not yet
   linked to their owning elements. PDF and Office attachments aren't converted yet.
 - **Chunk sizes.** Plain chunks are split to fit 512-token embedding windows, by an estimate
