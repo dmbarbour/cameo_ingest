@@ -107,7 +107,7 @@ evaluation follow, each independent of the others.
 | CP1: tests and references | RA-18 (part), RA-19, RA-20 | None | |
 | CP2: one vocabulary | RA-06, RA-07, RA-08, AR-012R3 | Labels, kind words, relationship wording and ledger rows where today's versions disagree; 0.6.1 | |
 | CP3: one chunk path | RA-09, RA-11 | Generated and ledger chunk headings; 0.6.2 | |
-| CP4: the enrichment | RA-12, RA-13 (enrichment), AR-009 | Summaries (new template versions, one live run); 0.7.0 | |
+| CP4: the enrichment | AR-009, RA-12, RA-13 (enrichment) | Summaries (new template versions, one live run); 0.7.0 | |
 | CP5: the writer and the tree's outputs | RA-13 (writer), RA-14, RA-21 | Threads in their projects' folders, with their ancestors; chunk metadata; 0.7.1 | |
 | CP6: configuration and state | RA-10, AR-024 | None | |
 | CP7: diagrams and the LLM plumbing | RA-15, RA-16 | None | |
@@ -180,17 +180,29 @@ intended; retrieval on the fictional questions.
 ### CP4: the enrichment
 
 **Why together:** each of these changes what the LLM is sent, so one round of new template
-versions and one live run cover them all.
+versions and one live run cover them all, CP2's label changes included.
+
+**Template versions.** A template whose text changes gets a new version, never a number used
+before: retired versions (at tag `studies-2026-10-02`) keep theirs, since the LLM store's request
+log names them. So `package-summary` goes to v4 (v3 was the retired sandwich), `module-summary`
+to v3, `package-synthesis` to v3, `instances-summary` to v2 and `diagram-description` to v5.
+`module-description`, `diagram-synthesis` and `image-description` keep their text, and their
+version; their requests change only where CP2's labels do.
 
 | Step | What | Status |
 |---|---|---|
-| AR-009 | **A values builder per template**, beside it, returning values, notes and whether it was cut. Limits become named constants, interpolated into slot descriptions and cut notes alike. Sentences that reach the model today without a template version ("The text was cut at …", "(Only the first 150 shapes …)") move into the templates. `package-summary`'s always-empty `CUT_NOTE` and the diagram type "(None)" are fixed. A test renders every current template from its builder on the fixture. | |
-| RA-13 (enrichment) | **An `enrich` module** (AR-008): typed requests, with an `AnnotationKind` holding both display label and chunk kind; one round loop (`while batch := enricher.next_round(): enricher.fold(batch, answers)`); `_fit_image` beside the sketch canvas, the FU-019 id rewrite in `layout`, one magic-bytes table, and `images.md` written by the page writer. Pipeline passes package parts and image notes to the writer as data (AR-007R2). | |
-| RA-12 | **Plain LLM inputs** (AR-018R1): summaries are sent the section view's plain rendering, with `generated=False`. | |
+| CP4a | **The values of every request built beside its template** (AR-009). A module `requests` (after the review's "a builder per template") with one function per template: `diagram_description`, `module_description`, `diagram_synthesis`, `image_description`, `package_summary`, `module_summary`, `package_synthesis`, `instances_summary`. Each returns the values, the notes for the request log, and whether the input was cut (`Values`). The limits (`DIAGRAM_ITEMS` 150, `PART_CHARS`, `OWN_CHARS`, `DIGEST_CHARS`, `SUMMARY_INPUT_CHARS`, `MAX_SUMMARIES`) are named constants in `prompts`, interpolated into the slot descriptions. The sentences that reach the model without a version today ("The text was cut at …", "(Only the first 150 shapes …)", "(The digest was cut here.)", "The package's own section was cut at …") become `Template.fragments`, format strings that belong to the version and are pinned with its text. `package-summary` loses its always-empty `CUT_NOTE`; a diagram without a type is "(unknown type)", not "(None)". `modules.module_values` and `modules.synthesis_values` move to `requests`. A test renders every current template from its builder on the fixture. | |
+| CP4b | **Plain inputs** (RA-12, AR-018R1). Summaries are sent each section's plain text (`Section.text`: a title, then its fields and blocks, meaning first, in one piece), not the page's Markdown with its link targets; the package's own section likewise. `generated=False` is explicit. The character limits then hold more model text per request, so fewer packages are split into parts. | |
+| CP4c | **An `enrich` module** (RA-13, AR-008, AR-007R2). `AnnotationKind`s (diagram description, module description, part summary, summary, run summary, image description), each with its display label and chunk kind, replace the string kinds and the label munging. An `Enricher` holds the project's requests and folds their answers into annotations, a round at a time (`while batch := enricher.next_round(): enricher.fold(batch, answers)`): the first round, then large diagrams from their modules and large packages from their parts, as today. `ingest_project` keeps parsing, rendering and writing. `_fit_image` moves beside the sketch canvas (`diagrams.fit_image`), the FU-019 id rewrite into `layout`, `IMAGE_MAGIC` into `text` beside the other magic-bytes table, and `images.md` into the writer (`write_images`). The writer gets package parts and image notes as data (`writer.set_parts`, `write_images`), and `sections_in` is public. | |
 
-**Checks:** the new template versions' requests on the fixture; one live run on the samples
-and the fiction (about $1.50, accepted); a side-by-side reading of a sample of old and new
-summaries before adopting them (a halt if the new read worse); the replay fixture re-recorded.
+**Checks:**
+- **Without the LLM:** CP4a and CP4c change no output, so their `--no-llm` trees match CP3's.
+- **The requests:** the new versions' requests on the fixture, pinned; the replay fixture
+  re-recorded once, at the end.
+- **The live run:** samples and fiction into the same store (about $1.50 for the summaries,
+  plus the diagram descriptions whose legends CP2 changed, accepted).
+- **Before adopting the new summaries:** a side-by-side reading of a sample of old and new
+  summaries (same packages); the plan halts for discussion if the new read worse.
 
 ### CP5: the writer and the tree's outputs
 

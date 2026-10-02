@@ -18,6 +18,15 @@ from dataclasses import dataclass
 
 _SLOT = re.compile(r"\{\{([A-Z_]+)\}\}")
 
+# What a request may hold (AR-009): used by the request builders (`prompt_values`), and stated in the
+# slots' descriptions.
+DIAGRAM_ITEMS = 150  # shapes, and connections, listed with a diagram
+SUMMARY_CHARS = 12_000  # a package summarized in one request; a larger one in parts
+PART_CHARS = (3_000, 12_000)  # a large package's parts: the smallest worth its own request, and the limit
+OWN_CHARS = 6_000  # a large package's own section, sent with its parts' summaries
+MAX_SUMMARIES = 30  # summaries per synthesis request; more are summarized in runs first
+DIGEST_CHARS = (8_000, 4_000)  # an instances digest, and the text of the package's other elements
+
 
 @dataclass(frozen=True)
 class Slot:
@@ -34,10 +43,16 @@ class Template:
     text: str
     slots: tuple[Slot, ...]
     image_first: bool = False  # the image goes before the text in the request (FU-015)
+    # Sentences a request may add, as format strings: they belong to the version, as its text does
+    # (AR-009), so that no wording reaches the model outside a version.
+    fragments: tuple[tuple[str, str], ...] = ()
 
     @property
     def key(self) -> str:
         return f"{self.id}@v{self.version}"
+
+    def fragment(self, name: str, **values: object) -> str:
+        return dict(self.fragments)[name].format(**values)
 
     @property
     def image_slot(self) -> Slot | None:
@@ -81,38 +96,37 @@ _DIAGRAM_SLOTS = (
     Slot("LEGEND", "text",
          "one line per shape, '- [<number>] <shape kind>: <label>', indented two spaces per level of "
          "nesting; labels are '«stereotype» name : Type', an unnamed typed element shows its type alone. "
-         "Pins and ports are not listed; they appear in connections as '[n] Owner.pin'. At most 150 lines."),
+         "Pins and ports are not listed; they appear in connections as '[n] Owner.pin'. "
+         f"At most {DIAGRAM_ITEMS} lines."),
     Slot("CONNECTIONS", "text",
          "one line per connection, in the notation the text explains, with directions taken from the model "
-         "and the items a connector carries. At most 150 lines."),
+         f"and the items a connector carries. At most {DIAGRAM_ITEMS} lines."),
     Slot("CUT_NOTE", "text",
-         "empty, or a line saying that only the first 150 shapes or connections are listed, and how many "
+         f"empty, or a line saying that only the first {DIAGRAM_ITEMS} shapes or connections are listed, and how many "
          "there are (large diagrams: plan DV splits them instead)."),
 )
 
 PACKAGE_SUMMARY = Template(
     id="package-summary",
-    version=2,
+    version=4,
     purpose=(
         "A summary of one package for a search index, stored as a generated:summary chunk and shown at "
         "the top of the package's page. Only packages with at least 5 sections get one."
     ),
     text=(
         "You are helping to index a systems engineering model (UML/SysML, authored in Cameo) for search. "
-        "Below is the extracted text of one package, in Markdown: the package's own description and members, "
-        "then a section for each element in it. {{CUT_NOTE}}Summarize what this package models: its purpose, "
+        "Below is the extracted text of one package: the package's own description and members, then a "
+        "section for each element in it. Summarize what this package models: its purpose, "
         "its main elements, and how they relate. Use only the information given, and do not speculate. "
         f"{_STYLE} At most 150 words.\n\n---\n{{{{PACKAGE_TEXT}}}}"
     ),
     slots=(
-        Slot("CUT_NOTE", "text",
-             "empty, or a sentence saying the text was cut at 12,000 of its N characters, so that later "
-             "elements are known by name only."),
         Slot("PACKAGE_TEXT", "text",
-             "the package's Markdown page as extracted, without trace lines: the package's own section (kind, "
-             "qualified name, documentation, members with links), then one section per element (stereotypes, "
-             "requirement text, documentation, tagged values, members, relationships, diagrams showing it). "
-             "At most 12,000 characters (FU-005)."),
+             "the package's sections as plain text (AR-018): its own (its kind, qualified name, documentation, "
+             "members), then one per element, each a title ('«stereotype» name'), its fields ('Kind: Class') and "
+             "its blocks ('Documentation: ...', 'Relationships:' and a line each), meaning before members and "
+             f"tagged values, sections apart by a blank line. At most {SUMMARY_CHARS:,} characters: a larger "
+             "package is summarized in parts (FU-005)."),
     ),
 )
 
@@ -138,7 +152,7 @@ _SKETCH = Slot(
 
 DIAGRAM_DESCRIPTION = Template(
     id="diagram-description",
-    version=4,
+    version=5,
     purpose=(
         "A description of one diagram for a search index, stored as a generated:diagram_description chunk "
         "and shown on the diagram's page."
@@ -157,6 +171,8 @@ DIAGRAM_DESCRIPTION = Template(
     ),
     slots=(*_DIAGRAM_SLOTS, _SKETCH),
     image_first=True,
+    fragments=(("cut", ("\n(Only the first {limit} shapes and connections are listed: the diagram has {shapes} "
+                        "shapes and {connections} connections.)")),),
 )
 
 IMAGE_DESCRIPTION = Template(
@@ -275,34 +291,35 @@ _PARTS = ("The package is too large to summarize at once, so its elements have b
 
 MODULE_SUMMARY = Template(
     id="module-summary",
-    version=1,
+    version=3,
     purpose="A summary of one part of a large package, for a search index, stored as a generated:module_summary "
             "chunk (with the elements it covers) and shown in the package page's list of parts. The "
             "package-synthesis request builds on these.",
     text=(
         "You are helping to index a systems engineering model (UML/SysML, authored in Cameo) for search. "
-        f"{_PARTS} Below is the extracted text of one part's elements, in Markdown. {{{{CUT_NOTE}}}}"
+        f"{_PARTS} Below is the extracted text of one part's elements. {{{{CUT_NOTE}}}}"
         "Summarize what this part models: its purpose, its main elements and how they relate, to each other "
         "and to elements elsewhere. Use only the information given, and do not speculate. "
         f"{_STYLE} At most 120 words.\n\nPackage: {{{{PACKAGE}}}}\nPart: {{{{PART}}}}\n---\n{{{{SECTIONS}}}}"
     ),
     slots=(
         Slot("CUT_NOTE", "text",
-             "empty, or a sentence saying that a section longer than the part's limit (12,000 characters) was "
-             "cut, and where."),
+             f"empty, or a sentence saying that a section longer than the part's limit ({PART_CHARS[1]:,} "
+             "characters) was cut, and where."),
         Slot("PACKAGE", "text", "the package's qualified name."),
         Slot("PART", "text", "'<k> of <n>': the part's number, in the package's order, and the count."),
         Slot("SECTIONS", "text",
-             "the part's element sections as on the package page, without trace lines: each with its kind, "
-             "qualified name, stereotypes, requirement text, documentation, tagged values (long ones cut, "
-             "FU-020), members, relationships and diagrams. 3,000 to 12,000 characters where the sections "
+             "the part's element sections as plain text, as in package-summary: each with its kind, qualified "
+             "name, stereotypes, requirement text, documentation, tagged values (long ones cut, FU-020), members, "
+             f"relationships and diagrams. {PART_CHARS[0]:,} to {PART_CHARS[1]:,} characters where the sections "
              "allow; one section longer than that is cut."),
     ),
+    fragments=(("cut", "The text was cut at {limit:,} of its {length:,} characters, so its end is missing. "),),
 )
 
 PACKAGE_SYNTHESIS = Template(
     id="package-synthesis",
-    version=1,
+    version=3,
     purpose="A summary of a large package, or of a run of its parts when there are many, built from the parts' "
             "summaries; stored as the package's generated:summary chunk (or a generated:module_summary chunk "
             "for a run of parts) and shown on the package page.",
@@ -318,23 +335,25 @@ PACKAGE_SYNTHESIS = Template(
     slots=(
         Slot("SCOPE", "text", "'the whole package', or 'parts <a> to <b> of <n>' for a run of parts."),
         Slot("CUT_NOTE", "text",
-             "empty, or a sentence saying that the package's own section was cut at 6,000 of its N characters."),
+             f"empty, or a sentence saying that the package's own section was cut at {OWN_CHARS:,} of its N "
+             "characters."),
         Slot("PACKAGE", "text", "the package's qualified name."),
         Slot("PACKAGE_TEXT", "text",
-             "the package's own section as on its page, without its trace line: kind, qualified name, "
-             "documentation, tagged values and members. At most 6,000 characters."),
+             "the package's own section as plain text: kind, qualified name, documentation, tagged values and "
+             f"members. At most {OWN_CHARS:,} characters."),
         Slot("SUMMARIES", "text",
              "one paragraph per part, 'Part <k> (<m> elements): ' and its module-summary answer, or per run of "
              "parts, 'Parts <a> to <b>: ' and the answer of this template for them; '(not summarized)' when a "
-             "request got no answer. At most 30 paragraphs: more parts are summarized in runs first."),
+             f"request got no answer. At most {MAX_SUMMARIES} paragraphs: more parts are summarized in runs first."),
     ),
+    fragments=(("cut", "The package's own section was cut at {limit:,} of its {length:,} characters. "),),
 )
 
 # Packages made mostly of instance specifications, such as the recorded results of an
 # analysis, summarized in one request from a digest rather than in parts (FU-022).
 INSTANCES_SUMMARY = Template(
     id="instances-summary",
-    version=1,
+    version=2,
     purpose="A summary of a large package made mostly of instance specifications (at least 80% of its elements), "
             "for a search index, from a digest of them; stored as the package's generated:summary chunk and shown "
             "at the top of its page.",
@@ -352,17 +371,19 @@ INSTANCES_SUMMARY = Template(
     slots=(
         Slot("PACKAGE", "text", "the package's qualified name."),
         Slot("PACKAGE_TEXT", "text",
-             "the package's own section as on its page, without its trace line, cut at 6,000 characters: kind, "
-             "qualified name, documentation, tagged values, then the start of its member list."),
+             f"the package's own section as plain text, cut at {OWN_CHARS:,} characters: kind, qualified name, "
+             "documentation, tagged values, then the start of its member list."),
         Slot("DIGEST", "text",
              "'<n> instance specifications of <m> classifiers.'; the top-level instances (those no other "
              "instance's slot refers to), up to 10; then per classifier, most instances first, up to 40: '- "
              "<classifier> (<kind>): <count> instances, such as <up to 3 names>', and its slots' features with "
-             "how many instances set them and up to 3 values. At most 8,000 characters."),
+             f"how many instances set them and up to 3 values. At most {DIGEST_CHARS[0]:,} characters, and "
+             "marked where cut."),
         Slot("OTHERS", "text",
-             "the sections of the package's other elements as on its page, cut at 4,000 characters in all, or "
-             "'(none)'."),
+             f"the sections of the package's other elements as plain text, cut at {DIGEST_CHARS[1]:,} characters in "
+             "all, or '(none)'."),
     ),
+    fragments=(("cut", "\n(The digest was cut here.)"),),
 )
 
 # The versions in use, one per template. Their keys are part of a run's options, so that a project

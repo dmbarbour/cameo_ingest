@@ -350,19 +350,3 @@ def crossing_lines(ix: ModelIndex, g: DiagramGraph, part: Partition, refs: dg.Re
     """Connections between modules, each end followed by '(in M<j>)'."""
     return dg.describe(ix, g, refs, nodes=[], links=part.crossing(g),
                        where=lambda n: f" (in M{part.module_of[n.num]})")[1]
-
-
-def module_values(ix: ModelIndex, g: DiagramGraph, part: Partition, num: int, diagram: str) -> dict[str, str]:
-    """The text slots of a module-description request."""
-    legend, lines, boundary = module_lists(ix, g, part, num)
-    return {"DIAGRAM": diagram, "MODULE": f"M{num} of {len(part.modules)}", "LEGEND": "\n".join(legend),
-            "CONNECTIONS": "\n".join(lines) or "(none)", "BOUNDARY": "\n".join(boundary) or "(none)"}
-
-
-def synthesis_values(ix: ModelIndex, g: DiagramGraph, part: Partition, diagram: str,
-                     texts: list[str | None]) -> dict[str, str]:
-    """The text slots of a diagram-synthesis request, from the modules' descriptions."""
-    modules = "\n\n".join(f"M{m.num} ({len(m.shapes)} shapes): {text or '(not described)'}"
-                           for m, text in zip(part.modules, texts, strict=True))
-    return {"DIAGRAM": diagram, "MODULES": modules,
-            "CROSSING": "\n".join(crossing_lines(ix, g, part)) or "(none)"}

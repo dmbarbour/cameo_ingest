@@ -58,7 +58,7 @@ class LedgerWriter:
 
     # -- rows ------------------------------------------------------------------
     def counts(self, pkg: Element) -> tuple[int, int, int]:
-        els = self.w._section_elements_in(pkg)
+        els = self.w.sections_in(pkg)
         reqs = sum(1 for e in els if sem.is_requirement(self.ix, e))
         dias = sum(1 for c in sem.children(self.ix, pkg) if c.kind == "Diagram")
         return len(els) - reqs, reqs, dias

@@ -111,12 +111,9 @@ class Section:
             out += b.markdown(link)
         return out
 
-    def plain(self, heading: str) -> tuple[list[str], list[str]]:
-        """Plain parts under `heading`: (meaning, details). The meaning holds the fields (but its
-        kind and qualified name, which the heading says), then the blocks of meaning; the details
-        hold members and tagged values: together when they fit in one part, apart otherwise
-        (plan RE-08)."""
-        meaning = [f"{k}: {to_plain(v)}" for k, v in self.fields if k not in ("Kind", "Qualified name")]
+    def _blocks(self) -> tuple[list[str], list[str]]:
+        """The blocks as plain text: (meaning, details), each a block's lines under its name."""
+        meaning: list[str] = []
         detail: list[str] = []
         for b in self.blocks:
             text = b.plain()
@@ -124,6 +121,21 @@ class Section:
                 continue
             inline = "\n" not in text and len(text) < 200 and not text.startswith("- ")  # lists keep their lines
             (detail if b.detail else meaning).append(f"{b.name}: {one_line(text)}" if inline else f"{b.name}:\n{text}")
+        return meaning, detail
+
+    def text(self) -> str:
+        """The whole section as plain text, in one piece, for LLM inputs (AR-018): its title, every
+        field, then its blocks, meaning before details."""
+        meaning, detail = self._blocks()
+        return "\n".join([to_plain(self.title), *(f"{k}: {to_plain(v)}" for k, v in self.fields), *meaning, *detail])
+
+    def plain(self, heading: str) -> tuple[list[str], list[str]]:
+        """Plain parts under `heading`: (meaning, details). The meaning holds the fields (but its
+        kind and qualified name, which the heading says), then the blocks of meaning; the details
+        hold members and tagged values: together when they fit in one part, apart otherwise
+        (plan RE-08)."""
+        blocks, detail = self._blocks()
+        meaning = [f"{k}: {to_plain(v)}" for k, v in self.fields if k not in ("Kind", "Qualified name")] + blocks
         together = "\n".join(meaning + detail)
         if pl.tokens(heading) + pl.tokens(together) + 8 <= pl.BUDGET:
             return pl.parts(heading, together), []

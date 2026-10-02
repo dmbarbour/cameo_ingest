@@ -8,8 +8,15 @@ from typing import Any
 
 VALUE_CHARS = 4000  # a tagged value shown on a page: longer ones are data or configuration (FU-020)
 _HEX = re.compile(r"(?:[0-9a-fA-F]{1,2}\s+){16}")
-_MAGIC = ((b"<?xml", "XML"), (b"<svg", "SVG image"), (b"\x89PNG", "PNG image"), (b"\xff\xd8\xff", "JPEG image"),
-          (b"GIF8", "GIF image"), (b"PK\x03\x04", "zip archive"))
+# What some bytes are, by how they start: a name, and the media type of an image a vision model reads.
+_MAGIC = ((b"<?xml", "XML", None), (b"<svg", "SVG image", None), (b"\x89PNG", "PNG image", "image/png"),
+          (b"\xff\xd8\xff", "JPEG image", "image/jpeg"), (b"GIF8", "GIF image", "image/gif"),
+          (b"PK\x03\x04", "zip archive", None))
+
+
+def image_mime(head: bytes) -> str | None:
+    """The media type of an embedded image (PNG, JPEG or GIF), from its first bytes."""
+    return next((mime for magic, _, mime in _MAGIC if mime and head.startswith(magic)), None)
 
 
 def shown_value(value: str, limit: int = VALUE_CHARS) -> str:
@@ -17,7 +24,7 @@ def shown_value(value: str, limit: int = VALUE_CHARS) -> str:
     «CustomImageHolder») described rather than shown, and other long values cut (FU-020)."""
     if len(value) > limit and _HEX.match(value) and re.fullmatch(r"[0-9a-fA-F\s]+", value):
         head = bytes.fromhex("".join(f"{b:0>2}" for b in value[:2000].split()[:512]))
-        kind = next((k for magic, k in _MAGIC if head.lstrip().startswith(magic)), "binary data")
+        kind = next((k for magic, k, _ in _MAGIC if head.lstrip().startswith(magic)), "binary data")
         if kind == "XML" and b"<svg" in head:
             kind = "SVG image"
         return f"({kind}, {len(value.split()):,} bytes, hex-encoded; not shown)"

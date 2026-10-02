@@ -60,9 +60,9 @@ def test_large_package_parts(tmp_path, fake_openai, monkeypatch):
     plan DV-05)."""
     import sqlite3
 
-    from cameo_ingest import pipeline
+    from cameo_ingest import enrich
 
-    monkeypatch.setattr(pipeline, "MAX_SUMMARIES", 2)  # so that parts are summarized in runs first
+    monkeypatch.setattr(enrich, "MAX_SUMMARIES", 2)  # so that parts are summarized in runs first
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip(large_package_model()))
     out = tmp_path / "out"
@@ -88,11 +88,11 @@ def test_large_package_parts(tmp_path, fake_openai, monkeypatch):
     assert pl.tokens(heading) <= pl.HEADING
     summary = [c for c in chunks if c["metadata"]["kind"] == "generated:summary" and c["metadata"]["element_id"] == "bigp"]
     assert summary[0]["text"].startswith("Summary of Package Big in Model (project drone [")
-    assert [c["metadata"]["provenance"]["derivation"]["template"] for c in summary] == ["package-synthesis@v1"]
+    assert [c["metadata"]["provenance"]["derivation"]["template"] for c in summary] == ["package-synthesis@v3"]
     db = sqlite3.connect(out / ".cache/llm.sqlite")
     used = Counter(r[0] for r in db.execute("SELECT template FROM requests WHERE item LIKE '%bigp%'"))
-    assert used["module-summary@v1"] == n and used["package-synthesis@v1"] == len(parts) - n + 1
-    prompt = db.execute("SELECT prompt FROM requests WHERE template = 'package-synthesis@v1' ORDER BY rowid DESC").fetchone()[0]
+    assert used["module-summary@v3"] == n and used["package-synthesis@v3"] == len(parts) - n + 1
+    prompt = db.execute("SELECT prompt FROM requests WHERE template = 'package-synthesis@v3' ORDER BY rowid DESC").fetchone()[0]
     assert "summaries of the whole package" in prompt and re.search(r"\nParts \d+ to \d+: ", prompt)
 
 
@@ -127,7 +127,7 @@ def test_instance_packages_summarized_from_a_digest(tmp_path, fake_openai):
     assert "- **Classifier:** [Battery]" in page and "## Parts, summarized" not in page
     db = sqlite3.connect(out / ".cache/llm.sqlite")
     rows = db.execute("SELECT template, prompt FROM requests WHERE item LIKE '%resp%'").fetchall()
-    assert [r[0] for r in rows] == ["instances-summary@v1"]
+    assert [r[0] for r in rows] == ["instances-summary@v2"]
     prompt = rows[0][1]
     assert "61 instance specifications of 2 classifiers." in prompt
     # The run's slot refers to cell 0 only, so the other cells are top-level too.
@@ -138,19 +138,23 @@ def test_instance_packages_summarized_from_a_digest(tmp_path, fake_openai):
 
 
 def test_current_templates_pinned():
-    """A current template's request never changes under its key: a new text is a new version, so
-    that projects written with the old one are written again (FU-014). Pinned by hash (plan RA-03)."""
+    """A current template's request never changes under its key: a new text, or a new fragment, is
+    a new version, so that projects written with the old one are written again (FU-014). Pinned
+    by hash (plan RA-03)."""
     from cameo_ingest.prompts import CURRENT
 
-    assert {t.key: hashlib.sha256(f"{t.image_first}|{t.text}".encode()).hexdigest()[:16] for t in CURRENT.values()} == {
-        "diagram-description@v4": "a0b0089bca91bbdc",
+    def pin(t) -> str:  # its text and, when it has them, its fragments (AR-009)
+        return hashlib.sha256(f"{t.image_first}|{t.text}{f'|{t.fragments}' if t.fragments else ''}".encode()).hexdigest()[:16]
+
+    assert {t.key: pin(t) for t in CURRENT.values()} == {
+        "diagram-description@v5": "254bc73164fa5d14",
         "diagram-synthesis@v2": "864e9e9b3a1a3ce1",
         "image-description@v2": "abc49bf5c21deb2c",
-        "instances-summary@v1": "af0506cd2f78eb28",
+        "instances-summary@v2": "7efe4dab7b5f2f97",
         "module-description@v2": "3da13ee440c895af",
-        "module-summary@v1": "a94d4fbd2ae1e703",
-        "package-summary@v2": "4f4e4f82d37c385f",
-        "package-synthesis@v1": "c4578c170284ec15",
+        "module-summary@v3": "adb1988426c52a72",
+        "package-summary@v4": "9b211fbe74c3e128",
+        "package-synthesis@v3": "ffde10093ba92d11",
     }
 
 
@@ -174,17 +178,17 @@ def test_templates_and_request_log(tmp_path, fake_openai):
     db = sqlite3.connect(out / ".cache/llm.sqlite")
     rows = db.execute("SELECT template, project, item, image_path, prompt, notes FROM requests ORDER BY template, "
                       "image_path").fetchall()
-    assert [(r[0], r[3]) for r in rows] == [("diagram-description@v4", "diagrams/Drone_BDD.png"),
+    assert [(r[0], r[3]) for r in rows] == [("diagram-description@v5", "diagrams/Drone_BDD.png"),
                                            ("image-description@v2", "images/BINARY-img1.png"),
                                            ("image-description@v2", "images/BINARY-img2.png"),
-                                           ("package-summary@v2", None)]
+                                           ("package-summary@v4", None)]
     assert all(r[1] == token and r[2].startswith(token[:23]) for r in rows)
-    assert rows[0][4].startswith(TEMPLATES["diagram-description@v4"].text.split("{{")[0])
+    assert rows[0][4].startswith(TEMPLATES["diagram-description@v5"].text.split("{{")[0])
     assert "Diagram: Drone BDD (SysML Block Definition Diagram)" in rows[0][4]
     chunks = [json.loads(line) for line in (out / "chunks.jsonl").open()]
     templates = {c["metadata"]["provenance"]["derivation"].get("template") for c in chunks
                  if c["metadata"]["kind"].startswith("generated:")}
-    assert templates == {"diagram-description@v4", "image-description@v2", "package-summary@v2"}
+    assert templates == {"diagram-description@v5", "image-description@v2", "package-summary@v4"}
     # The image goes before the text (FU-015).
     request = json.loads(json.dumps(fake_openai[0].enrichment()[0][1]))
     assert [part["type"] for part in request[0]["content"]] == ["image_url", "text"]
@@ -341,3 +345,49 @@ def test_llm_concurrency(tmp_path, fake_openai, monkeypatch):
         trees.append(tree(out))
     assert FakeOpenAI.max_inflight >= 2  # requests overlapped (BASE-019R4)...
     assert trees[0] == trees[1]  # ...and the output is the same as a sequential run
+
+
+def test_every_template_filled_by_its_builder():
+    """Every current template, filled by its builder (prompt_values) on the fixture, leaves no
+    slot unfilled, and each cut adds its template's own fragment (AR-009R3)."""
+    import hashlib
+    import tempfile
+
+    from test_diagrams import large_layout
+
+    from cameo_ingest import prompt_values as pv
+    from cameo_ingest.archive import discover
+    from cameo_ingest.emit import ProjectWriter
+    from cameo_ingest.pipeline import load_layouts, parse_project
+    from cameo_ingest.prompts import CURRENT, PART_CHARS
+    from cameo_ingest.provenance import ContentInfo
+
+    data = make_mdzip(instances_model(), large_layout())
+    project = next(discover(data, "drone.mdzip"))
+    ix = parse_project(project)
+    with tempfile.TemporaryDirectory() as tmp:
+        w = ProjectWriter(ContentInfo(hashlib.sha256(data).hexdigest(), "drone.mdzip"), project, ix, Path(tmp), {},
+                          load_layouts(project, ix), (25, 6, 25))
+        dia = next(iter(w.layouts))
+        g, part, d = w.graph(dia), w.partition(dia), ix.diagrams[dia]
+        pkg = next(e for e in ix.elements.values() if e.kind == "Package" and any(
+            c.kind == "InstanceSpecification" for c in w.sections_in(e)))
+        sections = w.sections_in(pkg)
+        own, texts = w.section_view(pkg).text(), [w.section_view(e).text() for e in sections]
+        filled = {
+            "diagram-description": pv.diagram_description(ix, g, d),
+            "module-description": pv.module_description(ix, g, part, 1, d),
+            "diagram-synthesis": pv.diagram_synthesis(ix, g, part, d, ["It pumps."] * len(part.modules)),
+            "image-description": pv.image_description(),
+            "package-summary": pv.package_summary("\n\n".join([own, *texts])),
+            "module-summary": pv.module_summary("Model::P", 1, 2, "x" * (PART_CHARS[1] + 1)),
+            "package-synthesis": pv.package_synthesis("Model::P", [3, 4], own, [((1, 1), "A."), ((2, 2), None)], True),
+            "instances-summary": pv.instances_summary(ix, "Model::P", own, sections, texts),
+        }
+    assert set(filled) == set(CURRENT)
+    for tid, v in filled.items():
+        assert "{{" not in CURRENT[tid].render(v.values), tid
+    assert filled["module-summary"].values["CUT_NOTE"] == CURRENT["module-summary"].fragment(
+        "cut", limit=PART_CHARS[1], length=PART_CHARS[1] + 1) and filled["module-summary"].cut
+    assert filled["diagram-description"].values["DIAGRAM"].endswith(")") and "(None)" not in filled[
+        "diagram-description"].values["DIAGRAM"]

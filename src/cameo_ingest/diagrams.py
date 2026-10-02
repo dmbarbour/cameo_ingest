@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import io
 import itertools
+import logging
 import math
 from collections import defaultdict
 from collections.abc import Callable
@@ -28,6 +29,8 @@ from .layout import Layout, View
 from .model import ModelIndex
 from .semantics import ItemFlow, Relationship
 from .text import md_inline, one_line
+
+log = logging.getLogger(__name__)
 
 # gemma-4 fills a budget of 280 soft tokens of 48 x 48 px (645,120 px) at the image's own aspect
 # ratio, with sides in multiples of 48 (docs/research/gemma4-images-2026-09-30.md, FU-015).
@@ -301,6 +304,29 @@ def canvas(w: float, h: float, pixels: int = IMAGE_PIXELS) -> tuple[int, int, fl
     W = max(PATCH_PX, int((w * s + 2 * m) // PATCH_PX) * PATCH_PX)
     H = max(PATCH_PX, int((h * s + 2 * m + t) // PATCH_PX) * PATCH_PX)
     return W, H, max(0.01, min((W - 2 * m) / w, (H - 2 * m - t) / h))
+
+
+def fit_image(data: bytes, mime: str, pixels: int) -> tuple[bytes, str, dict | None]:
+    """The image scaled down to at most `pixels`, sides in multiples of 48, as PNG; unchanged
+    if it already fits or can't be read."""
+    import io
+
+    from PIL import Image
+
+    try:
+        with Image.open(io.BytesIO(data)) as img:
+            w, h = img.size
+            if w * h <= pixels:
+                return data, mime, None
+            f = (pixels / (w * h)) ** 0.5
+            size = (max(PATCH_PX, int(w * f) // PATCH_PX * PATCH_PX),
+                    max(PATCH_PX, int(h * f) // PATCH_PX * PATCH_PX))
+            buf = io.BytesIO()
+            img.convert("RGB").resize(size, Image.LANCZOS).save(buf, "PNG")
+            return buf.getvalue(), "image/png", {"from": [w, h], "to": list(size)}
+    except Exception as e:  # a damaged or unusual image is sent as it is
+        log.debug("cannot scale an image: %s", e)
+        return data, mime, None
 
 
 def render_png(ix: ModelIndex, g: DiagramGraph, title: str, pixels: int = IMAGE_PIXELS,

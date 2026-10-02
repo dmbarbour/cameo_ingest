@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from typing import IO
 
@@ -86,6 +87,16 @@ def _geometry(text: str) -> tuple[tuple[float, float, float, float] | None, list
     if len(nums) >= 4:
         return (nums[0], nums[1], nums[2], nums[3]), []
     return None, []
+
+
+def own_elements(layout: Layout, ids: Collection[str]) -> None:
+    """A view naming the project's own element through its file (`file.mdzip#id`) names it by
+    its id (FU-019)."""
+    for v in layout.views:
+        if v.element and v.element not in ids and "#" in v.element:
+            own = v.element.rpartition("#")[2]
+            if own in ids:
+                v.element = own
 
 
 def parse_layout(stream: IO[bytes]) -> Layout:

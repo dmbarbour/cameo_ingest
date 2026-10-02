@@ -22,7 +22,6 @@ import csv
 import json
 from collections import defaultdict
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -32,29 +31,18 @@ from . import modules as mod
 from . import plain as pl
 from . import sections as sx
 from . import semantics as sem
+from .annotations import Annotation
 from .archive import Project
 from .layout import Layout
 from .ledger import LedgerWriter
 from .model import Element, ModelIndex
-from .provenance import TOOL, ContentInfo, Trace, generated_by
+from .provenance import TOOL, ContentInfo, Derivation, Trace, generated_by
 from .text import front_matter, md_inline, one_line, plural, shown_value, slug, tidy
 
 SKIP_MEMBER_ROLES = {
     "ownedComment", "lowerValue", "upperValue", "defaultValue", "specification",
     "generalization", "interfaceRealization", "ownedDiagram",
 }
-
-
-@dataclass
-class Annotation:
-    """A piece of derived text (LLM description, rendered image...) about an element."""
-
-    label: str
-    text: str
-    trace: Trace
-    image: str | None = None  # path relative to the project dir
-    module: int | None = None  # about this module of a large diagram, or part of a large package (plan DV)
-    parts: tuple[int, int] | None = None  # about this run of a large package's parts
 
 
 class ProjectWriter:
@@ -250,6 +238,30 @@ class ProjectWriter:
             self.chunk(kind=kind, title=title, text=part, file=file, el=el, trace=trace,
                        extra={**(extra or {}), **more}, salt=f"{salt}#{k}")
 
+    def set_parts(self, pkg_id: str, parts: list[list[str]]) -> None:
+        """A large package's parts (element ids), as summarized (plan DV-05)."""
+        self.package_parts[pkg_id] = parts
+
+    def write_images(self, images: list[tuple[str, str, Trace]], described: dict[str, tuple[str, Derivation]],
+                     base: Trace) -> None:
+        """images.md: the images embedded in the model (archive entry, file, trace), with their
+        descriptions, each also a chunk."""
+        if not images:
+            return
+        lines = ["# Embedded images", ""]
+        for entry, rel, tr in images:
+            lines += [f"## {entry}", "", f"![{entry}]({rel})", ""]
+            if entry in described:
+                text, deriv = described[entry]
+                lines += [f"**Description** _({generated_by(deriv)})_:", "", text, ""]
+                labelled = f"Description of embedded image {entry} ({generated_by(deriv)})\n\n{text}"
+                self.chunk(kind="generated:image_description", title=f"Image description: {entry}",
+                           text=labelled, file="images.md", el=None, trace=tr.with_(derivation=deriv), salt=entry)
+            lines += [f"<sub>trace: `{tr.locator()}`</sub>", ""]
+        fm = front_matter({"title": f"Embedded images in {self.content.name}", "kind": "images",
+                           "provenance": self.file_provenance(trace=base.to_dict())})
+        self.write_text("images.md", fm + "\n".join(lines))
+
     def write_steps(self) -> int:
         """How many times `write_all` calls `tick`."""
         return len(self.pkg_file) + len(self.dia_file) + 4
@@ -375,7 +387,7 @@ class ProjectWriter:
                 continue
             what = f"{el.kind} {self.ix.qualified_name(el.id)}"
             text = f"{self.generated_heading(a, el, kind_word)}\n\n{a.text}"
-            self.chunk(kind=f"generated:{a.label.lower().replace(' ', '_')}", title=f"{a.label}: {what}",
+            self.chunk(kind=a.kind.chunk if a.kind else "generated:annotation", title=f"{a.label}: {what}",
                        text=text, file=file, el=el, trace=a.trace, salt=str(i))
 
     def annotation_block(self, a: Annotation, from_file: str) -> sx.Block:
@@ -479,7 +491,7 @@ class ProjectWriter:
                             heading=self.heading(pkg, "Package"), extra={"title": f"Package {qn}"})
         self.generated_chunks(pkg, rel, "Package")
         # Every non-package section element whose nearest package is this one.
-        for el in self._section_elements_in(pkg):
+        for el in self.sections_in(pkg):
             body += [f'<a id="{self.anchor(el)}"></a>\n', self.section(el, rel, 2)]
             anchor = f"{rel}#{self.anchor(el)}"
             self.section_chunks("requirement" if sem.is_requirement(ix, el) else "element", el,
@@ -528,7 +540,7 @@ class ProjectWriter:
             lines += [f"<sub>trace: `{a.trace.locator()}`</sub>", ""]
         return lines
 
-    def _section_elements_in(self, pkg: Element) -> list[Element]:
+    def sections_in(self, pkg: Element) -> list[Element]:
         out = []
         stack = list(reversed(pkg.children))
         while stack:
