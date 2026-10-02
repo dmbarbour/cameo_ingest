@@ -6,17 +6,21 @@
   - **The index:** for each identifier, every place in every model that holds it.
   - **Threads:** for each derivation tree, its requirements with what satisfies and verifies
     them.
-- **Answer:** yes, both, and they are on by default.
+- **Answer:** the index, yes; threads, not measurably. Both are on by default.
   - **The index** brings answers spread over several companies' models into the top 10:
     coverage@10 rose from 0.77 to 0.97 with a reranker.
-  - **Threads** help questions along a model's derivations.
+  - **Threads** made no significant difference to questions along a model's derivations
+    (corrected on 2026-10-02, below), and cost nothing measurable.
   - **The per-line references** to each place's chunk cost more than they give, so they are off
     by default (`--line-refs`).
 
-> **Correction pending (review AR-006):** the within-model questions' evidence groups are bare
-> element names, which many chunks hold, so the within-model coverage below is inflated and the
-> thread results can't be relied on until they are measured again. The across-model results
-> stand.
+> **Corrected on 2026-10-02 (review AR-006):** the first version graded the within-model
+> questions by bare names and ids, which was both too lenient (a test's or a block's name is
+> in 13 to 20 chunks) and too strict (a derived requirement's id is only in its own chunk and
+> the ledger, not in its source's "X is derived from this"). Their parts are now relationships,
+> in the wording of every chunk that states them (`cameo_ingest.evaluation.grading`). The
+> within-model table and what it says are corrected. The rest was measured again with the new
+> grading and reproduced exactly.
 
 ## Setup
 
@@ -36,7 +40,7 @@
   - **Across models (10):** "Which proposals address RWT-REG-002, and how?", one evidence group
     per proposal.
   - **Within a model (8):** "Which tests verify the requirements derived from SN-02?", one group
-    per part of the answer.
+    per relationship in the answer ("Warning Time Test verifies Warning Time B").
 - **Measures:**
   - **coverage@10:** the share of the answer's parts that the top 10 hold between them;
   - **complete@10:** whether one window in the top 10 holds them all;
@@ -62,10 +66,12 @@
 
 | System | Base | Threads | Index and threads, no references |
 |---|---|---|---|
-| BM25 | 0.62, 0.25 | 0.71, 0.38 | 0.58, 0.38 |
-| e5-large | 0.79, 0.50 | 0.88, 0.50 | 0.92, 0.62 |
-| e5-large, reranked | 0.88, 0.62 | 0.96, 0.62 | 1.00, 0.75 |
-| bge-large + BM25, reranked | 0.75, 0.50 | 1.00\*, 0.62 | 0.85, 0.50 |
+| BM25 | 0.77, 0.50 | 0.79, 0.62 | 0.67, 0.38 |
+| e5-large | 0.85, 0.50 | 0.94, 0.50 | 0.94, 0.62 |
+| e5-large, reranked | 0.96, 0.75 | 1.00, 0.62 | 1.00, 0.75 |
+| bge-large + BM25, reranked | 0.90, 0.50 | 1.00, 0.75 | 0.94, 0.62 |
+
+No change is significant: with eight questions, every interval includes zero.
 
 **Single-fact questions (192), MRR:**
 
@@ -92,9 +98,16 @@
   - **The gain from dropping them:** complete@10 across models rose from 0.20 to 0.60.
   - **What remains:** the project's short id on each line is enough to find the source file;
     `--line-refs` adds the chunk's.
-- **Threads help within a model, a little.** Questions along derivations gained coverage with
-  most systems, significantly only with the reranked hybrid. There are only eight such
-  questions; the gains are modest, the cost nothing.
+- **Threads make no measurable difference within a model.**
+  - **The measure:** coverage rose with most systems and complete@10 moved both ways; no
+    change is significant on eight questions. (The first version of this note found one
+    significant gain, which the corrected grading doesn't confirm.)
+  - **The threads measured were flawed (review AR-027):** a thread split into parts lost its
+    first line's indentation, so a part could show a requirement as derived from the wrong
+    one, and a part that starts inside the tree doesn't say what its first lines derive from.
+    The first is fixed (0.5.3); repeating each part's ancestors is worth trying and measuring.
+  - **They stay on:** they cost nothing measurable for single facts, and they are the one place
+    a model's derivation tree reads whole.
 - **For single facts, the assembled chunks cost little.**
   - **Without a reranker:** index entries sometimes outrank the chunk that answers (bge-large
     alone: 0.76 to 0.72).
@@ -110,7 +123,8 @@
 
 ## Limits
 
-- **Small sets:** 10 questions across models and 8 within, written by the models' author.
+- **Small sets:** 10 questions across models and 8 within, written by the models' author. The
+  fictional derivations are shallow (two or three levels).
 - **Long entries still split:** an id held in many places makes an entry of several parts, and
   a whole answer then spans several windows. Ordering lines so that each part holds one model
   whole might help.

@@ -137,6 +137,8 @@ def test_plain_chunk_text():
     assert len(long) > 2 and all(p.startswith("H (part ") and pl.tokens(p) <= 300 for p in long)
     cut = pl.parts("H", "x" * 3000, budget=300)  # a line too long for any part is cut into parts that fit
     assert len(cut) > 1 and all(pl.tokens(p) <= 300 for p in cut) and sum(p.count("x") for p in cut) == 3000
+    nested = pl.parts("H", "- root\n" + "\n".join(f"  - child {i} " + "word " * 20 for i in range(12)), budget=150)
+    assert len(nested) > 2 and all(p.split("\n\n", 1)[1].startswith("  - child") for p in nested[1:])  # nesting kept
     # Only emit's markup goes; model text keeps its operators, quotes and '#' lines (AR-003).
     md = ("### Constraint Mass\n\n- **Kind:** Constraint\n\n**Documentation:**\n\n#1 priority is safety.\n"
           "> 5 bar: trip\nx**2 + y**2 < r**2\n\n**Requirement text:**\n\n> > 5 bar: trip\n\n"

@@ -135,7 +135,9 @@ def parts(heading: str, text: str, budget: int = BUDGET) -> list[str]:
             size = 0
         out[-1].append(line)
         size += n
-    chunks = ["\n".join(p).strip() for p in out]
+    # Blank lines go from a part's ends, but not its first line's indentation: a part that starts
+    # inside a nested list (a thread, members) keeps its nesting.
+    chunks = [re.sub(r"\A(?:[ \t]*\n)+", "", "\n".join(p)).rstrip() for p in out]
     chunks = [c for c in chunks if c]
     if len(chunks) <= 1:
         return [f"{heading}\n\n{chunks[0]}" if chunks else heading]

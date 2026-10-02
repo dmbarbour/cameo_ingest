@@ -1,6 +1,6 @@
 # Review: architecture, 2026-10-01
 
-- **Status:** Open.
+- **Status:** Open. Stage 1 of the remediation order is done (2026-10-02); stages 2 to 4 are plan RA (`docs/plans/refactoring-2026-10-02.md`).
 - **Finding prefix:** `AR`
 - **Subject:** cameo-ingest at commit `949030f` (version 0.5.2), after the follow-up review
   (`followup-2026-09-30.md`, closed) and plans DV, RE and RF. That is about 13,200 lines: the
@@ -86,7 +86,7 @@ Four themes run through the findings:
 | AR-003 | High | Plain chunks are made by regex-parsing the page Markdown, which corrupts model text | Reproduced | Partly fixed |
 | AR-004 | Medium | The two chunk styles branch in five places and have drifted: generated and ledger chunks break the plain style's rules | Reproduced | Open |
 | AR-005 | High | Grading by construction lives in a script, untested, with two different rules | By inspection | Partly fixed |
-| AR-006 | Medium | The within-model questions' evidence groups are bare names, so their measures are inflated | Measured | Partly fixed |
+| AR-006 | Medium | The within-model questions' evidence groups are bare names, so their measures are inflated | Measured | Fixed |
 | AR-007 | Medium | `ProjectWriter` is a god object, and pipeline and ledger reach into its internals | By inspection | Open |
 | AR-008 | Medium | `ingest_project` mixes six jobs; request kinds are bare strings | By inspection | Open |
 | AR-009 | Medium | Prompt values are built in three modules and two scripts, with wording and limits outside the versioned templates | By inspection | Open |
@@ -107,6 +107,7 @@ Four themes run through the findings:
 | AR-024 | Low | SQL against `state.sqlite` is written outside `state.py` | By inspection | Open |
 | AR-025 | Low | The prompt registry is two hand-kept lists, current and retired templates mixed | By inspection | Open |
 | AR-026 | Low | Dead code, finished studies left in `scripts/`, and the evaluation in the product wheel | By inspection | Open |
+| AR-027 | Medium | A thread split into parts loses its nesting, so a part can misstate what derives from what | Reproduced | Partly fixed |
 
 ## Findings
 
@@ -276,7 +277,7 @@ The answer-key test restates the rule without the `index:id` case.
 
 **Severity:** Medium · **Verified:** Measured · **Where:** `evaluation/fiction/rivals.py:166-186` (`within`), `tests/test_fiction.py:38-41`
 
-**Status:** Partly fixed on 2026-10-02. AR-006R1 is done: each part of a within-model answer is a relationship, in the wordings of the chunks that hold it (the element's own chunk, the other end's, a package, the ledger, an index entry, a thread), with the elements it relates. A group's alternative may be several phrases that must all be in one window: a thread states a derivation only by nesting. In a scratch tree, each part is held by 6 or 7 chunks, all of which state the relationship (a bare name was in 13 to 20). The stray check covers groups. AR-006R2 remains.
+**Status:** Fixed on 2026-10-02. AR-006R1: each part of a within-model answer is a relationship, in the wordings of the chunks that hold it (the element's own chunk, the other end's, a package, the ledger, an index entry, a thread), with the elements it relates. A group's alternative may be several phrases that must all be in one window: a thread states a derivation only by nesting. In a scratch tree, each part is held by 6 or 7 chunks, all of which state the relationship (a bare name was in 13 to 20). The stray check covers groups. AR-006R2: the five variants of `docs/research/related-facts-2026-10-01.md` were graded again from their cached rankings. Every measure outside the within-model questions reproduced exactly, row for row. Within a model, the corrected measure finds no significant effect of threads (the first found one), and the note and plan RF say so. The base scores rose: the old groups were too lenient for names and too strict for ids. Threads stay on: they cost nothing measurable, and AR-027 was found on the way.
 
 The within-model questions' groups are element names, not facts:
 - `[["UV Dose"], ["UV Reactor"]]`;
@@ -836,6 +837,35 @@ in the product wheel.
   or delete them and cite their commits in the research notes.
 - **AR-026R3 (decision):** Leave the evaluation out of the wheel, or split it into subpackages
   (corpus, retrieval, grading).
+
+### AR-027: A thread split into parts loses its nesting, so a part can misstate what derives from what
+
+**Severity:** Medium · **Verified:** Reproduced · **Where:** `plain.py:118-145` (`parts`), `crossref.py:233-312` (`threads`)
+
+Found on 2026-10-02 while measuring the threads again (AR-006R2), after the review.
+
+**What happens:** a thread lists a derivation tree as a nested list. When it is too long for one
+part, `parts` splits it at line boundaries:
+- **The indentation goes:** each part was stripped, so its first line lost its indentation.
+  In the fictional crossing's SN-02 thread, part 2 begins `- Gate Arm Lighting (FVX-SUB-031)`
+  (two levels deep in the tree) and is followed by `  - Obstacle Detection (FVX-SYS-011)` (one
+  level deep), which then reads as derived from Gate Arm Lighting.
+- **The ancestors go:** even with its indentation, a part that starts inside the tree doesn't
+  say what its first lines derive from. Gate Arm Lighting's part doesn't name Barriers
+  (FVX-SYS-003), so the derivation can't be found in it.
+
+**Why it matters:** threads are on by default, and a requirement's derivation is what they are
+for. Member lists split the same way.
+
+**Remediation:**
+- **AR-027R1 (now):** Keep the first line's indentation, and drop only blank lines at a part's
+  ends.
+- **AR-027R2:** A split thread part starts with its first line's ancestors, by name and id
+  only, so that each part states its derivations whole. Measure it on the within-model
+  questions.
+
+**Status:** Partly fixed on 2026-10-02 (0.5.3). AR-027R1 is done, with a test of a nested list
+split into parts. AR-027R2 remains (plan RA, "Not in this plan").
 
 ## Remediation order
 
