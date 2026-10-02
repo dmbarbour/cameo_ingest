@@ -104,7 +104,7 @@ def project_catalog(view: ProjectView, sink: ChunkSink, root: Path | None = None
         if doc:
             rec["text"] = (rec.get("text", "") + "\n\n" + doc).strip() if rec.get("text") else doc
         rec["relations"] = relations(el.id)
-        rec["diagrams"] = [ref(d) for d in view.diagrams_showing.get(el.id, [])]
+        rec["diagrams"] = [ref(d) for d in view.diagrams_showing.get(el.id, []) if d != el.id]
         if el.id in chunks_of:
             rec["chunks"] = chunks_of[el.id]
         elif (owner := listed_in(el.id)) is not None:

@@ -147,8 +147,8 @@ pane:
 |---|---|---|---|
 | CP1: the records and the workbook | KX-02, KX-03, KX-06 (workbook) | `index/catalog.jsonl` per project; `export --workbook`; 0.8.0 | Done (1db2652) |
 | CP2: the search page | KX-04, KX-06 (page) | `export --search-page` | Done; no version bump, since the tree's output is unchanged and a bump would make every project again |
-| CP3: sketches | KX-05 | The maintainer's choice, in the page | |
-| CP4: the samples | KX-07 | Measurements, and adjustments | |
+| CP3: sketches | KX-05 | The maintainer's choice, in the page | Both built (55bbe09, 0.8.1); the choice waits on the trial |
+| CP4: the samples | KX-07 | Measurements, and adjustments | Done: no adjustment needed (results below); 0.8.2 fixes what the screenshots showed |
 | CP5: the trial | KX-08, KX-09 | What the maintainer keeps | |
 
 ### CP1 in detail
@@ -325,6 +325,44 @@ draws, in diagram units (a `viewBox`, no pixel budget):
   maintainer to choose.
 
 **Version:** 0.8.1 (new per-project files: the SVGs, and the records' sketch fields).
+
+### Results of CP3 and CP4 (2026-10-02)
+
+**The tree:** the samples and the fiction (27 projects) with the LLM (`out/kx/llm`), from the
+answer store: 6,122 answers reused, and 5 new requests for the Kestrel Orchard project.
+
+**The exports** (`out/kx/`):
+
+| Export | Size | Made in | Peak memory |
+|---|---|---|---|
+| `catalog.xlsx` | 9.5 MB: 74,407 rows in `Search`, 6,093 in `Summaries` | 11 s | 215 MB |
+| `search.html` (text) | 9.6 MB | 6 s | 591 MB |
+| `search-svg.html` | 14.7 MB, of which 4.7 MB are 3,015 SVGs | 9 s | 596 MB |
+| `search-webp.html` | 32.6 MB, of which 22.5 MB are 3,669 WebP sketches (with modules) | 72 s | 645 MB |
+
+**The pages in Chrome** (headless, real time, measured over the DevTools protocol):
+
+| Page | Ready in | Unpacking | Indexing | JS heap |
+|---|---|---|---|---|
+| Text | 2.7 s | 0.8 s | 1.6 s | 144 MB |
+| SVG | 2.7 s | 0.8 s | 1.6 s | 144 MB |
+| WebP | 2.8 s | 0.9 s | 1.7 s | 213 MB |
+
+- **Searching:** `REQ-1-OAD-1050` finds its 24 items in under 0.01 s.
+- **Sketches:** the largest SVG is 20 KB gzipped. The largest WebP diagram is 17 images (an
+  overview and 16 modules) of up to 90 KB each. Both show at once.
+
+**Fixed after screenshots (0.8.2):**
+- a diagram's sketch now comes before its generated text, which had pushed it out of view;
+- a diagram no longer lists itself among the diagrams that show it, in the catalog and, for
+  older catalogs, at export;
+- a module's or part's summary names its module or parts.
+
+**The look of the two options:**
+- **WebP:** the vision model's sketch, with an overview whose modules are coloured. At that size
+  its text overlaps, and each module follows as a crop.
+- **SVG:** the whole diagram, sharp at any zoom. Hovering shows full names, and a click opens a
+  shape's element.
 
 **Checks:**
 - **The workbook** (CP1), read in tests with `zipfile`:

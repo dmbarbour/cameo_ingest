@@ -12,7 +12,7 @@ objects with short keys to keep the page small:
     x text (requirement text, documentation, summary)   c the item's chunks, as the RAG reads them
     r relations [kind, direction, phrase, other key, other label]   d diagrams [key, label]
     l listed in [key, label] (a member, which borrows its owner's chunks: not repeated here)
-    m model (generated text)   of [key, label] (what a summary is of)
+    m model (generated text)   of [key, label] (what a summary is of)   pt its module or parts
     sk the ids of a diagram's sketch blocks (`--sketches`), the whole diagram first
 
 Sketches, when asked for (plan KX-05), follow in blocks of their own, decoded only when their
@@ -85,13 +85,16 @@ def page_items(p: ProjectCatalog, sketch_ids: dict[str, list[str]] | None = None
             it = {"k": r["key"], "t": t, "kd": r["label"], "n": f"{r['label']} of {r['of'][1]}", "x": r["text"],
                   "m": r.get("model"), "of": r["of"]}
             if "module" in r:
-                it["n"] += f", module M{r['module']}"
+                it["pt"] = f"module M{r['module']}"
             if "parts" in r:
-                it["n"] += f", parts {r['parts'][0]}–{r['parts'][1]}"
+                it["pt"] = f"parts {r['parts'][0]}–{r['parts'][1]}"
+            if "pt" in it:
+                it["n"] += ", " + it["pt"]
         else:
             it = {"k": r["key"], "t": t, "kd": r.get("kind"), "id": r.get("id"), "db": r.get("db"), "n": r["name"],
                   "w": r.get("where"), "x": r.get("text"),
-                  "r": [rel[1:] for rel in r.get("relations", [])], "d": r.get("diagrams"), "l": r.get("listed_in")}
+                  "r": [rel[1:] for rel in r.get("relations", [])], "l": r.get("listed_in"),
+                  "d": [d for d in r.get("diagrams", []) if d[0] != r["key"]]}  # not itself (catalogs before 0.8.2)
             if not r.get("listed_in"):
                 it["c"] = "\n\n".join(p.chunks[c] for c in r.get("chunks", []) if c in p.chunks)
             if sketch_ids and r["key"] in sketch_ids:
