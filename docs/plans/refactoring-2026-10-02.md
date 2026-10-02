@@ -249,6 +249,36 @@ then one for the rest, every difference listed (index entries' wording, threads'
 ancestors, the new files and metadata); retrieval on the fictional questions, the within-model
 ones especially (RA-21). Version 0.7.1.
 
+**Results: the `--no-llm` tree against CP4's (2026-10-02).** Every difference is accounted for.
+- **Tree chunks with other text, 4,240 in all:**
+  - **The heading fix (9536a08):**
+    - 2,107 changed only their heading: the project is kept, and a long name is cut first.
+    - Through the heading's length, 1,104 requirements-ledger parts were repacked. TMT's OAD
+      ledgers have one part more (594 and 605).
+    - 380 requirement, details, element and diagram chunks were split elsewhere. Where a
+      shorter heading leaves room, a requirement's tagged values move from its details chunk
+      into its main one: 89 details chunks fewer and 17 more, 9 requirement parts fewer and
+      53 more.
+  - **Index entries (CP5c):** 586 changed, 17 are new and 4 gone. The places are labelled
+    with the pages' vocabulary (`Requirement 10825: REQ-1-OAD-0554 …`, not the CSV tables'
+    labels), so their order and part boundaries shift. 33 changed only in the order of
+    their `chunk_refs` and `element_ids`.
+  - **DOORS ids after a bullet (CP5b):** 56 chunks across TMT and TMT-2024x. Relationship
+    lines, legends, package members, ledger rows and index entries read `REQ-1-OAD-1050: …`,
+    not `11130: - [REQ-1-OAD-1050] …`. Index entries for those ids are new.
+  - **Threads (CP5d):** a later part starts with its ancestors, marked "(continued)": 8
+    changed, and the drone's REQ.1 thread has 7 parts, not 6. The 24 threads' `file` is now
+    `THREADS.md#…`, an anchor that exists, not `CROSSREF.md#…`.
+- **`rag/`:** 4,368 files before and 4,355 after. Each is a chunk whose text changed, a chunk
+  gone or new, or one of the 24 threads moved from `_tree` into its project's folder.
+- **Pages:**
+  - `CROSSREF.md` (index wording);
+  - in TMT and TMT-2024x, `LEDGER.md`, two diagram pages and three package pages (DOORS ids);
+  - the four sketches of those two diagrams (Focal Length, Plate Scale), whose shapes show
+    the id.
+- **New files:** `index/ids.jsonl` and `index/threads.jsonl` in each of the 26 projects, and
+  `THREADS.md` in the 5 with threads. The manifest lists them.
+
 ### CP6: configuration and state
 
 | Step | What | Status |
