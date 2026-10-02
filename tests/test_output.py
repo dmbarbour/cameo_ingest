@@ -211,7 +211,7 @@ def test_ledger(tmp_path):
             "ledger:elements"} <= kinds
     req = next(c for c in chunks if c["metadata"]["kind"] == "ledger:requirements")
     # Self-describing header, no link noise, and ids row-for-row for the application.
-    assert "Model::Requirements" in req["text"] and "Cameo project drone [" in req["text"]  # its label
+    assert req["text"].startswith("Requirements ledger of Package Requirements in Model (project drone [")  # AR-004R1
     assert "](" not in req["text"]
     assert req["metadata"]["element_ids"] == ["r1"]
     assert req["metadata"]["provenance"]["xmi_id"] == "p2"

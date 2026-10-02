@@ -184,11 +184,11 @@ def test_large_diagram_modules(tmp_path, fake_openai):
         assert img.mode == "RGB"  # the overview, modules tinted
     chunks = [json.loads(line) for line in (out / "chunks.jsonl").open()]
     mods = [c for c in chunks if c["metadata"]["kind"] == "generated:module_description"]
-    assert [c["metadata"]["module"]["number"] for c in mods] == [1, 2]
-    m = mods[0]["metadata"]["module"]
+    assert [c["metadata"]["covers"]["number"] for c in mods] == [1, 2]
+    m = mods[0]["metadata"]["covers"]
     assert m["of"] == 2 and m["anchor"] == "diagrams/Drone_BDD.md#module-m1" and len(m["box"]) == 4
     assert m["image"] == "diagrams/Drone_BDD.modules/M1.png" and m["shapes"]
-    assert sum(len(c["metadata"]["module"]["shapes"]) for c in mods) == 32
+    assert sum(len(c["metadata"]["covers"]["shapes"]) for c in mods) == 32
     assert "module m1 of 2, showing" in mods[0]["text"]
     whole = [c for c in chunks if c["metadata"]["kind"] == "generated:diagram_description"]
     assert [c["metadata"]["provenance"]["derivation"]["template"] for c in whole] == ["diagram-synthesis@v2"]

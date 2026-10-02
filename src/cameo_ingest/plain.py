@@ -29,6 +29,7 @@ from .text import md_plain, strip_links
 WINDOW = 512  # the embedding window parts are made for (e5, bge, ember-v1)
 SOURCE = 100  # tokens left free for a rag/ file's source line (a trace locator: 70 to 80 tokens)
 BUDGET = WINDOW - SOURCE - 12  # tokens of heading and text per part, as `tokens` estimates them
+HEADING = BUDGET // 4  # the most a heading may take of a part (AR-004R2)
 _TOKEN = re.compile(r"[A-Za-z]+|[0-9]+|[^\sA-Za-z0-9]")
 _TRACE = re.compile(r"[ \t]*<sub>trace: `[^`]*`</sub>[ \t]*")
 # Emit's emphasis, and only that, so that model text keeps its operators (AR-003): bold around a
@@ -82,6 +83,13 @@ def plain(md: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
+def cap(text: str, limit: int = HEADING, more: str = " …") -> str:
+    """`text` cut at a word to about `limit` estimated tokens, the cut marked with `more`."""
+    if tokens(text) <= limit:
+        return text
+    return _cut(text, max(limit - tokens(more), 1))[0].rstrip(" ;,") + more
+
+
 def where(owner: str, project: str) -> str:
     """'in A::B::C (project X)': the last three packages of the owner's qualified name, and the
     project."""
@@ -91,7 +99,9 @@ def where(owner: str, project: str) -> str:
 
 def parts(heading: str, text: str, budget: int = BUDGET) -> list[str]:
     """`text` under `heading`, split at line boundaries into parts of at most about `budget`
-    tokens with the heading (and its part number), each repeating the heading."""
+    tokens with the heading (and its part number), each repeating the heading. A heading longer
+    than a quarter of the budget is cut."""
+    heading = cap(heading, budget // 4)
     room = max(budget - tokens(heading) - 8, 40)
     out: list[list[str]] = [[]]
     size = 0

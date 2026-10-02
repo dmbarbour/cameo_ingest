@@ -119,16 +119,16 @@ class LedgerWriter:
             return
         where = f"package `{self.ix.qualified_name(pkg.id)}`" if pkg is not None else "whole project"
         self.md += [f"### {heading} — {where}", ""] + [r for _, r in items] + [""]
-        # A part fits an embedding window with its header (plan RE-08).
+        # A part fits an embedding window with its header (plan RE-08), which reads like any plain
+        # chunk's heading (AR-004R1): what it is, of what, where, and the project.
+        target = (self.w.heading(pkg, "Package") if pkg is not None
+                  else f"the whole project (project {self.w.content.label})")
         parts = pl.pack([(eid, pl.plain(r)) for eid, r in items],
-                        f"{heading} ledger (part 99 of 99) — Cameo project {self.w.content.label}, {where}. "
-                        "9999 entries in this group.", max_rows=MAX_ROWS)
+                        f"{heading} ledger of {target} (part 99 of 99), 9,999 entries", max_rows=MAX_ROWS)
         rows = items
-        content = self.w.content
         for i, part in enumerate(parts, 1):
             of = f" (part {i} of {len(parts)})" if len(parts) > 1 else ""
-            header = (f"{heading} ledger{of} — Cameo project {content.label}, {where}. "
-                      f"{len(rows)} entries in this group.")  # the label: file names can be long, and repeat
+            header = f"{heading} ledger of {target}{of}, {len(rows):,} {'entry' if len(rows) == 1 else 'entries'}"
             text = header + "\n\n" + "\n".join(r for _, r in part)
             tr = self.w.trace(pkg) if pkg is not None else self.w.trace()
             self.w.chunk(kind=f"ledger:{kind}", title=f"{heading} ledger: {where}{of}", text=text, file=FILE,

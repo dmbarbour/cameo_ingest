@@ -71,14 +71,23 @@ def test_large_package_parts(tmp_path, fake_openai, monkeypatch):
     page = (project_dir(out) / "packages/Model__Big.md").read_text()
     assert "## Parts, summarized" in page and '<a id="part-1"></a>' in page and re.search('<a id="parts-\\d+-\\d+">', page)
     chunks = [json.loads(line) for line in (out / "chunks.jsonl").open()]
-    parts = [c["metadata"]["part"] for c in chunks if c["metadata"]["kind"] == "generated:module_summary"]
+    parts = [c["metadata"]["covers"] for c in chunks if c["metadata"]["kind"] == "generated:module_summary"]
     singles = [p for p in parts if p["number"] == p["last"]]
     n = singles[0]["of"]
     assert 3 <= n <= 15 and [p["number"] for p in singles] == list(range(1, n + 1))
     assert all(p["last"] > p["number"] for p in parts if p not in singles)  # no run of a single part
     assert sorted(e for p in singles for e in p["elements"]) == sorted(f"big{i}" for i in range(40))
     assert singles[0]["anchor"] == "packages/Model__Big.md#part-1"
+    # Headings read like any plain chunk's (AR-004R1), the names they cover cut to fit (AR-004R2).
+    from cameo_ingest import plain as pl
+
+    part1 = next(c for c in chunks if c["metadata"].get("covers") == singles[0])
+    heading = part1["text"].split("\n", 1)[0]
+    assert heading.startswith("Part summary of Package Big in Model (project drone [") and ", part 1 of " in heading
+    assert ", covering Unit 0; Unit 1" in heading and heading.endswith("not part of the source model)"), heading
+    assert pl.tokens(heading) <= pl.HEADING
     summary = [c for c in chunks if c["metadata"]["kind"] == "generated:summary" and c["metadata"]["element_id"] == "bigp"]
+    assert summary[0]["text"].startswith("Summary of Package Big in Model (project drone [")
     assert [c["metadata"]["provenance"]["derivation"]["template"] for c in summary] == ["package-synthesis@v1"]
     db = sqlite3.connect(out / ".cache/llm.sqlite")
     used = Counter(r[0] for r in db.execute("SELECT template FROM requests WHERE item LIKE '%bigp%'"))

@@ -42,6 +42,8 @@ def test_plain_chunk_text():
         "REQ-1-OAD-0468: Tip/tilt error budget"
     assert requirement_title("Endurance", "R-1", "The drone shall fly.") == "Endurance (R-1)"
     assert pl.where("A::B::C::D", "x.mdzip") == "in B::C::D (project x.mdzip)"
+    capped = pl.cap("covering " + "; ".join(f"Unit {i}" for i in range(100)), 30)  # a heading's share (AR-004R2)
+    assert capped.startswith("covering Unit 0; Unit 1") and capped.endswith(" …") and pl.tokens(capped) <= 30
     long = pl.parts("H", "\n".join(f"line {i} " + "word " * 20 for i in range(40)), budget=300)
     assert len(long) > 2 and all(p.startswith("H (part ") and pl.tokens(p) <= 300 for p in long)
     cut = pl.parts("H", "x" * 3000, budget=300)  # a line too long for any part is cut into parts that fit

@@ -356,13 +356,25 @@ class ProjectWriter:
     def names(self, labels: list[str]) -> list[str | sx.Span]:
         return [p for k, x in enumerate(labels) for p in ((", ",) if k else ()) + (sx.name(x),)]
 
-    def generated_chunks(self, el: Element, file: str) -> None:
+    def generated_heading(self, a: Annotation, el: Element, kind_word: str | None = None, what: str = "",
+                          names: list[str] = (), names_word: str = "covering") -> str:
+        """A generated chunk's heading (AR-004R1): what it is, of which element, as its plain
+        heading says it (the project included), then the names it covers as far as room allows,
+        and its origin. A heading takes at most a quarter of a part (AR-004R2)."""
+        head = f"{a.label} of {self.heading(el, kind_word)}" + (f", {what}" if what else "")
+        origin = f" ({generated_by(a.trace.derivation)})"
+        room = pl.HEADING - pl.tokens(head) - pl.tokens(origin) - 2
+        if names and room > 8:
+            head += ", " + pl.cap(f"{names_word} " + "; ".join(names), room)
+        return head + origin
+
+    def generated_chunks(self, el: Element, file: str, kind_word: str | None = None) -> None:
         """One chunk per LLM-derived annotation, with the LLM derivation as provenance."""
         for i, a in enumerate(self.ann.get(el.id, [])):
             if a.trace.derivation.method != "llm" or not a.text or a.module is not None or a.parts is not None:
                 continue
             what = f"{el.kind} {self.ix.qualified_name(el.id)}"
-            text = f"{a.label} of {what} ({generated_by(a.trace.derivation)})\n\n{a.text}"
+            text = f"{self.generated_heading(a, el, kind_word)}\n\n{a.text}"
             self.chunk(kind=f"generated:{a.label.lower().replace(' ', '_')}", title=f"{a.label}: {what}",
                        text=text, file=file, el=el, trace=a.trace, salt=str(i))
 
@@ -465,7 +477,7 @@ class ProjectWriter:
         pkg_trace = self.trace(pkg)
         self.section_chunks("package", pkg, self.section_view(pkg, generated=False), rel, pkg_trace,
                             heading=self.heading(pkg, "Package"), extra={"title": f"Package {qn}"})
-        self.generated_chunks(pkg, rel)
+        self.generated_chunks(pkg, rel, "Package")
         # Every non-package section element whose nearest package is this one.
         for el in self._section_elements_in(pkg):
             body += [f'<a id="{self.anchor(el)}"></a>\n', self.section(el, rel, 2)]
@@ -508,12 +520,11 @@ class ProjectWriter:
             lines += self.annotation_md(a, rel)
             if a.trace.derivation.method != "llm" or not a.text:
                 continue
-            names = "; ".join(sem.label(ix, e) for e in ids[:25]) + ("; ..." if len(ids) > 25 else "")
-            text = (f"{a.label} of {what}, {title[0].lower() + title[1:]}, covering {names} "
-                    f"({generated_by(a.trace.derivation)})\n\n{a.text}")
-            where = {"number": first, "last": last, "of": len(parts), "anchor": f"{rel}#{anchor}", "elements": ids}
-            self.chunk(kind="generated:module_summary", title=f"{title}: {what}", text=text, file=rel, el=pkg,
-                       trace=a.trace, salt=anchor, extra={"part": where})
+            heading = self.generated_heading(a, pkg, "Package", title[0].lower() + title[1:],
+                                             [sem.label(ix, e) for e in ids])
+            covers = {"number": first, "last": last, "of": len(parts), "anchor": f"{rel}#{anchor}", "elements": ids}
+            self.chunk(kind="generated:module_summary", title=f"{title}: {what}", text=f"{heading}\n\n{a.text}",
+                       file=rel, el=pkg, trace=a.trace, salt=anchor, extra={"covers": covers})
             lines += [f"<sub>trace: `{a.trace.locator()}`</sub>", ""]
         return lines
 
@@ -577,9 +588,9 @@ class ProjectWriter:
         tr = self.trace(el)
         trace_line = [f"<sub>trace: `{tr.locator()}`</sub>", ""]
         self.section_chunks("diagram", el, view, rel, tr,
-                            heading=self.heading(el, f"Diagram ({d.diagram_type or 'unknown type'})"),
+                            heading=self.heading(el, self.diagram_kind(dia_id)),
                             extra={"title": f"Diagram {qn}", "diagram_type": d.diagram_type})
-        self.generated_chunks(el, rel)
+        self.generated_chunks(el, rel, self.diagram_kind(dia_id))
         for a in self.ann.get(dia_id, []):
             if a.module is None:
                 lines += self.annotation_md(a, rel)
@@ -596,11 +607,15 @@ class ProjectWriter:
         })
         self.write_text(rel, fm + text)
 
+    def diagram_kind(self, dia_id: str) -> str:
+        return f"Diagram ({self.ix.diagrams[dia_id].diagram_type or 'unknown type'})"
+
     def module_sections(self, el: Element, g: dg.DiagramGraph, part: mod.Partition, rel: str) -> list[str]:
         """A section per module of a large diagram: its sketch, description, legend and
         connections; and its description as a chunk that says where in the diagram it is."""
         ix = self.ix
         what = f"{el.kind} {ix.qualified_name(el.id)}"
+        kind_word = self.diagram_kind(el.id)
         lines = []
         for m in part.modules:
             anchor = f"module-m{m.num}"
@@ -626,11 +641,11 @@ class ProjectWriter:
             for a in anns:
                 if a.trace.derivation.method != "llm" or not a.text:
                     continue
-                names = "; ".join(n.label for n in shapes[:25]) + ("; ..." if len(shapes) > 25 else "")
-                text = (f"{a.label} of {what}, {title.lower()}, showing {names} "
-                        f"({generated_by(a.trace.derivation)})\n\n{a.text}")
-                self.chunk(kind="generated:module_description", title=f"{title}: {what}", text=text, file=rel,
-                           el=el, trace=a.trace, salt=f"M{m.num}", extra={"module": where})
+                heading = self.generated_heading(a, el, kind_word, title.lower(), [n.label for n in shapes],
+                                                 "showing")
+                self.chunk(kind="generated:module_description", title=f"{title}: {what}",
+                           text=f"{heading}\n\n{a.text}", file=rel, el=el, trace=a.trace, salt=f"M{m.num}",
+                           extra={"covers": where})
                 lines += [f"<sub>trace: `{a.trace.locator()}`</sub>", ""]
         return lines
 
