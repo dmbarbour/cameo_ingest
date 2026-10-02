@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 from fixture_model import make_mdzip
-from test_pipeline import check_invariants
+from helpers import check_invariants
 
 from cameo_ingest.cli import load_env, main
 

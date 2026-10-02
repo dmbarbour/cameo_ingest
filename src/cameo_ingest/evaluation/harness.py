@@ -43,6 +43,18 @@ def chunk_units(tree: Path) -> list[Unit]:
     return out
 
 
+def rag_units(tree: Path) -> list[Unit]:
+    """The chunks as `rag/` presents them to a RAG tool that reads files: each file's text, its
+    source line included, with the element and kind from its metadata (plan RA-19). A file whose
+    text two chunks share stands for the first of them."""
+    out = []
+    for meta in sorted((tree / "rag" / "meta").glob("*/*.json")):
+        m = json.loads(meta.read_text(encoding="utf-8"))
+        text = (tree / "rag" / "text" / meta.parent.name / m["file"]).read_text(encoding="utf-8")
+        out.append(Unit(m["chunk_id"], text, m.get("element_id"), m["kind"], m.get("project_token")))
+    return out
+
+
 def windowed(units: list[Unit], model_name: str, size: int = 512, overlap: int = 64) -> list[Unit]:
     """Each unit cut into windows; a unit that fits keeps its id."""
     out = []

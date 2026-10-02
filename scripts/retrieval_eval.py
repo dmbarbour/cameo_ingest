@@ -34,6 +34,7 @@ from cameo_ingest.evaluation.harness import (
     group_measures,
     mean_ci,
     measures,
+    rag_units,
     top,
     windowed,
 )
@@ -65,6 +66,9 @@ def main() -> int:
                                                                "this reranker on DeepInfra (plan RF-02)")
     ap.add_argument("--rerank-depth", type=int, default=30)
     ap.add_argument("--rerank-cache", type=Path, default=Path("out/eval/rerank.sqlite"))
+    ap.add_argument("--rag", action="store_true",
+                    help="the chunks as rag/ presents them (each file's text, its source line included), not as "
+                         "chunks.jsonl holds them")
     ap.add_argument("--without-details", action="store_true",
                     help="leave the plain style's details chunks out of the index, as if they were in a file apart")
     ap.add_argument("--questions", default="synthetic", help="synthetic, structural, or a JSONL file of questions")
@@ -76,7 +80,7 @@ def main() -> int:
     args = ap.parse_args()
     if args.env:
         load_env(args.env)
-    units = chunk_units(args.tree)
+    units = rag_units(args.tree) if args.rag else chunk_units(args.tree)
     if args.project:
         units = [u for u in units if (u.element_id or "").startswith(args.project)]
     if args.without_details:

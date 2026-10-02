@@ -48,4 +48,5 @@ markers = [
     "slow: runs on large sample models (minutes); run with `pytest -m slow`",
     "llm: uses a real LLM endpoint from the environment or .env; run with `pytest -m llm`",
 ]
+testpaths = ["tests"]  # not out/, which can hold gigabytes of trees
 addopts = "-m 'not slow and not llm'"
