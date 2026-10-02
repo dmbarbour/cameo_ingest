@@ -28,10 +28,10 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from . import crossref
+from . import chunks, crossref
 from . import plain as pl
-from .ledger import MAX_CHARS, MAX_ROWS
-from .provenance import TOOL, ContentInfo, chunk_ref, sha256_bytes, sha256_text, short_id
+from .ledger import MAX_ROWS
+from .provenance import TOOL, ContentInfo, chunk_ref, sha256_bytes, short_id
 from .state import State
 from .text import front_matter, md_inline
 
@@ -282,31 +282,15 @@ def write_rag(out: Path, projects: list[RagProject], tree_chunks: list[dict[str,
 def _projects_ledger(index_rows: list[tuple[str, str]]) -> list[dict[str, Any]]:
     """The index as `ledger:projects` chunks: one self-describing list, split like the
     per-project ledgers."""
-    parts: list[list[tuple[str, str]]] = [[]]
-    size = 0
-    limit = min(MAX_CHARS, pl.BUDGET - pl.tokens("Projects ledger (part 99 of 99): the Cameo projects in this "
-                                                 "output tree, 9999 in all.") - 4)  # in estimated tokens
-    for token, row in index_rows:
-        plain = pl.plain(row)
-        n = pl.tokens(plain) + 1
-        if parts[-1] and (len(parts[-1]) >= MAX_ROWS or size + n > limit):
-            parts.append([])
-            size = 0
-        parts[-1].append((token, plain))
-        size += n
-    chunks = []
+    parts = pl.pack([(token, pl.plain(row)) for token, row in index_rows],
+                    "Projects ledger (part 99 of 99): the Cameo projects in this output tree, 9999 in all.",
+                    max_rows=MAX_ROWS)
+    out = []
     for i, part in enumerate(parts, 1):
-        if not part:
-            continue
         of = f" (part {i} of {len(parts)})" if len(parts) > 1 else ""
         text = (f"Projects ledger{of}: the Cameo projects in this output tree, {len(index_rows)} in all.\n\n"
                 + "\n".join(r for _, r in part))
-        chunks.append({
-            "id": sha256_text(f"ledger:projects|{i}")[:24],
-            "title": f"Cameo projects in this output tree{of}",
-            "text": text,
-            "metadata": {"kind": "ledger:projects", "file": INDEX, "entries": len(part),
-                         "tokens": [t for t, _ in part],
-                         "provenance": {"derivation": {"method": "extracted", "tool": TOOL}, "locator": INDEX}},
-        })
-    return chunks
+        out.append(chunks.make(("ledger:projects", str(i)), f"Cameo projects in this output tree{of}", text, {
+            "kind": "ledger:projects", "file": INDEX, "entries": len(part), "tokens": [t for t, _ in part],
+            "provenance": {"derivation": {"method": "extracted", "tool": TOOL}, "locator": INDEX}}))
+    return out

@@ -27,9 +27,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from . import chunks
 from . import plain as pl
 from . import semantics as sem
-from .provenance import TOOL, ContentInfo, chunk_ref, sha256_text, short_id
+from .provenance import TOOL, ContentInfo, chunk_ref, short_id
 from .text import DOORS_ID, one_line, requirement_title
 
 csv.field_size_limit(1 << 30)
@@ -173,26 +174,21 @@ def entries(index: dict[str, list[Place]], refs: bool = False) -> list[dict[str,
     Each line ends with the project's short id, and with `refs` the element's chunk id too
     (`[9ffd7a2c:14d101e0b1d2]`; plan RF, decision 5), which chunks.jsonl resolves. Off by default:
     the references lengthen entries, so that fewer fit one window whole (RF-06)."""
-    chunks = []
+    out = []
     for term, ps in _kept(index):
         texts = pl.parts(_heading(term, ps), "\n".join(_line(p, refs) for p in ps))
         for k, text in enumerate(texts, 1):
-            chunks.append({
-                "id": sha256_text(f"index:id|{term}|{k}")[:24],
-                "title": f"Index: {term}" + (f" (part {k} of {len(texts)})" if len(texts) > 1 else ""),
-                "text": text,
-                "metadata": {
-                    "kind": "index:id", "file": f"{FILE}#{_anchor(term)}", "term": term,
-                    "contents": sorted({f"sha256:{p.project}" for p in ps}),
-                    "element_ids": [p.element_id for p in ps],
-                    "chunk_refs": [f"{short_id(p.project)}:{p.chunk_id}" for p in ps if p.chunk_id],
-                    "provenance": {"derivation": {"method": "assembled", "tool": TOOL,
-                                                  "inputs": [p.locator for p in ps]},
-                                   "locator": f"{FILE}#{_anchor(term)}"},
-                    **({"part": k, "parts": len(texts)} if len(texts) > 1 else {}),
-                },
-            })
-    return chunks
+            out.append(chunks.make(("index:id", term, str(k)),
+                                   f"Index: {term}" + (f" (part {k} of {len(texts)})" if len(texts) > 1 else ""), text, {
+                "kind": "index:id", "file": f"{FILE}#{_anchor(term)}", "term": term,
+                "contents": sorted({f"sha256:{p.project}" for p in ps}),
+                "element_ids": [p.element_id for p in ps],
+                "chunk_refs": [f"{short_id(p.project)}:{p.chunk_id}" for p in ps if p.chunk_id],
+                "provenance": {"derivation": {"method": "assembled", "tool": TOOL, "inputs": [p.locator for p in ps]},
+                               "locator": f"{FILE}#{_anchor(term)}"},
+                **({"part": k, "parts": len(texts)} if len(texts) > 1 else {}),
+            }))
+    return out
 
 
 def _anchor(term: str) -> str:
@@ -295,16 +291,12 @@ def threads(project_dir: Path, content: ContentInfo, refs: bool = False) -> list
         heading = (f"Thread: what derives from {title(root)}, in {content.label}, {len(seen)} requirements")
         texts = pl.parts(heading, "\n".join(lines))
         for k, text in enumerate(texts, 1):
-            out.append({
-                "id": sha256_text(f"{content.sha256}|trace:thread|{root}|{k}")[:24],
-                "title": f"Thread: {title(root)}" + (f" (part {k} of {len(texts)})" if len(texts) > 1 else ""),
-                "text": text,
-                "metadata": {
-                    "kind": "trace:thread", "file": f"{FILE}#{_anchor('thread-' + root)}", "content": content.token,
-                    "element_id": root, "element_ids": sorted(seen),
-                    "provenance": {"derivation": {"method": "assembled", "tool": TOOL},
-                                   "locator": reqs[root]["trace"]},
-                    **({"part": k, "parts": len(texts)} if len(texts) > 1 else {}),
-                },
-            })
+            out.append(chunks.make((content.sha256, "trace:thread", root, str(k)),
+                                   f"Thread: {title(root)}" + (f" (part {k} of {len(texts)})" if len(texts) > 1 else ""),
+                                   text, {
+                "kind": "trace:thread", "file": f"{FILE}#{_anchor('thread-' + root)}", "content": content.token,
+                "element_id": root, "element_ids": sorted(seen),
+                "provenance": {"derivation": {"method": "assembled", "tool": TOOL}, "locator": reqs[root]["trace"]},
+                **({"part": k, "parts": len(texts)} if len(texts) > 1 else {}),
+            }))
     return out

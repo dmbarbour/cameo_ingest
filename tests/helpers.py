@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from types import SimpleNamespace
 
+from cameo_ingest.chunks import problems as chunk_problems
 from cameo_ingest.cli import main
 from cameo_ingest.llm import PREFLIGHT_PROMPT
 
@@ -87,8 +88,8 @@ def check_invariants(out: Path) -> None:
     long = [c["id"] for c in chunks if max(map(len, c["text"].splitlines()), default=0) > 8000]
     assert not long, long[:3]  # no encoded images or configuration dumps (FU-020)
     for c in chunks:
-        if "content" in c["metadata"]:  # traces start from the project's content (plan RI-02)
-            assert c["metadata"]["provenance"]["locator"].startswith(c["metadata"]["content"][:23]), c["id"]
+        assert not chunk_problems(c), (c["id"], chunk_problems(c))  # what every chunk carries (AR-015)
+        if "content" in c["metadata"]:
             assert "source_metadata" in c["metadata"], c["id"]  # joined in at the root
         if c["metadata"]["provenance"]["derivation"]["method"] == "llm":  # labelled (BASE-025)
             assert c["metadata"]["kind"].startswith("generated:"), c["id"]

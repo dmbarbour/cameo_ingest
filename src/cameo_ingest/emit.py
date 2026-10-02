@@ -26,15 +26,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from . import chunks
 from . import diagrams as dg
 from . import modules as mod
 from . import plain as pl
+from . import sections as sx
 from . import semantics as sem
 from .archive import Project
 from .layout import Layout
 from .ledger import LedgerWriter
 from .model import Element, ModelIndex
-from .provenance import TOOL, ContentInfo, Trace, generated_by, sha256_text
+from .provenance import TOOL, ContentInfo, Trace, generated_by
 from .text import front_matter, md_inline, one_line, plural, shown_value, slug, tidy
 
 SKIP_MEMBER_ROLES = {
@@ -206,24 +208,18 @@ class ProjectWriter:
 
     def _chunk(self, kind: str, title: str, text: str, file: str, el: Element | None, trace: Trace,
                extra: dict[str, Any] | None, salt: str) -> None:
-        cid = sha256_text(f"{self.content.sha256}|{kind}|{el.id if el else file}|{salt}")[:24]
-        self.chunks.append({
-            "id": cid,
-            "title": title,
-            "text": text,
-            "metadata": {
-                "kind": kind,
-                "file": file,
-                "project": self.content.name,
-                "content": self.content.token,
-                "element_id": el.id if el else None,
-                "element_type": el.type if el else None,
-                "qualified_name": self.ix.qualified_name(el.id) if el else None,
-                "stereotypes": self.ix.stereotype_names(el.id) if el else [],
-                "provenance": trace.to_dict(),
-                **(extra or {}),
-            },
-        })
+        self.chunks.append(chunks.make((self.content.sha256, kind, el.id if el else file, salt), title, text, {
+            "kind": kind,
+            "file": file,
+            "project": self.content.name,
+            "content": self.content.token,
+            "element_id": el.id if el else None,
+            "element_type": el.type if el else None,
+            "qualified_name": self.ix.qualified_name(el.id) if el else None,
+            "stereotypes": self.ix.stereotype_names(el.id) if el else [],
+            "provenance": trace.to_dict(),
+            **(extra or {}),
+        }))
 
     def heading(self, el: Element, kind_word: str | None = None) -> str:
         """The plain style's heading: what the element is, its readable name, where it is."""
@@ -232,12 +228,12 @@ class ProjectWriter:
         owner = ix.qualified_name(el.owner) if el.owner else ""  # not the element's: an unnamed one's ends with its owner
         return f"{kind_word} {one_line(name)} {pl.where(owner, self.content.label)}"
 
-    def section_chunks(self, kind: str, el: Element, md: str, file: str, trace: Trace,
+    def section_chunks(self, kind: str, el: Element, view: sx.Section, file: str, trace: Trace,
                        heading: str | None = None, extra: dict[str, Any] | None = None) -> None:
         """An element's (or package's, or diagram's) chunks: its meaning and its details, as plain
         parts under its heading (plan RE-08)."""
         title = (extra or {}).pop("title", None) or f"{el.kind} {self.ix.qualified_name(el.id)}"
-        meaning, details = pl.section(md, heading or self.heading(el))
+        meaning, details = view.plain(heading or self.heading(el))
         for suffix, texts in (("", meaning), (":details", details)):
             for k, text in enumerate(texts, 1):
                 more = {"part": k, "parts": len(texts)} if len(texts) > 1 else {}
@@ -276,82 +272,89 @@ class ProjectWriter:
         """Markdown for one element. `generated=False` omits LLM-derived annotations, so
         chunks of extracted text keep a pure `extracted` provenance. `trace=False` omits the
         trace line, whose locator depends on where the source was found, not on what it says."""
-        ix = self.ix
-        st_txt = " ".join(f"«{s}»" for s in ix.stereotype_names(el.id))
-        title = f"{st_txt + ' ' if st_txt else ''}{md_inline(sem.label(ix, el.id))}"
-        lines = [f'{"#" * level} {title}', ""]
-        lines.append(f"- **Kind:** {el.kind}")
-        qn = ix.qualified_name(el.id)
-        if qn:
-            lines.append(f"- **Qualified name:** `{qn}`")
-        req = sem.requirement_fields(ix, el) if sem.is_requirement(ix, el) else {}
-        rq = sem.requirement(ix, el)
-        if rq is not None and rq.id:  # the id people use, and a database number apart (AR-010R3)
-            lines.append(f"- **Requirement ID:** {rq.id}")
-            if rq.db_id:
-                lines.append(f"- **Database number:** {rq.db_id}")
-        for k in ("isAbstract", "visibility", "isEncapsulated", "isActive"):
-            if k in el.attrs and el.attrs[k] not in ("false", "public"):
-                lines.append(f"- **{k}:** {el.attrs[k]}")
-        types = sem.refs(el, "type")
-        if types:
-            lines.append(f"- **Type:** {self.link(types[0], from_file)}")
-        classifiers = sem.refs(el, "classifier")  # what an instance specification is an instance of (FU-022)
-        if classifiers:
-            lines.append("- **Classifier:** " + ", ".join(self.link(c, from_file) for c in classifiers))
-        gens = [r for r in self.rels_by_end.get(el.id, []) if r.metaclass == "Generalization" and r.source == el.id]
-        if gens:
-            lines.append("- **Specializes:** " + ", ".join(self.link(g.target, from_file) for g in gens))
-        lines.append("")
-        if "Text" in req:
-            lines += ["**Requirement text:**", "", "> " + tidy(req["Text"]).replace("\n", "\n> "), ""]
-        doc = sem.documentation(ix, el)
-        if doc:
-            lines += ["**Documentation:**", "", tidy(doc), ""]
-        notes = [c.attrs["body"].strip() for c in self.notes.get(el.id, [])]  # a diagram's notes about it
-        if notes:
-            lines += ["**Notes:**", ""] + [f"- {tidy(one_line(n))}" for n in notes if n] + [""]
-        spec = next(iter(sem.children(ix, el, "specification")), None)
-        if spec is not None and sem.value_text(ix, spec):
-            lang = spec.attrs.get("language", "")
-            lines += [f"**Specification{f' ({lang})' if lang else ''}:**", "", "```",
-                      sem.value_text(ix, spec) or "", "```", ""]
-        tv = self.tagged_values(el)
-        if tv:
-            lines.append("**Tagged values:**")
-            lines += [f"- «{s}» {k} = " + v.replace("\n", "\n  ") for s, k, v in tv]
-            lines.append("")
-        members = self.members(el, from_file, depth=0)
-        if members:
-            lines.append("**Members:**")
-            lines += members
-            lines.append("")
-        rels = [r for r in self.rels_by_end.get(el.id, []) if r.metaclass != "Generalization" or r.target == el.id]
-        if rels:
-            lines.append("**Relationships:**")
-            for r in rels:
-                conveyed = [md_inline(sem.label(ix, t)) for t in sem.refs(ix.elements[r.id], "conveyed")]
-                extra = f" (conveys {', '.join(conveyed)})" if conveyed else ""
-                # A dependency reads with a verb, so that its direction is not left to an arrow
-                # (FU-021, as FU-013 for diagrams): "is derived from [Y]", "[X] satisfies this".
-                w = sem.wording(r.kind, r.metaclass)
-                verb = w.forward if w else None
-                if r.source == el.id:
-                    shown = f"{verb} {self.link(r.target, from_file)}" if verb else f"→ {self.link(r.target, from_file)}"
-                else:
-                    shown = f"{self.link(r.source, from_file)} {verb} this" if verb else f"← {self.link(r.source, from_file)}"
-                lines.append(f"- {r.kind}{': ' if verb else ' '}{shown}{extra}")
-            lines.append("")
-        dias = self.diagrams_showing.get(el.id)
-        if dias:
-            lines.append("**Shown in diagrams:** " + ", ".join(self.link(d, from_file) for d in dias))
-            lines.append("")
-        for a in self.ann.get(el.id, []):
-            if (generated or a.trace.derivation.method != "llm") and a.module is None and a.parts is None:
-                lines += self.annotation_md(a, from_file)
+        lines = self.section_view(el, generated, from_file).markdown(level, self.linker(from_file))
         if trace:
             lines += [f"<sub>trace: `{self.trace(el).locator()}`</sub>", ""]
         return "\n".join(lines)
+
+    def linker(self, from_file: str) -> sx.Link:
+        return lambda id_, label: self.link(id_, from_file, label)
+
+    def section_view(self, el: Element, generated: bool = True, from_file: str = "") -> sx.Section:
+        """One element's section as data (AR-003R2): pages render it as Markdown, chunks as plain
+        text. `generated=False` leaves out LLM-derived annotations."""
+        ix = self.ix
+        st_txt = " ".join(f"«{s}»" for s in ix.stereotype_names(el.id))
+        title = sx.line(st_txt + " " if st_txt else "", sx.name(sem.label(ix, el.id)))
+        fields: list[tuple[str, sx.Line]] = [("Kind", sx.line(el.kind))]
+        qn = ix.qualified_name(el.id)
+        if qn:
+            fields.append(("Qualified name", sx.line(sx.Span(qn, "code"))))
+        rq = sem.requirement(ix, el)
+        if rq is not None and rq.id:  # the id people use, and a database number apart (AR-010R3)
+            fields.append(("Requirement ID", sx.line(rq.id)))
+            if rq.db_id:
+                fields.append(("Database number", sx.line(rq.db_id)))
+        for k in ("isAbstract", "visibility", "isEncapsulated", "isActive"):
+            if k in el.attrs and el.attrs[k] not in ("false", "public"):
+                fields.append((k, sx.line(el.attrs[k])))
+        types = sem.refs(el, "type")
+        if types:
+            fields.append(("Type", sx.line(self.ref(types[0]))))
+        classifiers = sem.refs(el, "classifier")  # what an instance specification is an instance of (FU-022)
+        if classifiers:
+            fields.append(("Classifier", self.refs_line(classifiers)))
+        gens = [r for r in self.rels_by_end.get(el.id, []) if r.metaclass == "Generalization" and r.source == el.id]
+        if gens:
+            fields.append(("Specializes", self.refs_line([g.target for g in gens])))
+        blocks: list[sx.Block] = []
+        req = sem.requirement_fields(ix, el) if rq is not None else {}
+        if "Text" in req:
+            blocks.append(sx.Block("Requirement text", [sx.line(tidy(req["Text"]))], quoted=True))
+        doc = sem.documentation(ix, el)
+        if doc:
+            blocks.append(sx.Block("Documentation", [sx.line(tidy(doc))]))
+        notes = [c.attrs["body"].strip() for c in self.notes.get(el.id, [])]  # a diagram's notes about it
+        blocks.append(sx.Block("Notes", [sx.line(f"- {tidy(one_line(n))}") for n in notes if n]))
+        spec = next(iter(sem.children(ix, el, "specification")), None)
+        if spec is not None and sem.value_text(ix, spec):
+            lang = spec.attrs.get("language", "")
+            blocks.append(sx.Block(f"Specification{f' ({lang})' if lang else ''}",
+                                   [sx.line(sem.value_text(ix, spec) or "")], fenced=True))
+        blocks.append(sx.Block("Tagged values", [sx.line(f"- «{s}» {k} = " + v.replace("\n", "\n  "))
+                                                 for s, k, v in self.tagged_values(el)], form="list", detail=True))
+        blocks.append(sx.Block("Members", self.members(el, depth=0), form="list", detail=True))
+        rels = [r for r in self.rels_by_end.get(el.id, []) if r.metaclass != "Generalization" or r.target == el.id]
+        rel_lines = []
+        for r in rels:
+            conveyed = [sem.label(ix, t) for t in sem.refs(ix.elements[r.id], "conveyed")]
+            # A dependency reads with a verb, so that its direction is not left to an arrow
+            # (FU-021, as FU-013 for diagrams): "is derived from [Y]", "[X] satisfies this".
+            w = sem.wording(r.kind, r.metaclass)
+            verb = w.forward if w else None
+            if r.source == el.id:
+                shown = (f"{verb} " if verb else "→ ", self.ref(r.target))
+            else:
+                shown = ("" if verb else "← ", self.ref(r.source), f" {verb} this" if verb else "")
+            rel_lines.append(sx.line(f"- {r.kind}{': ' if verb else ' '}", *shown,
+                                     *((" (conveys ", *self.names(conveyed), ")") if conveyed else ())))
+        blocks.append(sx.Block("Relationships", rel_lines, form="list"))
+        blocks.append(sx.Block("Shown in diagrams", [sx.line(self.ref(d)) for d in self.diagrams_showing.get(el.id, [])],
+                               form="inline"))
+        for a in self.ann.get(el.id, []):
+            if (generated or a.trace.derivation.method != "llm") and a.module is None and a.parts is None:
+                blocks.append(self.annotation_block(a, from_file))
+        return sx.Section(title, fields, blocks)
+
+    def ref(self, id_: str) -> sx.Span:
+        """A reference to an element: its label, linked on pages to its page."""
+        return sx.ref(id_, sem.label(self.ix, id_))
+
+    def refs_line(self, ids: list[str]) -> sx.Line:
+        return sx.line(*[p for k, i in enumerate(ids) for p in ((", ",) if k else ()) + (self.ref(i),)])
+
+    def names(self, labels: list[str]) -> list[str | sx.Span]:
+        return [p for k, x in enumerate(labels) for p in ((", ",) if k else ()) + (sx.name(x),)]
 
     def generated_chunks(self, el: Element, file: str) -> None:
         """One chunk per LLM-derived annotation, with the LLM derivation as provenance."""
@@ -362,6 +365,11 @@ class ProjectWriter:
             text = f"{a.label} of {what} ({generated_by(a.trace.derivation)})\n\n{a.text}"
             self.chunk(kind=f"generated:{a.label.lower().replace(' ', '_')}", title=f"{a.label}: {what}",
                        text=text, file=file, el=el, trace=a.trace, salt=str(i))
+
+    def annotation_block(self, a: Annotation, from_file: str) -> sx.Block:
+        before = [f"![{a.label}]({_relpath(a.image, from_file)})", ""] if a.image else []
+        return sx.Block(a.label, [sx.line(tidy(a.text))] if a.text else [], before=before,
+                        label=f"**{a.label}** _({generated_by(a.trace.derivation)})_:")
 
     def annotation_md(self, a: Annotation, from_file: str) -> list[str]:
         out = []
@@ -382,59 +390,60 @@ class ProjectWriter:
                     out.append((app.name, k, shown_value(shown)))
         return out
 
-    def members(self, el: Element, from_file: str, depth: int) -> list[str]:
+    def members(self, el: Element, depth: int) -> list[sx.Line]:
         if depth > 3:
             return []
         ix = self.ix
-        out = []
+        out: list[sx.Line] = []
         indent = "  " * depth
         for c in sem.children(ix, el):
             if c.role in SKIP_MEMBER_ROLES:
                 continue
             if sem.is_section(ix, c):
                 if depth == 0:
-                    out.append(f"{indent}- {c.kind} {self.link(c.id, from_file)}")
+                    out.append(sx.line(f"{indent}- {c.kind} ", self.ref(c.id)))
                 continue
             st = ix.stereotype_names(c.id)
-            desc = f"{indent}- *{c.role}* {c.kind}"
+            desc: list[str | sx.Span] = [f"{indent}- ", sx.Span(c.role, "italic"), f" {c.kind}"]
             if st:
-                desc += " " + " ".join(f"«{s}»" for s in st)
+                desc.append(" " + " ".join(f"«{s}»" for s in st))
             if c.name:
-                desc += f" **{md_inline(c.name)}**"
+                desc += [" ", sx.name(c.name, "bold")]
             t = sem.refs(c, "type")
             if t:
-                desc += f" : {self.link(t[0], from_file)}"
+                desc += [" : ", self.ref(t[0])]
             m = sem.multiplicity(ix, c)
             if m and m != "1":
-                desc += f" [{m}]"
+                desc.append(f" [{m}]")
             dv = sem.value_text(ix, next(iter(sem.children(ix, c, "defaultValue")), None))
             if dv:
-                desc += f" = `{dv}`"
+                desc += [" = ", sx.Span(dv, "code")]
             if c.attrs.get("aggregation") in ("composite", "shared"):
-                desc += f" ({c.attrs['aggregation']})"
+                desc.append(f" ({c.attrs['aggregation']})")
             if c.kind == "Slot":
                 feat = sem.refs(c, "definingFeature")
                 vals = [sem.value_text(ix, v) for v in sem.children(ix, c, "value")]
-                desc = f"{indent}- slot {md_inline(sem.label(ix, feat[0])) if feat else '?'} = {', '.join(v or '' for v in vals)}"
+                desc = [f"{indent}- slot ", sx.name(sem.label(ix, feat[0])) if feat else "?",
+                        f" = {', '.join(v or '' for v in vals)}"]
             if c.kind in sem.RELATIONSHIP_KINDS:
                 r = self.rel_by_id.get(c.id)
                 if r:
-                    desc += f": {md_inline(sem.label(ix, r.source))} → {md_inline(sem.label(ix, r.target))}"
+                    desc += [": ", sx.name(sem.label(ix, r.source)), " → ", sx.name(sem.label(ix, r.target))]
                 flow = sem.flow_label(ix, c)  # a transition's trigger and guard, a flow's guard
                 if flow:
-                    desc += f" — {md_inline(flow)}"
+                    desc += [" — ", sx.name(flow)]
             if c.kind == "Trigger" and sem.trigger_text(ix, c):
-                desc += f" — {md_inline(sem.trigger_text(ix, c) or '')}"
+                desc += [" — ", sx.name(sem.trigger_text(ix, c) or "")]
             spec = sem.value_text(ix, next(iter(sem.children(ix, c, "specification")), None))
             if spec:
-                desc += f" — `{spec}`"
+                desc += [" — ", sx.Span(spec, "code")]
             elif c.kind in sem.VALUE_KINDS and not c.name and not dv and sem.value_text(ix, c):
-                desc += f" — `{sem.value_text(ix, c)}`"  # a guard, say: the value is the point
+                desc += [" — ", sx.Span(sem.value_text(ix, c) or "", "code")]  # a guard, say: the value is the point
             doc = sem.documentation(ix, c)
             if doc:
-                desc += " — " + tidy(doc).replace("\n", " ")
-            out.append(desc)
-            out += self.members(c, from_file, depth + 1)
+                desc.append(" — " + tidy(doc).replace("\n", " "))
+            out.append(sx.line(*desc))
+            out += self.members(c, depth + 1)
         return out
 
     # -- files -----------------------------------------------------------------
@@ -454,7 +463,7 @@ class ProjectWriter:
             body += [f"- {self.link(d.id, rel)}" for d in dias]
             body.append("")
         pkg_trace = self.trace(pkg)
-        self.section_chunks("package", pkg, self.section(pkg, rel, 1, generated=False), rel, pkg_trace,
+        self.section_chunks("package", pkg, self.section_view(pkg, generated=False), rel, pkg_trace,
                             heading=self.heading(pkg, "Package"), extra={"title": f"Package {qn}"})
         self.generated_chunks(pkg, rel)
         # Every non-package section element whose nearest package is this one.
@@ -462,7 +471,7 @@ class ProjectWriter:
             body += [f'<a id="{self.anchor(el)}"></a>\n', self.section(el, rel, 2)]
             anchor = f"{rel}#{self.anchor(el)}"
             self.section_chunks("requirement" if sem.is_requirement(ix, el) else "element", el,
-                                self.section(el, rel, 2, generated=False), anchor, self.trace(el))
+                                self.section_view(el, generated=False), anchor, self.trace(el))
             self.generated_chunks(el, anchor)
         fm = front_matter({
             "title": f"Package {qn}",
@@ -525,20 +534,19 @@ class ProjectWriter:
         d = ix.diagrams[dia_id]
         el = ix.elements[dia_id]
         qn = ix.qualified_name(dia_id)
-        lines = [f"# Diagram: {md_inline(d.name or dia_id)}", ""]
-        lines.append(f"- **Diagram type:** {d.diagram_type or 'unknown'}")
+        fields: list[tuple[str, sx.Line]] = [("Diagram type", sx.line(d.diagram_type or "unknown"))]
         if d.uml_type and d.uml_type != d.diagram_type:
-            lines.append(f"- **UML diagram kind:** {d.uml_type}")
+            fields.append(("UML diagram kind", sx.line(d.uml_type)))
         if d.owner:
-            lines.append(f"- **Owner / context:** {self.link(d.owner, rel)}")
-        lines.append(f"- **Qualified name:** `{qn}`")
+            fields.append(("Owner / context", sx.line(self.ref(d.owner))))
+        fields.append(("Qualified name", sx.line(sx.Span(qn, "code"))))
         for app in ix.applications(dia_id, sem.DIAGRAM_INFO):  # author and dates
             for k, vals in app.tags.items():
-                lines.append(f"- **{k.replace('_', ' ')}:** {', '.join(vals)}")
-        lines.append("")
+                fields.append((k.replace("_", " "), sx.line(", ".join(vals))))
+        blocks = []
         doc = sem.documentation(ix, el)
         if doc:
-            lines += ["**Documentation:**", "", tidy(doc), ""]
+            blocks.append(sx.Block("Documentation", [sx.line(tidy(doc))]))
         layout = self.layouts.get(dia_id)
         graph = self.graph(dia_id)
         part = self.partition(dia_id)
@@ -546,31 +554,29 @@ class ProjectWriter:
             where = (lambda n: f" (M{part.module_of[n.num]})") if part else None
             nodes, edges = dg.describe(ix, graph, self.refs(rel), where=where)
             if part:
-                lines += [(f"**Modules ({len(part.modules)}):** the diagram is large, so its shapes are grouped into "
-                          "modules of connected shapes drawn close together, each drawn and described on its own "
-                          "below. The legend gives each shape's module."), ""]
-            if nodes:
-                lines += [f"**Shapes ({len(nodes)}), numbered as in the sketch and indented by nesting:**"]
-                lines += nodes + [""]
-            if edges:
-                lines += [f"**Connections ({len(edges)}):**"] + edges + [""]
-        tbl = self.table_config(el)
-        if tbl:
-            if any(w in (d.diagram_type or "") for w in ("Table", "Matrix")):
-                lines.append("**Table / matrix configuration** (rows are computed by Cameo and not stored in the file):")
-            else:
-                lines.append("**Stereotypes and tagged values:**")
-            lines += tbl + [""]
+                blocks.append(sx.Block("Modules", [sx.line(
+                    "the diagram is large, so its shapes are grouped into modules of connected shapes drawn close "
+                    "together, each drawn and described on its own below. The legend gives each shape's module.")],
+                    label=f"**Modules ({len(part.modules)}):**", form="inline"))
+            shapes = f"Shapes ({len(nodes)}), numbered as in the sketch and indented by nesting"
+            blocks.append(sx.Block(shapes, [sx.markdown_line(n) for n in nodes], form="list"))
+            blocks.append(sx.Block("Connections", [sx.markdown_line(e) for e in edges], form="list",
+                                   label=f"**Connections ({len(edges)}):**"))
+        tbl = [sx.line(t) for t in self.table_config(el)]
+        if any(w in (d.diagram_type or "") for w in ("Table", "Matrix")):
+            blocks.append(sx.Block("Table / matrix configuration", tbl, form="list", label=(
+                "**Table / matrix configuration** (rows are computed by Cameo and not stored in the file):")))
+        else:
+            blocks.append(sx.Block("Stereotypes and tagged values", tbl, form="list"))
         if d.shown and layout is None:
-            lines.append(f"**Elements shown ({len(d.shown)}):**")
-            for e in d.shown:
-                se = ix.elements[e]
-                st = " ".join(f"«{s}»" for s in ix.stereotype_names(e))
-                lines.append(f"- {se.kind} {st + ' ' if st else ''}{self.link(e, rel)}")
-            lines.append("")
+            blocks.append(sx.Block("Elements shown", [sx.line(
+                f"- {ix.elements[e].kind} {' '.join(f'«{s}»' for s in ix.stereotype_names(e)) + ' ' if ix.stereotype_names(e) else ''}",
+                self.ref(e)) for e in d.shown], form="list", label=f"**Elements shown ({len(d.shown)}):**"))
+        view = sx.Section(sx.line("Diagram: ", sx.name(d.name or dia_id)), fields, blocks)
+        lines = view.markdown(1, self.linker(rel))
         tr = self.trace(el)
         trace_line = [f"<sub>trace: `{tr.locator()}`</sub>", ""]
-        self.section_chunks("diagram", el, "\n".join(lines + trace_line), rel, tr,
+        self.section_chunks("diagram", el, view, rel, tr,
                             heading=self.heading(el, f"Diagram ({d.diagram_type or 'unknown type'})"),
                             extra={"title": f"Diagram {qn}", "diagram_type": d.diagram_type})
         self.generated_chunks(el, rel)

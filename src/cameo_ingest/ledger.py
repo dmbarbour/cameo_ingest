@@ -119,20 +119,10 @@ class LedgerWriter:
             return
         where = f"package `{self.ix.qualified_name(pkg.id)}`" if pkg is not None else "whole project"
         self.md += [f"### {heading} — {where}", ""] + [r for _, r in items] + [""]
-        parts: list[list[tuple[str, str]]] = [[]]
-        size = 0
-        # A part fits an embedding window with its header (estimated tokens; plan RE-08).
-        header_est = pl.tokens(f"{heading} ledger (part 99 of 99) — Cameo project {self.w.content.label}, {where}. "
-                               "9999 entries in this group.")
-        limit = pl.BUDGET - header_est - 4
-        for eid, r in items:
-            plain = pl.plain(r)
-            n = pl.tokens(plain) + 1
-            if parts[-1] and (len(parts[-1]) >= MAX_ROWS or size + n > limit):
-                parts.append([])
-                size = 0
-            parts[-1].append((eid, plain))
-            size += n
+        # A part fits an embedding window with its header (plan RE-08).
+        parts = pl.pack([(eid, pl.plain(r)) for eid, r in items],
+                        f"{heading} ledger (part 99 of 99) — Cameo project {self.w.content.label}, {where}. "
+                        "9999 entries in this group.", max_rows=MAX_ROWS)
         rows = items
         content = self.w.content
         for i, part in enumerate(parts, 1):
