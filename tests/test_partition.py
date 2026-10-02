@@ -7,9 +7,9 @@ from PIL import Image
 from cameo_ingest import diagram_graph as dg
 from cameo_ingest import sketch
 from cameo_ingest.config import IMAGE_PIXELS, MODULES
-from cameo_ingest.partition import partition, sequence_partition
 from cameo_ingest.layout import View
 from cameo_ingest.model import ModelIndex
+from cameo_ingest.partition import partition, sequence_partition
 
 
 def graph(rects: list[tuple[float, float, float, float]], links: list[tuple[int, int]],

@@ -21,7 +21,7 @@ from typing import Any
 from . import exports
 from .archive import UnsupportedInput, discover
 from .config import ProjectOptions
-from .llm import LLM
+from .llm import EnrichmentSession
 from .pipeline import ingest_project
 from .progress import Progress
 from .provenance import TOOL, ContentInfo, sha256_bytes, utc_now
@@ -34,7 +34,7 @@ WORK = ".work"
 
 
 class Runner:
-    def __init__(self, state: State, out: Path, llm: LLM, options: ProjectOptions, progress: Progress,
+    def __init__(self, state: State, out: Path, llm: EnrichmentSession, options: ProjectOptions, progress: Progress,
                  concurrency: int = 1):
         self.state, self.out, self.llm, self.progress = state, out, llm, progress
         self.options = options

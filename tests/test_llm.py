@@ -11,7 +11,7 @@ import pytest
 from fixture_model import MODEL, make_mdzip
 from helpers import (
     SAMPLES_DIR,
-    FakeOpenAI,
+    FakeChat,
     check_invariants,
     project_dir,
     tree,
@@ -20,13 +20,13 @@ from helpers import (
 from cameo_ingest.cli import main
 
 
-def test_llm_enrichment_is_labelled(tmp_path, fake_openai):
+def test_llm_enrichment_is_labelled(tmp_path, fake_chat):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     out = tmp_path / "out"
     assert main([str(src), "-o", str(out), "--vision-model", "gemma-4"]) == 0
     check_invariants(out)  # includes unique chunk ids for the two image descriptions (BASE-002)
-    client = fake_openai[0]
+    client = fake_chat[0]
     assert len(client.requests) == 4  # preflight, then the diagram and two images: no budget (BASE-019)
     assert [m for m, _ in client.enrichment()] == ["gemma-4"] * 3
     dia = (project_dir(out) / "diagrams/Drone_BDD.md").read_text()
@@ -58,7 +58,7 @@ def large_package_model() -> str:
                          f"<packagedElement xmi:type='uml:Package' xmi:id='bigp' name='Big'>{classes}</packagedElement>")
 
 
-def test_large_package_parts(tmp_path, fake_openai, monkeypatch):
+def test_large_package_parts(tmp_path, fake_chat, monkeypatch):
     """A large package is summarized in parts, then from its parts' summaries, through runs of
     them when there are many; each part's summary is a chunk naming its elements (FU-005,
     plan DV-05)."""
@@ -117,7 +117,7 @@ def instances_model() -> str:
                          "</packagedElement>")
 
 
-def test_instance_packages_summarized_from_a_digest(tmp_path, fake_openai):
+def test_instance_packages_summarized_from_a_digest(tmp_path, fake_chat):
     """A large package made mostly of instance specifications is summarized in one request,
     from a digest of its instances, not in parts (FU-022)."""
     import sqlite3
@@ -162,7 +162,7 @@ def test_current_templates_pinned():
     }
 
 
-def test_templates_and_request_log(tmp_path, fake_openai):
+def test_templates_and_request_log(tmp_path, fake_chat):
     """Prompts are named, versioned templates with described slots (plan LQ-01), and every
     request is logged with what it asked (LQ-02)."""
     import sqlite3
@@ -194,11 +194,11 @@ def test_templates_and_request_log(tmp_path, fake_openai):
                  if c["metadata"]["kind"].startswith("generated:")}
     assert templates == {"diagram-description@v5", "image-description@v2", "package-summary@v4"}
     # The image goes before the text (FU-015).
-    request = json.loads(json.dumps(fake_openai[0].enrichment()[0][1]))
+    request = json.loads(json.dumps(fake_chat[0].enrichment()[0][1]))
     assert [part["type"] for part in request[0]["content"]] == ["image_url", "text"]
 
 
-def test_quality_sample(tmp_path, fake_openai, capsys):
+def test_quality_sample(tmp_path, fake_chat, capsys):
     """A spot-check set shows each template with stand-ins, and each item with its request,
     image, response, and reference without the response (plan LQ-03)."""
     src = tmp_path / "drone.mdzip"
@@ -232,18 +232,18 @@ def test_quality_sample(tmp_path, fake_openai, capsys):
     assert _reference(out, "big.md#p", "m", "It pumps.") == "# Package P\n\n\n**Members:**\n"
 
 
-def test_llm_call_budget(tmp_path, fake_openai):
+def test_llm_call_budget(tmp_path, fake_chat):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     out = tmp_path / "out"
     assert main([str(src), "-o", str(out), "--vision-model", "m", "--llm-max-calls", "1"]) == 0
-    assert len(fake_openai[0].enrichment()) == 1
+    assert len(fake_chat[0].enrichment()) == 1
     report = json.loads((out / "run.json").read_text())["llm"]
     assert report["calls"] == 1 and report["outcomes"]["skipped_budget"] == 2
     assert all(i["item"].startswith("sha256:") for i in report["incomplete"])
 
 
-def test_llm_store_and_replay(tmp_path, fake_openai, monkeypatch):
+def test_llm_store_and_replay(tmp_path, fake_chat, monkeypatch):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     store = tmp_path / "store"
@@ -256,20 +256,20 @@ def test_llm_store_and_replay(tmp_path, fake_openai, monkeypatch):
     report = json.loads((out / "run.json").read_text())["llm"]
     assert report["calls"] == 0 and report["outcomes"] == {"cached": 3}
     # Replay never touches the network; it reproduces the recorded run exactly (BASE-022R5).
-    monkeypatch.setattr(FakeOpenAI, "fail", True)
+    monkeypatch.setattr(FakeChat, "fail", True)
     out = tmp_path / "replayed"
     assert main([str(src), "--vision-model", "m", "--llm-replay", str(store / "llm.sqlite"),
                  "--meta", "program=test", "-o", str(out)]) == 0
     assert json.loads((out / "run.json").read_text())["llm"]["outcomes"] == {"replayed": 3}
     assert tree(out) == trees[1]
-    assert len(fake_openai) == 2  # no client at all in replay mode
+    assert len(fake_chat) == 2  # no client at all in replay mode
     # A request the store has no answer for fails the project, loudly.
     out = tmp_path / "missed"
     assert main([str(src), "--vision-model", "other", "--llm-replay", str(store / "llm.sqlite"), "-o", str(out)]) == 4
     assert "ReplayMiss: no recorded other response" in json.loads((out / "manifest.json").read_text())["failed"][0]["error"]
 
 
-def test_llm_store_corrupt(tmp_path, fake_openai, caplog, monkeypatch):
+def test_llm_store_corrupt(tmp_path, fake_chat, caplog, monkeypatch):
     import sqlite3
 
     store = tmp_path / "store"
@@ -282,26 +282,26 @@ def test_llm_store_corrupt(tmp_path, fake_openai, caplog, monkeypatch):
     assert "is unreadable" in caplog.text and list(store.glob("llm.sqlite.corrupt-*"))
     assert sqlite3.connect(store / "llm.sqlite").execute("SELECT count(*) FROM responses").fetchone() == (3,)
     # A store that fails to keep a paid answer costs a re-ask later, not the project (AR-016).
-    from cameo_ingest.llm import LLMStore
+    from cameo_ingest.llm import ResponseStore
 
     def broken(*_a):
         raise sqlite3.OperationalError("disk I/O error")
 
-    monkeypatch.setattr(LLMStore, "put", broken)
+    monkeypatch.setattr(ResponseStore, "put", broken)
     out = tmp_path / "out2"
     assert main([str(src), "-o", str(out), "--vision-model", "other", "--cache-dir", str(store)]) == 0
     assert "cannot store LLM response" in caplog.text
     assert json.loads((out / "run.json").read_text())["llm"]["outcomes"] == {"answered": 3}
 
 
-def test_llm_circuit_breaker(tmp_path, fake_openai, monkeypatch):
-    monkeypatch.setattr(FakeOpenAI, "fail", True)
+def test_llm_circuit_breaker(tmp_path, fake_chat, monkeypatch):
+    monkeypatch.setattr(FakeChat, "fail", True)
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     out = tmp_path / "out"
     # Four items (a diagram, two images, a package summary); the endpoint fails every request.
     assert main([str(src), "-o", str(out), "--text-model", "m", "--no-preflight"]) == 0
-    assert len(fake_openai[0].requests) == 3  # then enrichment is switched off (BASE-006)
+    assert len(fake_chat[0].requests) == 3  # then enrichment is switched off (BASE-006)
     report = json.loads((out / "run.json").read_text())["llm"]
     assert report["disabled_after_failures"] and report["outcomes"] == {"failed": 3, "skipped_disabled": 1}
     assert report["incomplete"][0]["detail"] == "RuntimeError: endpoint down"
@@ -336,9 +336,9 @@ def test_replay_recorded_llm(tmp_path, sample):
     assert gen and all(c["metadata"]["provenance"]["derivation"]["model"] == model for c in gen)
 
 
-def test_llm_concurrency(tmp_path, fake_openai, monkeypatch):
-    monkeypatch.setattr(FakeOpenAI, "delay", 0.1)
-    monkeypatch.setattr(FakeOpenAI, "max_inflight", 0)
+def test_llm_concurrency(tmp_path, fake_chat, monkeypatch):
+    monkeypatch.setattr(FakeChat, "delay", 0.1)
+    monkeypatch.setattr(FakeChat, "max_inflight", 0)
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     trees = []
@@ -347,7 +347,7 @@ def test_llm_concurrency(tmp_path, fake_openai, monkeypatch):
         assert main([str(src), "-o", str(out), "--vision-model", "m", "--cache-dir", str(tmp_path / f"store{n}"),
                      "--llm-concurrency", str(n)]) == 0
         trees.append(tree(out))
-    assert FakeOpenAI.max_inflight >= 2  # requests overlapped (BASE-019R4)...
+    assert FakeChat.max_inflight >= 2  # requests overlapped (BASE-019R4)...
     assert trees[0] == trees[1]  # ...and the output is the same as a sequential run
 
 

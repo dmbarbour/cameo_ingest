@@ -24,7 +24,7 @@ from . import annotations as an
 from . import prompt_values as pv
 from .annotations import Annotation
 from .files import FilePlan
-from .llm import LLM
+from .llm import EnrichmentSession
 from .model import Element
 from .partition import Partition, sequence_partition
 from .progress import Progress
@@ -74,7 +74,7 @@ def answer(requests: list[Request], progress: Progress, label: str, concurrency:
             pool.shutdown(wait=False, cancel_futures=True)
 
 
-def _ask_with_image(llm: LLM, template: Template, values: dict[str, str], root: Path, rel: str, mime: str,
+def _ask_with_image(llm: EnrichmentSession, template: Template, values: dict[str, str], root: Path, rel: str, mime: str,
                     image_pixels: int = 0, notes: dict | None = None, **kw: Any) -> Any:
     # The image is read back from disk only when the request runs, so queued requests
     # don't hold every diagram in memory.
@@ -109,7 +109,7 @@ class Enricher:
     """A project's LLM requests, and their answers as annotations (the view's, by element) and
     image descriptions (`images`, by archive entry)."""
 
-    def __init__(self, llm: LLM, view: ProjectView, plan: FilePlan, root: Path, image_pixels: int):
+    def __init__(self, llm: EnrichmentSession, view: ProjectView, plan: FilePlan, root: Path, image_pixels: int):
         self.llm, self.view, self.plan, self.annotations = llm, view, plan, view.ann
         self.ix, self.content, self.root, self.image_pixels = view.ix, view.content, root, image_pixels
         self.images: dict[str, tuple[str, Derivation]] = {}

@@ -250,10 +250,47 @@ Pillow when imported, and only `pipeline` imports `sketch`.
 The output stays the same: a `--no-llm` tree compared with CP6's. Tests follow their code
 (`test_modules.py` becomes `test_partition.py`).
 
+**RA-16 in detail.**
+
+- **`llm.py`, three pieces.**
+  - A `ChatClient` answers one request (`complete(model, messages, temperature)`). There are two
+    kinds: `OpenAIChat` (any compatible endpoint, through the SDK) and `ReplayChat` (a recorded
+    store; a request it has no answer for is a `ReplayMiss`). `connect(cfg, replay)` makes the
+    run's client. Tests replace `OpenAIChat` with a fake that has the same small interface, and
+    no longer patch `openai.OpenAI`.
+  - A `ResponseStore` (formerly `LLMStore`) holds answers and the request log.
+  - An `EnrichmentSession` (formerly `LLM`) holds a run's policy:
+    - the store, the budget and the breaker;
+    - outcomes and items left without text;
+    - the request log;
+    - `ask`.
+
+    A replayed answer bypasses the store, the budget and the breaker, as before.
+    `max_failures=None` never switches off, so `judge_pools` stops passing `10**9`.
+- **`sqlite_cache.py`.** `SqliteCache` is the base: one connection shared by threads under a
+  lock, read-only opening, and a damaged file moved aside and started afresh (BASE-005, which
+  only the LLM store had). The response store, the embedding cache and a `ScoreCache` (split
+  out of `Reranker`) build on it.
+- **`evaluation/provider.py`.** DeepInfra's two APIs and the key's variable, in one place:
+  - the OpenAI-compatible API for embeddings;
+  - its inference API for rerankers.
+
+  The module also holds `post_json`, which retries for the reranker. Embeddings go through the
+  OpenAI SDK (floats, as before), and its retries replace `Embedder._post`. The cache keeps
+  the endpoint's URL in its key, so that the vectors cached so far still match.
+  `EmbeddingModel.endpoint` and `key_env` go (AR-017R4). The ingest's LLM keeps its own
+  configuration (`OPENAI_BASE_URL`), since it serves any compatible endpoint.
+- **Counters.** `Embedder` updates its counters under a lock.
+- **Tests.** The embedder and the reranker against fakes: cache hits, batches and counters.
+  This is part of RA-18d, done here since the code changes here.
+- **Checks.** The suite and the replay fixture. A live check: one text embedded through the SDK
+  matches the vector the old path cached. The LLM run is reproduced from `out/ra/llm-cache` with
+  no new calls: images and prompts unchanged, from RA-15 as well.
+
 | Step | What | Status |
 |---|---|---|
 | RA-15 | **Diagrams and partitioning** (AR-019): `diagram_graph` (build, nodes, links, labels), `diagram_text`, `sketch` (rendering, frames, presets), `vision` (the pixel budget, one `fit_size` for sketches and images) and `partition` (one base with diagram and package adapters; `_Sequence` calls its base's constructor). | Done; its `--no-llm` tree check pending |
-| RA-16 | **The LLM session, HTTP and caches** (AR-016R1, AR-017): `ChatClient` (OpenAI or replay, injectable, so tests stop patching `openai.OpenAI`), `ResponseStore`, `EnrichmentSession` (budget, breaker, outcomes, request log); embeddings through the OpenAI SDK; one `post_json` with retries for the reranker; one `SqliteCache` base, with the store's recovery from a corrupt file; the provider's settings in one place; the `Embedder` counters under a lock. | |
+| RA-16 | **The LLM session, HTTP and caches** (AR-016R1, AR-017): `ChatClient` (OpenAI or replay, injectable, so tests stop patching `openai.OpenAI`), `ResponseStore`, `EnrichmentSession` (budget, breaker, outcomes, request log); embeddings through the OpenAI SDK; one `post_json` with retries for the reranker; one `SqliteCache` base, with the store's recovery from a corrupt file; the provider's settings in one place; the `Embedder` counters under a lock. | Done; replay from `out/ra/llm-cache` pending |
 
 ### CP8: the evaluation
 

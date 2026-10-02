@@ -10,7 +10,7 @@ import zipfile
 import pytest
 from fixture_model import MODEL, make_mdzip
 from helpers import (
-    FakeOpenAI,
+    FakeChat,
     check_invariants,
     project_dir,
     provenance,
@@ -108,7 +108,7 @@ def test_tree_rules_and_missing_inputs(tmp_path, capsys):
     assert "(input missing)" in (out / "INDEX.md").read_text()
 
 
-def test_options_change_rewrites_projects(tmp_path, monkeypatch, fake_openai):
+def test_options_change_rewrites_projects(tmp_path, monkeypatch, fake_chat):
     """Output made with other options or another tool version is written again, and files
     the new version doesn't produce disappear with the old directory (plan RI-06)."""
     src = tmp_path / "drone.mdzip"
@@ -169,8 +169,8 @@ def test_env_file_and_preflight(tmp_path, capsys, caplog):
     assert logging.getLogger("httpx").getEffectiveLevel() == logging.WARNING  # quiet below -vv (BASE-018)
 
 
-def test_progress_heartbeats_and_log_file(tmp_path, fake_openai, monkeypatch, capsys):
-    monkeypatch.setattr(FakeOpenAI, "delay", 0.1)
+def test_progress_heartbeats_and_log_file(tmp_path, fake_chat, monkeypatch, capsys):
+    monkeypatch.setattr(FakeChat, "delay", 0.1)
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     log_file = tmp_path / "run.log"
@@ -184,14 +184,14 @@ def test_progress_heartbeats_and_log_file(tmp_path, fake_openai, monkeypatch, ca
     assert "DEBUG" in logged and "LLM m answered for sha256:" in logged and "found 1 project" in logged
 
 
-def test_interrupt_and_resume(tmp_path, fake_openai, monkeypatch, capsys):
+def test_interrupt_and_resume(tmp_path, fake_chat, monkeypatch, capsys):
     """A run stopped part-way continues where it stopped, and ends with the same output as a
     run that was never interrupted (plan RI-07)."""
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     ref = tmp_path / "ref"
     assert main([str(src), "-o", str(ref), "--vision-model", "m", "--no-preflight"]) == 0
-    monkeypatch.setattr(FakeOpenAI, "interrupt_at", 2)  # Ctrl-C during the second LLM request
+    monkeypatch.setattr(FakeChat, "interrupt_at", 2)  # Ctrl-C during the second LLM request
     out = tmp_path / "out"
     assert main([str(src), "-o", str(out), "--vision-model", "m", "--no-preflight"]) == 130
     assert "Continue with: cameo-ingest run -o" in capsys.readouterr().err
@@ -199,7 +199,7 @@ def test_interrupt_and_resume(tmp_path, fake_openai, monkeypatch, capsys):
     assert json.loads((out / "manifest.json").read_text())["projects"] == []  # nothing half-published
     [work] = (out / "by-sha256/.work").iterdir()
     sketch = (work / "diagrams/Drone_BDD.png").stat().st_mtime_ns  # drawn before the interruption
-    monkeypatch.setattr(FakeOpenAI, "interrupt_at", None)
+    monkeypatch.setattr(FakeChat, "interrupt_at", None)
     assert main(["run", "-o", str(out), "--no-preflight"]) == 0  # the tree remembers the model
     assert json.loads((out / "run.json").read_text())["llm"]["outcomes"] == {"answered": 2, "cached": 1}
     assert (project_dir(out) / "diagrams/Drone_BDD.png").stat().st_mtime_ns == sketch  # reused, not redrawn

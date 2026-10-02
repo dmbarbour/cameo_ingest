@@ -96,8 +96,8 @@ Four themes run through the findings:
 | AR-013 | Medium | Settings, project options and their defaults are spread over five modules | By inspection | Open |
 | AR-014 | Medium | `exports.rebuild` does seven jobs, and tree-level chunks are made in two modules | By inspection | Open |
 | AR-015 | Medium | Chunk records are loose dicts made in four places, and packing rows into parts is written three times | By inspection | Open |
-| AR-016 | Medium | The `LLM` class mixes transport, store, replay, run policy and report | By inspection | Partly fixed |
-| AR-017 | Medium | HTTP clients, retries and SQLite caches are written two or three times | By inspection | Open |
+| AR-016 | Medium | The `LLM` class mixes transport, store, replay, run policy and report | By inspection | Fixed |
+| AR-017 | Medium | HTTP clients, retries and SQLite caches are written two or three times | By inspection | Fixed |
 | AR-018 | Medium | LLM summary inputs are page Markdown, link targets and all | By inspection | Open |
 | AR-019 | Medium | `diagrams.py` and `modules.py` each carry several unrelated responsibilities | By inspection | Fixed |
 | AR-020 | Medium | `retrieval_eval.main` is library code; `judge_pools` cuts windows again on its own defaults | By inspection | Open |
@@ -564,7 +564,17 @@ too.
 
 **Severity:** Medium · **Verified:** By inspection · **Where:** `llm.py:179-350`, `pipeline.py:327, 370, 376, 452`, `scripts/judge_pools.py:82`
 
-**Status:** Partly fixed on 2026-10-02. AR-016R2 is done: a failed `put` is logged and the answer kept (a test covers it). AR-016R1 remains.
+**Status:** Fixed on 2026-10-02.
+- AR-016R2: a failed `put` is logged and the answer kept (a test covers it).
+- AR-016R1 (plan RA-16):
+  - a `ChatClient` (`OpenAIChat` or `ReplayChat`, made by `connect`), which tests replace
+    without patching `openai.OpenAI`;
+  - a `ResponseStore`;
+  - an `EnrichmentSession` with the run's policy. `max_failures=None` never switches off, so
+    `judge_pools` no longer defeats the breaker.
+
+  Recording skips and truncation stays with the session: it is the run's record of what
+  enrichment did, calls or not.
 
 **What the class does:**
 - builds the client;
@@ -594,6 +604,17 @@ too.
 ### AR-017: HTTP clients, retries and SQLite caches are written two or three times
 
 **Severity:** Medium · **Verified:** By inspection · **Where:** `evaluation/embed.py:103-168`, `evaluation/rerank.py:50-80`, `llm.py:129-135, 203`
+
+**Status:** Fixed on 2026-10-02 (plan RA-16).
+- Embeddings go through the OpenAI SDK; a live check matched the old path's vectors (to 1e-7)
+  and cache keys.
+- `evaluation/provider.py` holds DeepInfra's two APIs, the key's variable, `chat_config` for
+  judges and question writers, and `post_json` (with retries) for the reranker.
+- `SqliteCache` is the base of the response store, the embedding cache and the reranker's
+  `ScoreCache`, and all three now recover from a damaged file.
+- `Embedder` updates its counters under a lock.
+- `EmbeddingModel.endpoint` and `key_env` are gone.
+- Tests cover the embedder and the reranker with fakes.
 
 **Duplicated code:**
 - `Embedder._post` and `Reranker._post` have the same retry loop.

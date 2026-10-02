@@ -9,7 +9,6 @@ import time
 from collections import Counter
 from collections.abc import Sequence
 from pathlib import Path
-from types import SimpleNamespace
 
 from cameo_ingest.chunks import problems as chunk_problems
 from cameo_ingest.cli import main
@@ -101,34 +100,34 @@ def check_invariants(out: Path) -> None:
             assert not any(n.startswith("base_") for n in [*rec["attrs"], *(r for r, _ in rec["refs"])]), rec["id"]
 
 
-class FakeOpenAI:
-    """Stands in for openai.OpenAI: records requests and returns a fixed reply."""
+class FakeChat:
+    """Stands in for the endpoint's client (`llm.OpenAIChat`): records requests and returns a
+    fixed reply."""
 
+    replays = False
     fail = False  # set on the class to make every request raise
     interrupt_at: int | None = None  # raise KeyboardInterrupt on this enrichment request (Ctrl-C)
     delay = 0.0  # seconds per request
     inflight = max_inflight = 0
     _lock = threading.Lock()
 
-    def __init__(self, **kwargs):
-        self.kwargs = kwargs
+    def __init__(self, cfg=None):
+        self.cfg = cfg
         self.requests: list[tuple[str, list]] = []
-        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
 
-    def _create(self, model, messages, **kw):
+    def complete(self, model, messages, temperature):
         self.requests.append((model, messages))
         if self.interrupt_at is not None and len(self.enrichment()) == self.interrupt_at:
             raise KeyboardInterrupt
         if self.fail:
             raise RuntimeError("endpoint down")
-        with FakeOpenAI._lock:
-            FakeOpenAI.inflight += 1
-            FakeOpenAI.max_inflight = max(FakeOpenAI.max_inflight, FakeOpenAI.inflight)
+        with FakeChat._lock:
+            FakeChat.inflight += 1
+            FakeChat.max_inflight = max(FakeChat.max_inflight, FakeChat.inflight)
         time.sleep(self.delay)
-        with FakeOpenAI._lock:
-            FakeOpenAI.inflight -= 1
-        reply = "A block definition diagram showing Drone composed of Battery."
-        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=reply))])
+        with FakeChat._lock:
+            FakeChat.inflight -= 1
+        return "A block definition diagram showing Drone composed of Battery."
 
     def close(self):
         pass

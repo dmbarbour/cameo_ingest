@@ -17,7 +17,7 @@ from .config import IMAGE_PIXELS, MODULES
 from .emit import ProjectWriter
 from .enrich import Enricher
 from .layout import Layout, own_elements, parse_layout
-from .llm import LLM
+from .llm import EnrichmentSession
 from .model import ModelIndex
 from .progress import QUIET, Progress
 from .prompts import DIAGRAM_ITEMS, PART_CHARS
@@ -103,7 +103,7 @@ def _draw(path: Path, draw: Callable[[], bytes | None]) -> bool:
 SKETCH = "re-drawn from layout data, not a Cameo rendering"
 
 
-def ingest_project(content: ContentInfo, project: Project, root: Path, llm: LLM, render: bool = True,
+def ingest_project(content: ContentInfo, project: Project, root: Path, llm: EnrichmentSession, render: bool = True,
                    progress: Progress = QUIET, concurrency: int = 1, image_pixels: int = IMAGE_PIXELS,
                    modules: tuple[int, int, int] = MODULES) -> ProjectResult:
     """Parse, draw the sketches, ask the LLM (`enrich`), write."""

@@ -1,5 +1,6 @@
-"""Text embeddings from an OpenAI-style endpoint (DeepInfra). Vectors are cached in SQLite by model, endpoint, role and the text's
-sha256, so a text is embedded once whatever the experiment.
+"""Text embeddings from DeepInfra's OpenAI-compatible API, through the OpenAI SDK (AR-017R1).
+Vectors are cached in SQLite by model, endpoint, role and the text's sha256, so a text is
+embedded once whatever the experiment.
 
 DeepInfra cuts an input longer than the model's limit without notice, as a production stack
 left at its defaults would (MiniLM 256 tokens, MPNet 384, the others 512).
@@ -9,37 +10,26 @@ from __future__ import annotations
 
 import functools
 import hashlib
-import json
-import logging
-import os
-import sqlite3
 import threading
-import time
-import urllib.error
-import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
-from . import require
+from ..sqlite_cache import SqliteCache
+from . import provider, require
 
 np = require("numpy")
-log = logging.getLogger(__name__)
 
-DEEPINFRA = "https://api.deepinfra.com/v1/openai"
 Role = Literal["query", "passage"]
 
 
 @dataclass(frozen=True)
 class EmbeddingModel:
     name: str  # the model's Hugging Face id, as the endpoint knows it
-    endpoint: str  # base URL of the OpenAI-style API, without /embeddings
     limit: int  # tokens the model reads; the endpoint cuts longer inputs
     query_prefix: str = ""  # the e5 models are trained with "query: " and "passage: "
     passage_prefix: str = ""
     batch: int = 32  # texts per request
-    key_env: str | None = None  # environment variable holding the API key
     cut_here: bool = False  # the endpoint rejects inputs over the limit, rather than cutting them
 
     def prefixed(self, text: str, role: Role) -> str:
@@ -51,12 +41,11 @@ class EmbeddingModel:
 # bge-large-en-v1.5 stands in for ember-v1 (the same BERT-large shape, CLS pooling, 1,024
 # dimensions and 512 tokens, and nearly the same benchmark score), and is reported as a stand-in.
 MODELS = {
-    "e5-large": EmbeddingModel("intfloat/multilingual-e5-large", DEEPINFRA, 512, "query: ", "passage: ",
-                               key_env="OPENAI_API_KEY"),
-    "e5-large-bare": EmbeddingModel("intfloat/multilingual-e5-large", DEEPINFRA, 512, key_env="OPENAI_API_KEY"),
-    "bge-large": EmbeddingModel("BAAI/bge-large-en-v1.5", DEEPINFRA, 512, key_env="OPENAI_API_KEY", cut_here=True),
-    "mpnet": EmbeddingModel("sentence-transformers/all-mpnet-base-v2", DEEPINFRA, 384, key_env="OPENAI_API_KEY"),
-    "minilm": EmbeddingModel("sentence-transformers/all-MiniLM-L6-v2", DEEPINFRA, 256, key_env="OPENAI_API_KEY"),
+    "e5-large": EmbeddingModel("intfloat/multilingual-e5-large", 512, "query: ", "passage: "),
+    "e5-large-bare": EmbeddingModel("intfloat/multilingual-e5-large", 512),
+    "bge-large": EmbeddingModel("BAAI/bge-large-en-v1.5", 512, cut_here=True),
+    "mpnet": EmbeddingModel("sentence-transformers/all-mpnet-base-v2", 384),
+    "minilm": EmbeddingModel("sentence-transformers/all-MiniLM-L6-v2", 256),
 }
 
 
@@ -85,9 +74,13 @@ def count_tokens(model_name: str, texts: list[str]) -> list[int]:
     return out
 
 
-class EmbeddingCache:
-    """SQLite store of vectors (float32), keyed by model, endpoint, role and text hash."""
+class EmbeddingCache(SqliteCache):
+    """SQLite store of vectors (float32), keyed by model, endpoint, role and text hash. The
+    endpoint is the provider's API, so that vectors cached before the provider was configured in
+    one place still match."""
 
+    WAL = True
+    WHAT = "embedding cache"
     SCHEMA = """
         CREATE TABLE IF NOT EXISTS vectors (
             model TEXT NOT NULL,
@@ -99,13 +92,6 @@ class EmbeddingCache:
         );
     """
 
-    def __init__(self, path: Path):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        self._db = sqlite3.connect(path, check_same_thread=False)
-        self._db.execute("PRAGMA journal_mode=WAL")
-        self._db.executescript(self.SCHEMA)
-        self._lock = threading.Lock()
-
     def get(self, m: EmbeddingModel, role: Role, keys: list[str]) -> dict[str, np.ndarray]:
         out: dict[str, np.ndarray] = {}
         with self._lock:
@@ -113,14 +99,14 @@ class EmbeddingCache:
                 part = keys[i:i + 500]
                 rows = self._db.execute(
                     f"SELECT text_sha256, vector FROM vectors WHERE model = ? AND endpoint = ? AND role = ? "
-                    f"AND text_sha256 IN ({','.join('?' * len(part))})", (m.name, m.endpoint, role, *part))
+                    f"AND text_sha256 IN ({','.join('?' * len(part))})", (m.name, provider.OPENAI_API, role, *part))
                 out.update((k, np.frombuffer(v, dtype=np.float32)) for k, v in rows)
         return out
 
     def put(self, m: EmbeddingModel, role: Role, items: list[tuple[str, np.ndarray]]) -> None:
         with self._lock:
             self._db.executemany("INSERT OR REPLACE INTO vectors VALUES (?, ?, ?, ?, ?)",
-                                 [(m.name, m.endpoint, role, k, v.astype(np.float32).tobytes()) for k, v in items])
+                                 [(m.name, provider.OPENAI_API, role, k, v.astype(np.float32).tobytes()) for k, v in items])
             self._db.commit()
 
 
@@ -132,39 +118,22 @@ class Embedder:
     """Embeds texts with one model, through the cache; vectors come back normalized, so that
     a dot product is the cosine similarity."""
 
-    def __init__(self, model: EmbeddingModel, cache: EmbeddingCache, concurrency: int = 4, retries: int = 4):
+    def __init__(self, model: EmbeddingModel, cache: EmbeddingCache, concurrency: int = 4, retries: int = 4,
+                 client: Any = None):
         self.model = model
         self.cache = cache
         self.concurrency = concurrency
-        self.retries = retries
+        self.client = client or provider.openai_client(retries)  # the SDK retries busy and failed requests
         self.calls = 0
         self.tokens = 0
+        self._lock = threading.Lock()  # the counters, updated from the request threads
 
     def _post(self, inputs: list[str]) -> list[list[float]]:
-        m = self.model
-        headers = {"Content-Type": "application/json"}
-        if m.key_env:
-            headers["Authorization"] = f"Bearer {os.environ[m.key_env]}"
-        body = json.dumps({"model": m.name, "input": inputs}).encode()
-        for attempt in range(self.retries + 1):
-            try:
-                req = urllib.request.Request(f"{m.endpoint}/embeddings", data=body, headers=headers)
-                r = json.load(urllib.request.urlopen(req, timeout=120))
-                self.calls += 1
-                self.tokens += (r.get("usage") or {}).get("prompt_tokens", 0)
-                return [d["embedding"] for d in sorted(r["data"], key=lambda d: d["index"])]
-            except urllib.error.HTTPError as e:
-                detail = e.read()[:300].decode("utf-8", "replace")
-                if e.code != 429 and e.code < 500 or attempt == self.retries:  # retrying won't fix a bad request
-                    raise RuntimeError(f"{m.name}: HTTP {e.code}: {detail}") from e
-                log.debug("embedding request failed (HTTP %s); retrying", e.code)
-                time.sleep(2 ** attempt)
-            except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
-                if attempt == self.retries:
-                    raise
-                log.debug("embedding request failed (%s); retrying", e)
-                time.sleep(2 ** attempt)
-        raise AssertionError("unreachable")
+        r = self.client.embeddings.create(model=self.model.name, input=inputs, encoding_format="float")
+        with self._lock:
+            self.calls += 1
+            self.tokens += r.usage.prompt_tokens if r.usage else 0
+        return [d.embedding for d in sorted(r.data, key=lambda d: d.index)]
 
     def embed(self, texts: list[str], role: Role = "passage") -> np.ndarray:
         """One row per text, normalized to length 1."""

@@ -20,7 +20,7 @@ from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from ..llm import LLM
+from ..llm import EnrichmentSession
 from ..plain import plain
 from ..prompts import Slot, Template
 from ..text import DOORS_ID
@@ -154,7 +154,8 @@ def sample_chunks(tree: Path, per_project: int = 6, seed: int = 1, skip_prefix: 
     return out
 
 
-def natural(tree: Path, llm: LLM, per_project: int = 6, seed: int = 1, concurrency: int = 6) -> list[dict]:
+def natural(tree: Path, llm: EnrichmentSession, per_project: int = 6, seed: int = 1,
+            concurrency: int = 6) -> list[dict]:
     """One question per sampled chunk, written by `llm`'s text model. A question is kept only if
     its quote is found in the chunk: the chunk is then its known answer (`answer_chunks`)."""
     chunks = sample_chunks(tree, per_project, seed)

@@ -8,6 +8,11 @@ Configuration (environment; the CLI flags of the same meaning take precedence):
     CAMEO_INGEST_LLM_RETRIES          retries per request (default 2)
     CAMEO_INGEST_LLM_MAX_CALLS        optional cap on requests per run (default: none)
 
+Three pieces (AR-016R1): a `ChatClient` answers a request, from an endpoint (`OpenAIChat`) or
+from a recorded store (`ReplayChat`); a `ResponseStore` keeps answers and what each request
+asked; an `EnrichmentSession` holds a run's policy (the store, a budget, a breaker, the outcomes)
+and builds requests from templates (`ask`).
+
 Responses are kept in an SQLite store (`llm.sqlite`), keyed by endpoint, model and a hash
 of the request, so re-runs are cheap and reproducible. The same file serves as a replay
 fixture: in replay mode, requests are answered only from a recorded store, matching on
@@ -29,10 +34,11 @@ import time
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from .prompts import Template
 from .provenance import Derivation, sha256_bytes, sha256_text, utc_now
+from .sqlite_cache import SqliteCache
 
 log = logging.getLogger(__name__)
 
@@ -86,10 +92,11 @@ def request_key(messages: list[dict]) -> str:
     return sha256_text(json.dumps(messages, sort_keys=True, ensure_ascii=False))
 
 
-class LLMStore:
+class ResponseStore(SqliteCache):
     """SQLite store of LLM responses. It holds request hashes, never prompt text, so a
     store recorded on third-party models can be committed as a test fixture."""
 
+    WHAT = "LLM store"
     SCHEMA = """
         CREATE TABLE IF NOT EXISTS responses (
             endpoint TEXT NOT NULL,        -- OPENAI_BASE_URL, or '' for the client default
@@ -116,33 +123,6 @@ class LLMStore:
             PRIMARY KEY (model, request_sha256)
         );
     """
-
-    def __init__(self, path: Path, readonly: bool = False):
-        self.path = path
-        self._lock = threading.Lock()  # one connection, shared by the request threads
-        if readonly:
-            if not path.is_file():
-                raise FileNotFoundError(f"LLM replay store {path} not found")
-            self._db = sqlite3.connect(f"file:{path}?mode=ro", uri=True, check_same_thread=False)
-            return
-        path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            self._db = self._open(path)
-        except sqlite3.DatabaseError as e:  # not a database, or damaged (BASE-005)
-            aside = path.with_name(f"{path.name}.corrupt-{int(time.time())}")
-            path.replace(aside)
-            log.warning("LLM store %s is unreadable (%s); moved it to %s and started a new one", path, e, aside)
-            self._db = self._open(path)
-
-    @classmethod
-    def _open(cls, path: Path) -> sqlite3.Connection:
-        db = sqlite3.connect(path, timeout=30, check_same_thread=False)
-        try:
-            db.executescript(cls.SCHEMA)
-        except sqlite3.DatabaseError:
-            db.close()
-            raise
-        return db
 
     def get(self, endpoint: str | None, model: str, key: str) -> str | None:
         """The recorded answer; with endpoint None, from any endpoint (replay)."""
@@ -176,11 +156,72 @@ class LLMStore:
                              (endpoint, model, key, text, utc_now()))
 
 
-class LLM:
-    def __init__(self, cfg: LLMConfig, cache_dir: Path, replay: Path | None = None,
-                 max_failures: int = MAX_CONSECUTIVE_FAILURES):
+class ChatClient(Protocol):
+    """Answers one chat request: the text of the reply, stripped."""
+
+    replays: bool  # answers are a recording's: the session's store, budget and breaker don't apply
+
+    def complete(self, model: str, messages: list[dict], temperature: float) -> str: ...
+
+    def close(self) -> None: ...
+
+
+class OpenAIChat:
+    """Any OpenAI-compatible endpoint, through the OpenAI SDK, which retries."""
+
+    replays = False
+
+    def __init__(self, cfg: LLMConfig):
+        from openai import OpenAI
+
+        # The client reads OPENAI_API_KEY itself; local servers often need no key.
+        self._client = OpenAI(base_url=cfg.base_url, api_key=os.environ.get("OPENAI_API_KEY") or "unused",
+                              timeout=cfg.timeout, max_retries=cfg.retries)
+
+    def complete(self, model: str, messages: list[dict], temperature: float) -> str:
+        resp = self._client.chat.completions.create(model=model, messages=messages, temperature=temperature)
+        return (resp.choices[0].message.content or "").strip()
+
+    def close(self) -> None:
+        """Close the connection pool, so that requests still in flight fail at once."""
+        self._client.close()
+
+
+class ReplayChat:
+    """Answers only from a recorded store, matching on model and request hash."""
+
+    replays = True
+
+    def __init__(self, path: Path):
+        self.store = ResponseStore(path, readonly=True)
+
+    def complete(self, model: str, messages: list[dict], temperature: float) -> str:
+        text = self.store.get(None, model, request_key(messages))
+        if text is None:
+            raise ReplayMiss(f"no recorded {model} response")
+        return text
+
+    def close(self) -> None:
+        pass
+
+
+def connect(cfg: LLMConfig, replay: Path | None = None) -> ChatClient | None:
+    """A run's client: a recorded store's with `replay`, else the endpoint's; None when no
+    model is configured."""
+    if replay is not None:
+        return ReplayChat(replay)
+    return OpenAIChat(cfg) if cfg.enabled else None
+
+
+class EnrichmentSession:
+    """A run's requests: answers kept in the store, a budget of calls, a breaker that switches
+    enrichment off after consecutive failures, and a record of the outcomes."""
+
+    def __init__(self, cfg: LLMConfig, cache_dir: Path, client: ChatClient | None,
+                 max_failures: int | None = MAX_CONSECUTIVE_FAILURES):
         self.cfg = cfg
-        self.max_failures = max_failures  # consecutive failures before switching off (an evaluation may wait out more)
+        self.client = client
+        self.max_failures = max_failures  # consecutive failures before switching off; None never does
         self.cache_dir = cache_dir
         self.calls = 0  # requests sent to the endpoint
         self.outcomes: Counter[str] = Counter()
@@ -189,38 +230,25 @@ class LLM:
         self._failures = 0  # consecutive
         self._budget_warned = False
         self._lock = threading.Lock()
-        self._store: LLMStore | None = None
-        self._replay = LLMStore(replay, readonly=True) if replay else None
-        self._client = None
-        if cfg.enabled and replay is None:
-            from openai import OpenAI
-
-            # The client reads OPENAI_API_KEY itself; local servers often need no key.
-            self._client = OpenAI(
-                base_url=cfg.base_url,
-                api_key=os.environ.get("OPENAI_API_KEY") or "unused",
-                timeout=cfg.timeout,
-                max_retries=cfg.retries,
-            )
+        self._store: ResponseStore | None = None
 
     def close(self) -> None:
-        """Close the connection pool, so that requests still in flight fail at once
-        (used when a run is interrupted)."""
-        if self._client is not None:
-            self._client.close()
+        """Stop requests in flight (used when a run is interrupted)."""
+        if self.client is not None:
+            self.client.close()
 
     @property
-    def store(self) -> LLMStore:
+    def store(self) -> ResponseStore:
         with self._lock:
             if self._store is None:  # opened on first use, so runs without an LLM create nothing
-                self._store = LLMStore(self.cache_dir / STORE_FILE)
+                self._store = ResponseStore(self.cache_dir / STORE_FILE)
         return self._store
 
     def preflight(self) -> str | None:
         """Send one tiny request per configured model, bypassing the store and the budget,
         so that a wrong endpoint, key or model name stops the run before any parsing
         (BASE-020). Returns an error message, or None when every model answered."""
-        if self._replay is not None:
+        if self.client is None or self.client.replays:
             return None
         checks = []
         if self.cfg.vision_model:
@@ -235,7 +263,7 @@ class LLM:
             checks.append((self.cfg.text_model, [{"role": "user", "content": PREFLIGHT_PROMPT}]))
         for model, messages in checks:
             try:
-                self._client.chat.completions.create(model=model, messages=messages, temperature=0)
+                self.client.complete(model, messages, temperature=0)
             except Exception as e:  # anything: the point is to report it before parsing
                 return f"{model}: {type(e).__name__}: {e}"
         return None
@@ -264,10 +292,12 @@ class LLM:
     def _complete(self, model: str, messages: list[dict], item: str) -> tuple[str, str] | None:
         """(text, request hash), or None when the item gets no generated text."""
         key = request_key(messages)
-        if self._replay is not None:
-            text = self._replay.get(None, model, key)
-            if text is None:
-                raise ReplayMiss(f"no recorded {model} response for {item} (request {key[:16]})")
+        assert self.client is not None, "a session with a model needs a client"
+        if self.client.replays:
+            try:
+                text = self.client.complete(model, messages, temperature=0.1)
+            except ReplayMiss as e:
+                raise ReplayMiss(f"{e} for {item} (request {key[:16]})") from None
             with self._lock:
                 self.outcomes["replayed"] += 1
             return text, key
@@ -295,14 +325,13 @@ class LLM:
             self.calls += 1
         started = time.monotonic()
         try:
-            resp = self._client.chat.completions.create(model=model, messages=messages, temperature=0.1)
-            text = (resp.choices[0].message.content or "").strip()
+            text = self.client.complete(model, messages, temperature=0.1)
         except Exception as e:  # network, auth, unsupported modality...
             log.warning("LLM request failed (%s, %s): %s", model, item, e)
             with self._lock:
                 self._skip(item, "failed", f"{type(e).__name__}: {e}")
                 self._failures += 1
-                if self._failures >= self.max_failures and not self.disabled:
+                if self.max_failures is not None and self._failures >= self.max_failures and not self.disabled:
                     self.disabled = True
                     log.error("LLM enrichment switched off for the rest of this run after %d consecutive "
                               "failures; the last was: %s", self._failures, e)

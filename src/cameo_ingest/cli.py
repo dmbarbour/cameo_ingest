@@ -24,7 +24,7 @@ from . import __version__
 from . import runner as tree
 from .archive import ZIP_MAGIC, sniff_xmi
 from .config import ProjectOptions, TreeSettings, parse_modules
-from .llm import LLM, LLMConfig
+from .llm import EnrichmentSession, LLMConfig, connect
 from .progress import Progress
 from .runner import Runner
 from .state import State, StateError
@@ -318,8 +318,8 @@ def run_tree(args: argparse.Namespace, argv: list[str]) -> int:
     if args.llm_replay is not None and not (cfg.enabled and args.llm_replay.is_file()):
         print(f"error: --llm-replay needs a model and an existing store file ({args.llm_replay})", file=sys.stderr)
         return 2
-    llm = LLM(cfg, Path(settings.cache_dir) if settings.cache_dir else out / ".cache",
-              replay=args.llm_replay)
+    llm = EnrichmentSession(cfg, Path(settings.cache_dir) if settings.cache_dir else out / ".cache",
+                            connect(cfg, args.llm_replay))
     if cfg.enabled and not args.no_preflight:
         log.info("checking LLM endpoint %s", cfg.base_url or "(OpenAI default)")
         err = llm.preflight()

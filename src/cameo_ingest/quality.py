@@ -25,7 +25,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from .llm import STORE_FILE, LLMStore
+from .llm import STORE_FILE, ResponseStore
 from .prompts import TEMPLATES
 from .provenance import TOOL, Derivation, generated_by, utc_now
 
@@ -72,7 +72,7 @@ def _reference(out: Path, rel: str, model: str, response: str) -> str:
 def collect_items(out: Path, store_path: Path) -> tuple[list[dict[str, Any]], int]:
     """Every generated chunk of the tree that the request log can explain, and how many it
     could not (answered before the log existed: run again to log them)."""
-    store = LLMStore(store_path, readonly=True)
+    store = ResponseStore(store_path, readonly=True)
     items, unexplained = [], 0
     answers: dict[str, list[dict[str, Any]]] = {}  # an answer's pieces, by its annotation id (AR-012R2)
     for line in (out / "chunks.jsonl").open(encoding="utf-8"):

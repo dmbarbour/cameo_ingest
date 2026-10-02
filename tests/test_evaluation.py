@@ -147,3 +147,56 @@ def test_rag_units(fiction_tree):
         c = chunks[u.id]
         assert (u.kind, u.element_id) == (c["metadata"]["kind"], c["metadata"].get("element_id"))
         assert u.text.startswith(c["text"].rstrip()) and "\n\nSource: " in u.text
+
+
+class FakeEmbeddings:
+    """Stands in for the SDK's client: a vector per text (its length, and 1), returned out of order."""
+
+    def __init__(self):
+        self.batches: list[list[str]] = []
+        self.embeddings = self
+
+    def create(self, model, input, encoding_format):
+        from types import SimpleNamespace
+
+        self.batches.append(list(input))
+        data = [SimpleNamespace(index=i, embedding=[float(len(t)), 1.0]) for i, t in enumerate(input)]
+        return SimpleNamespace(data=data[::-1], usage=SimpleNamespace(prompt_tokens=len(input)))
+
+
+def test_embedder_batches_counts_and_caches(tmp_path):
+    """Texts are sent in the model's batches, with its prefix, each once; the vectors come back in
+    order and normalized, and are cached for the next experiment (AR-017, AR-022R4)."""
+    np = pytest.importorskip("numpy")
+    from cameo_ingest.evaluation.embed import MODELS, Embedder, EmbeddingCache
+
+    model, cache, client = MODELS["e5-large"], EmbeddingCache(tmp_path / "e.sqlite"), FakeEmbeddings()
+    texts = [f"text {'x' * i}" for i in range(40)] + ["text "]  # the last repeats the first
+    e = Embedder(model, cache, concurrency=4, client=client)
+    out = e.embed(texts, "passage")
+    assert sorted(len(b) for b in client.batches) == [8, 32]  # 40 different texts, in batches of 32
+    assert all(t.startswith("passage: ") for b in client.batches for t in b)
+    assert (e.calls, e.tokens) == (2, 40)
+    expected = np.array([[len("passage: " + t), 1.0] for t in texts])
+    assert np.allclose(out, expected / np.linalg.norm(expected, axis=1, keepdims=True))
+    again = Embedder(model, EmbeddingCache(tmp_path / "e.sqlite"), client=FakeEmbeddings())
+    assert np.allclose(again.embed(texts, "passage"), out) and again.calls == 0  # all from the cache
+    assert again.embed(["text "], "query").shape == (1, 2) and again.calls == 1  # a query is another text
+
+
+def test_reranker_scores_through_its_cache(tmp_path):
+    from cameo_ingest.evaluation.provider import INFERENCE_API
+    from cameo_ingest.evaluation.rerank import Reranker
+
+    posts = []
+
+    def post(url, body, retries):
+        posts.append((url, body))
+        return {"scores": [float(len(p)) for p in body["documents"]], "input_tokens": 7}
+
+    r = Reranker("qwen3-0.6b", tmp_path / "r.sqlite", batch=2, post=post)
+    texts = ["a", "bbb", "cc", "dddd", "e"]
+    assert r.rerank("q", [0, 1, 2, 3, 4], texts, depth=4) == [3, 1, 2, 0, 4]  # the top 4, longest first
+    assert posts[0][0] == f"{INFERENCE_API}/Qwen/Qwen3-Reranker-0.6B" and (r.calls, r.tokens) == (2, 14)
+    again = Reranker("qwen3-0.6b", tmp_path / "r.sqlite", post=post)
+    assert again.scores([("q", "bbb"), ("q", "e")]) == [3.0, 1.0] and again.calls == 1  # "e" was not scored

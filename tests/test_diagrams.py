@@ -162,7 +162,7 @@ def large_layout() -> str:
     return LAYOUT.replace("</mdOwnedViews>", "\n".join(views) + "\n</mdOwnedViews>")
 
 
-def test_large_diagram_modules(tmp_path, fake_openai):
+def test_large_diagram_modules(tmp_path, fake_chat):
     """A large diagram is split into modules, each drawn, described and chunked with its place
     in the diagram; the diagram is then described as a whole from them (plan DV)."""
     import sqlite3

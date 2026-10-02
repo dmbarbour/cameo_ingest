@@ -3,7 +3,7 @@
 import os
 
 import pytest
-from helpers import LLM_ENV, FakeOpenAI
+from helpers import LLM_ENV, FakeChat
 
 
 @pytest.fixture(autouse=True)
@@ -15,11 +15,12 @@ def isolated_env(request, monkeypatch):
 
 
 @pytest.fixture
-def fake_openai(monkeypatch) -> list[FakeOpenAI]:
-    import openai
+def fake_chat(monkeypatch) -> list[FakeChat]:
+    """The endpoint's client replaced by fakes, each one made kept in the list (AR-016R1)."""
+    from cameo_ingest import llm
 
-    made: list[FakeOpenAI] = []
-    monkeypatch.setattr(openai, "OpenAI", lambda **kw: made.append(FakeOpenAI(**kw)) or made[-1])
+    made: list[FakeChat] = []
+    monkeypatch.setattr(llm, "OpenAIChat", lambda cfg: made.append(FakeChat(cfg)) or made[-1])
     return made
 
 

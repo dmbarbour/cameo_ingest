@@ -24,7 +24,8 @@ from pathlib import Path
 from cameo_ingest.cli import load_env
 from cameo_ingest.evaluation.harness import chunk_units, windowed
 from cameo_ingest.evaluation.judge import judge, kappa
-from cameo_ingest.llm import LLM, LLMConfig
+from cameo_ingest.evaluation.provider import chat_config
+from cameo_ingest.llm import EnrichmentSession, connect
 
 
 def main() -> int:
@@ -79,7 +80,8 @@ def main() -> int:
 
     for model in args.judges:
         # Patient: a busy endpoint (HTTP 429) is waited out with retries, never a reason to stop.
-        llm = LLM(LLMConfig.from_env(model, None, timeout=180, retries=8), args.cache, max_failures=10**9)
+        cfg = chat_config(model, timeout=180, retries=8)
+        llm = EnrichmentSession(cfg, args.cache, connect(cfg), max_failures=None)
         done = [p for p in todo if grade_of.get((model, p["set"], p["qid"], p["unit"])) is None]
         redo = {(model, p["set"], p["qid"], p["unit"]) for p in done}
         old = [j for j in old if (j["judge"], j["set"], j["qid"], j["unit"]) not in redo]  # failed before

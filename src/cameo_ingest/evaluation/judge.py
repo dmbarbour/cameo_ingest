@@ -11,7 +11,7 @@ import json
 import re
 from concurrent.futures import ThreadPoolExecutor
 
-from ..llm import LLM
+from ..llm import EnrichmentSession
 from ..plain import plain
 from ..prompts import Slot, Template
 
@@ -41,7 +41,7 @@ JUDGE = Template(
 _GRADE = re.compile(r'"grade"\s*:\s*([012])')
 
 
-def judge(llm: LLM, pairs: list[dict], concurrency: int = 16) -> list[dict]:
+def judge(llm: EnrichmentSession, pairs: list[dict], concurrency: int = 16) -> list[dict]:
     """Grade each pair ({"question", "text", ...}); the result adds "grade" (None if the reply
     can't be read) and "reason"."""
 
