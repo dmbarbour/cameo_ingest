@@ -13,6 +13,11 @@
   - **The per-line references** to each place's chunk cost more than they give, so they are off
     by default (`--line-refs`).
 
+> **Correction pending (review AR-006):** the within-model questions' evidence groups are bare
+> element names, which many chunks hold, so the within-model coverage below is inflated and the
+> thread results can't be relied on until they are measured again. The across-model results
+> stand.
+
 ## Setup
 
 - **The projects:** the six fictional projects (`out/fic3`):
