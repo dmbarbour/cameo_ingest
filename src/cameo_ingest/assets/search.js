@@ -106,7 +106,8 @@ const Engine = (() => {
       const d = this.items.length;
       this.items.push(item);
       this.title.add(d, [item.id, item.n].filter(Boolean).join(" "));
-      this.body.add(d, [item.w, item.x, item.c, item.of && item.of[1]].filter(Boolean).join("\n"));
+      // The chunks' text holds the item's own text, so that isn't indexed twice.
+      this.body.add(d, [item.w, item.c || item.x, item.of && item.of[1]].filter(Boolean).join("\n"));
       return d;
     }
     finish() {
@@ -188,11 +189,21 @@ const Engine = (() => {
   }
 
   // A block's base64 of gzipped text back into its text, and a data block into its object.
+  // The browser decodes a data: URL's base64 natively, much faster than atob and a loop; atob
+  // remains for a browser that won't fetch one.
+  async function bytesOf(base64) {
+    try {
+      return (await fetch("data:application/octet-stream;base64," + base64.trim())).body;
+    } catch (e) {
+      const bin = atob(base64.trim());
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return new Blob([bytes]).stream();
+    }
+  }
+
   async function decodeText(base64) {
-    const bin = atob(base64.trim());
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+    const stream = (await bytesOf(base64)).pipeThrough(new DecompressionStream("gzip"));
     return new Response(stream).text();
   }
 
