@@ -60,6 +60,15 @@ the answer store) answered 4,976 requests from the store.
   1,000–1,150 requests, about $1 at the rate of plan RA's CP4 run. That is under the halting
   threshold.
 
+**The live run** (`out/ul/llm-live`, into the answer store) made 729 new requests, about $0.60,
+fewer than estimated, since many of the changed asks were repeats. None failed, and 5,286
+answers came from the store.
+- **By template:** 240 module summaries, 186 diagram descriptions, 86 package summaries, 78
+  package syntheses, 64 module descriptions, 58 instance summaries, 17 diagram syntheses.
+- **The reading:** 271 package summaries changed. Those read side by side say the same, with
+  real type names where the old had none ("a base_Class property of type Class").
+- **Fresh exports** for the trial are in `out/kx/v090/`.
+
 ## When to stop and ask
 
 - **The cost:** the changed requests would cost more than a few dollars at the next live run.
