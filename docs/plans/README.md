@@ -19,7 +19,7 @@ here.
 | [Versions of a model, and removing projects](project-versions-2026-10-03.md) | Done (2026-10-03, 0.10.0): `scan`, `projects`, `groups`, `remove`, `restore`; on the samples it finds the TMT pair and nothing else | The maintainer's sources: 282 Cameo files, many of them versions of one model; list projects, group them by shared element ids, remove what isn't wanted |
 | [Calibrating sketches to the vision model](vision-calibration-2026-10-03.md) | Done 2026-10-03 (0.12.0: gemma-4's figures as the uncalibrated defaults) | The tentative plan for vision calibration by eye chart: sketch constants found by hand for gemma-4 on DeepInfra |
 | [Calibrating to the configured vision model, and validating on real sketches](vision-autocalibration-2026-10-03.md) | Done 2026-10-03 (0.13.0) | Calibration automatic for whichever vision model is configured, with fallbacks rather than gemma-4's values as defaults, and expected quality measured on the tree's own sketches |
-| [Sketches that read as drawn, and a release check with the LLM](sketch-ambiguities-2026-10-03.md) | Proposed 2026-10-03 | Plan VA's follow-ups: generalization trees, frames over shapes, label shapes and association-class lines that validation found ambiguous; then one LLM run of the samples, with retrieval, before the real corpus |
+| [Sketches that read as drawn, and a release check with the LLM](sketch-ambiguities-2026-10-03.md) | Approved 2026-10-03 | Plan VA's follow-ups: generalization trees, frames over shapes, label shapes and association-class lines that validation found ambiguous; then one LLM run of the samples, with retrieval, before the real corpus |
 
 ## Deferred indefinitely
 
@@ -29,8 +29,8 @@ here.
 
 ## Tentative
 
-These plans are not yet written. The last comes from the maintainer; the others come from the
-roadmap in the top-level `README.md`.
+These plans are not yet written. The last two come from the maintainer; the others come from
+the roadmap in the top-level `README.md`.
 
 - **Recompute tables and matrices.** Cameo computes table and matrix rows when it displays
   them, and the rows are not stored in the file. Rebuild the common cases (requirement
@@ -46,3 +46,16 @@ roadmap in the top-level `README.md`.
 - **Keyword search from the command line.** A keyword index of the whole tree, built with the
   output and searchable from the command line. This is for when Python can run where the corpus
   is read. The export for office tools is plan KX (`keyword-export-2026-10-02.md`).
+- **Type hierarchies for search** (the maintainer, 2026-10-03: "seems like it might be useful
+  if it's something Cameo provides/assumes, esp. for search").
+  - **Today:** an element's text gives one level only: a parent lists its direct
+    specializations, and a child what it specializes.
+  - **The plan:** a chunk per hierarchy, every kind at every level, indented, as plan RF's
+    threads do for requirements. Large hierarchies would be cut by subtree. Later, through the
+    cross index, the kinds that specialize a shared library type in several models.
+  - **The samples:** mostly one level. TMT has 24 hierarchies, 6 of two levels or more, up to 4
+    deep, the largest of 53 kinds. Profiles and metamodels are large: NIST_M-SysML has one of
+    1,861 kinds, 9 deep. No model has a generalization set.
+  - **Cameo's role:** it draws a hierarchy as a tree, but the hierarchy is the model's
+    generalizations. Plan SK draws the trees in sketches.
+

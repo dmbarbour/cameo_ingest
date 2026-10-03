@@ -1,6 +1,7 @@
 # Plan: sketches that read as drawn, and a release check with the LLM, 2026-10-03
 
-- **Status:** Proposed on 2026-10-03.
+- **Status:** Approved on 2026-10-03 ("Go with 1 then 2"; on the cost of the release check,
+  "NP"). Type hierarchies as text, for search, are a tentative plan of their own (plan index).
 - **Step prefix:** `SK`, so steps are `SK-01`, `SK-02` and so on
 - **Addresses:**
   - The follow-ups of plan VA's live check
