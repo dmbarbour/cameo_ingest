@@ -201,11 +201,14 @@ cards made for it. Validation then measures what it reads on the tree's own diag
 - **The scores,** against the diagram's own names and connections:
   - names read, word by word, as drawn;
   - connections found, either way round;
-  - directions right.
+  - directions right;
+  - connections invented: listed by the model, but not in the diagram (nesting read as a
+    connection, say).
 
 The run prints a line before building, for example "expected quality with acme/eye-vl: on 12
 of the tree's sketches, 96% of names read, 91% of connections found, 83% of directions right".
-Each score under 90% gets a warning naming what will suffer, and the run carries on. A
+Each score under 90%, and invented connections over 10%, get a warning naming what will
+suffer, and the run carries on. A
 description gets every name and connection as text too, so it should do better than what the
 model reads from the image alone. `validation.md` beside the calibration's report has the
 details, sketch by sketch, and `status` repeats the line.
@@ -264,7 +267,8 @@ out/
                          and, for dependencies, how they read ("is derived from", "satisfies"),
                          and the table/matrix configuration
     diagrams/<name>.png  a sketch redrawn from the layout data to the model's pixel budget: shapes
-                         tagged with their legend numbers, arrows at the target; not a Cameo
+                         tagged with their legend numbers, arrows at the target, generalizations
+                         drawn as Cameo's trees with one head at the parent; not a Cameo
                          rendering. For a large diagram, its modules are tinted and outlined
     diagrams/<name>.modules/M<k>.png
                          a large diagram's module k, cropped and drawn to the pixel budget,

@@ -334,6 +334,26 @@ def test_validation_warns_of_what_will_suffer(tmp_path, monkeypatch, capsys):
     assert "of names read; their descriptions rely on the legend's text for names" in capsys.readouterr().err
 
 
+def test_validation_counts_invented_connections(tmp_path, monkeypatch, capsys):
+    """A model that adds a connection the diagram doesn't have, on every sketch: each counted as
+    invented, against all it listed, with a warning when they pass a tenth (plan SK)."""
+    out = fiction_scanned(tmp_path)
+
+    def inventing(truth):
+        answer = read_sketch(truth)
+        answer["connections"].append({"from": 998, "to": 999})
+        return answer
+
+    reader(monkeypatch, lambda card, drawn: perfect(drawn), sketches=inventing)
+    assert calibrate(out, suite="standard") == 0
+    summary = json.loads(record(out)["validation"])
+    sketches = json.loads((next((out / "calibration").iterdir()) / "validation.json").read_text())["sketches"]
+    links = sum(r["links"] for r in sketches)
+    assert summary["overall"]["invented"] == len(sketches) / (links + len(sketches))
+    assert summary["overall"]["found"] == 1.0
+    assert "of the connections the model listed aren't there" in capsys.readouterr().err
+
+
 def test_a_schema_2_tree_migrates(tmp_path):
     st = State(tmp_path)
     st.db.execute("DROP TABLE calibrations")
@@ -410,3 +430,45 @@ def test_sketch_settings_are_options():
     assert default.as_dict()["sketch"] == [13, 10.0, 1] and default.hash() == ProjectOptions().hash()
     calibrated = ProjectOptions.of(TreeSettings(sketch_arrow_px=14), None, None, None)
     assert calibrated.as_dict()["sketch"] == [13, 14.0, 1] and calibrated.hash() != default.hash()
+
+
+def test_the_comparison_script(tmp_path):
+    """scripts/validate_sketches.py on the fiction: a sample by key, drawn and asked, and scored
+    (plan SK-04). A first pass learns each sketch's truth; a model that knows it then reads all."""
+    import importlib.util
+    from pathlib import Path
+
+    from cameo_ingest.llm import EnrichmentSession, LLMConfig
+
+    spec = importlib.util.spec_from_file_location("validate_sketches",
+                                                  Path(__file__).parent.parent / "scripts" / "validate_sketches.py")
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
+    out = fiction_scanned(tmp_path / "f")
+    sizes = TreeSettings()
+    keys = script.choose(out, per_stratum=2, targeted=2, max_projects=8, sizes=sizes)
+    assert {k["stratum"] for k in keys} <= {"small", "medium", "modules", "targeted"} and len(keys) >= 4
+    truths: dict[str, dict] = {}
+
+    class Knowing:
+        replays = False
+
+        def complete(self, model, messages, temperature):
+            image = next(p for p in messages[0]["content"] if p["type"] == "image_url")
+            sha = hashlib.sha256(base64.b64decode(image["image_url"]["url"].split(",", 1)[1])).hexdigest()
+            return json.dumps(read_sketch(truths[sha])) if sha in truths else "{}"
+
+        def close(self):
+            pass
+
+    cfg = LLMConfig(None, MODEL, None)
+    rows = script.ask(out, keys, EnrichmentSession(cfg, tmp_path / "c1", Knowing()), sizes, True, 2)
+    truths.update({r["png_sha256"]: r["truth"] for r in rows})
+    again = script.ask(out, keys, EnrichmentSession(cfg, tmp_path / "c2", Knowing()), sizes, True, 2)
+    for name, rs in (("first", rows), ("second", again)):
+        with (tmp_path / f"{name}.jsonl").open("w") as f:
+            f.writelines(json.dumps(r) + "\n" for r in rs)
+    table = script.score([tmp_path / "first.jsonl", tmp_path / "second.jsonl"])
+    assert "| first | all |" in table and "| second | all | " in table
+    second_all = next(line for line in table.splitlines() if line.startswith("| second | all |"))
+    assert "| 100% | 100% |" in second_all

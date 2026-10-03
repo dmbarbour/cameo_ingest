@@ -64,6 +64,9 @@ class Sketch:
     stratum: str  # small, medium, modules
     png: bytes
     truth: dict[str, Any]  # {"shapes": {number: name as drawn}, "links": [[from, to, directed]]}
+    content: str = ""  # the project's sha256
+    dia_id: str = ""
+    module: int | None = None
 
 
 def strata(large: int) -> dict[str, str]:
@@ -92,8 +95,9 @@ def _truth(g: DiagramGraph, shapes: dict[int, str], ends: set[int]) -> dict[str,
     return {"shapes": {str(n): t for n, t in sorted(shapes.items())}, "links": links}
 
 
-def sample(state: State, settings: TreeSettings, progress: Progress = QUIET) -> list[Sketch]:
-    """Up to PER_STRATUM sketches of each stratum, from up to MAX_PROJECTS of the tree's projects,
+def sample(state: State, settings: TreeSettings, progress: Progress = QUIET, per_stratum: int = PER_STRATUM,
+           max_projects: int = MAX_PROJECTS) -> list[Sketch]:
+    """Up to `per_stratum` sketches of each stratum, from up to `max_projects` of the tree's projects,
     drawn at `settings`' sizes. Within a stratum, the commonest diagram types come first, and
     within a type, the projects take turns."""
     pixels = settings.image_pixels or IMAGE_PIXELS
@@ -106,7 +110,7 @@ def sample(state: State, settings: TreeSettings, progress: Progress = QUIET) -> 
     kinds: dict[str, Counter[str]] = defaultdict(Counter)
     parsed = 0
     for r in order:
-        if parsed >= MAX_PROJECTS:
+        if parsed >= max_projects:
             break
         project = _project(state, r["sha256"])
         if project is None:
@@ -132,7 +136,7 @@ def sample(state: State, settings: TreeSettings, progress: Progress = QUIET) -> 
                     kinds["modules"][kind] += 1
         for stratum, items in found.items():  # drawn now, while the project is parsed: a few per stratum
             items.sort(key=lambda t: hashlib.sha256(f"{r['sha256']}:{t[1]}:{t[2]}".encode()).hexdigest())
-            for kind, dia_id, num in items[:PER_STRATUM * 2]:
+            for kind, dia_id, num in items[:per_stratum * 2]:
                 g = view.graph(dia_id)
                 title = f"{kind}: {ix.qualified_name(dia_id)}"
                 drawn: dict[int, str] = {}
@@ -148,7 +152,7 @@ def sample(state: State, settings: TreeSettings, progress: Progress = QUIET) -> 
                     continue
                 pool[stratum].append(Sketch(f"{r['sha256'][:12]}:{dia_id}" + (f":M{num}" if num else ""), r["name"],
                                             ix.qualified_name(dia_id) + (f" (module M{num})" if num else ""), kind,
-                                            stratum, png, _truth(g, drawn, ends)))
+                                            stratum, png, _truth(g, drawn, ends), r["sha256"], dia_id, num))
     chosen = []
     for stratum in strata(modules[0]):
         by_kind: dict[str, list[Sketch]] = defaultdict(list)
@@ -156,9 +160,9 @@ def sample(state: State, settings: TreeSettings, progress: Progress = QUIET) -> 
             by_kind[s.kind].append(s)
         queues = [by_kind[k] for k, _ in kinds[stratum].most_common() if by_kind[k]]
         picked: list[Sketch] = []
-        while queues and len(picked) < PER_STRATUM:  # round robin, the commonest kinds first
+        while queues and len(picked) < per_stratum:  # round robin, the commonest kinds first
             for q in list(queues):
-                if len(picked) < PER_STRATUM:
+                if len(picked) < per_stratum:
                     picked.append(q.pop(0))
                 if not q:
                     queues.remove(q)
@@ -189,8 +193,9 @@ def _tokens(text: str) -> list[str]:
 
 
 def score(truth: dict[str, Any], answer: dict[str, Any] | None) -> dict[str, Any]:
-    """Shapes listed, words of their names read, connections found (either way round), and the
-    directed ones found the right way round."""
+    """Shapes listed, words of their names read, connections found (either way round), the
+    directed ones found the right way round, and connections listed that the diagram doesn't
+    have (invented: nesting read as a connection, say)."""
     given: dict[int, str] = {}
     for s in (answer or {}).get("shapes") or []:
         try:
@@ -210,6 +215,7 @@ def score(truth: dict[str, Any], answer: dict[str, Any] | None) -> dict[str, Any
         got = _tokens(given.get(n, ""))
         words += len(expected)
         read += sum(b.size for b in SequenceMatcher(None, expected, got, autojunk=False).get_matching_blocks())
+    listed = len(pairs)
     found = directed = right = 0
     for a, b, is_directed in truth["links"]:
         hit = next((p for p in pairs if p in ((a, b), (b, a))), None)
@@ -222,7 +228,7 @@ def score(truth: dict[str, Any], answer: dict[str, Any] | None) -> dict[str, Any
             right += hit == (a, b)
     return {"shapes": len(shapes), "listed": sum(1 for n in shapes if n in given), "words": words, "read": read,
             "links": len(truth["links"]), "found": found, "directed": directed, "right": right,
-            "unreadable": answer is None}
+            "given": listed, "invented": len(pairs), "unreadable": answer is None}
 
 
 def ask(llm: EnrichmentSession, sketches: list[Sketch], image_first: bool, concurrency: int = 1,
@@ -250,7 +256,8 @@ def _rates(rs: list[dict[str, Any]]) -> dict[str, Any]:
         return sum(r[a] for r in rs) / total if total else None
 
     return {"sketches": len(rs), "listed": share("listed", "shapes"), "names": share("read", "words"),
-            "found": share("found", "links"), "directions": share("right", "directed")}
+            "found": share("found", "links"), "directions": share("right", "directed"),
+            "invented": share("invented", "given")}
 
 
 def summarize(results: list[dict[str, Any]], large: int) -> dict[str, Any]:
@@ -266,6 +273,9 @@ def summarize(results: list[dict[str, Any]], large: int) -> dict[str, Any]:
                                                     "contradict them"))):
             if rates[measure] is not None and rates[measure] < PASS:
                 warnings.append(f"{labels[k]}: {rates[measure]:.0%} of {what}; {consequence}")
+        if rates["invented"] is not None and rates["invented"] > 1 - PASS:
+            warnings.append(f"{labels[k]}: {rates['invented']:.0%} of the connections the model listed aren't there; "
+                            "their descriptions may add connections")
     unreadable = sum(1 for r in results if r["asked"] and r["answer"] is None)
     unasked = sum(1 for r in results if not r["asked"])
     if (unreadable + unasked) * 2 > len(results):
@@ -280,7 +290,9 @@ def one_line(summary: dict[str, Any]) -> str:
     if not o["sketches"]:
         return "no diagrams in the tree to sample"
     parts = [f"{o[k]:.0%} {what}" for k, what in (("names", "of names read"), ("found", "of connections found"),
-                                                  ("directions", "of directions right")) if o[k] is not None]
+                                                  ("directions", "of directions right"),
+                                                  ("invented", "of connections listed invented"))
+             if o.get(k) is not None]
     return f"on {o['sketches']} of the tree's sketches, " + ", ".join(parts)
 
 
@@ -292,19 +304,20 @@ def render(model: str, summary: dict[str, Any], results: list[dict[str, Any]], l
     lines = [f"# Validation on the tree's sketches: {model}", "",
              ("What the model reads on the tree's own diagrams, drawn at the sizes runs use, from the image "
               "alone. Descriptions also get every name and connection as text, so they should do better."), "",
-             "| Sample | Sketches | Shapes listed | Names read | Connections found | Directions right |",
-             "|---|---|---|---|---|---|"]
+             "| Sample | Sketches | Shapes listed | Names read | Connections found | Directions right | Invented |",
+             "|---|---|---|---|---|---|---|"]
     for k, r in [*summary["strata"].items(), ("overall", summary["overall"])]:
         lines.append(f"| {labels.get(k, 'all')} | {r['sketches']} | {pct(r['listed'])} | {pct(r['names'])} | "
-                     f"{pct(r['found'])} | {pct(r['directions'])} |")
+                     f"{pct(r['found'])} | {pct(r['directions'])} | {pct(r['invented'])} |")
     if summary["warnings"]:
         lines += ["", "## Warnings", ""] + [f"- {w}" for w in summary["warnings"]]
-    lines += ["", "## Sketches", "", "| Sketch | Project | Type | Names read | Connections found | Directions right |",
-              "|---|---|---|---|---|---|"]
+    lines += ["", "## Sketches", "",
+              "| Sketch | Project | Type | Names read | Connections found | Directions right | Invented |",
+              "|---|---|---|---|---|---|---|"]
     for r in results:
         rates = _rates([r])
         lines.append(f"| {r['diagram']} | {r['project']} | {r['kind']} | {pct(rates['names'])} | "
-                     f"{pct(rates['found'])} | {pct(rates['directions'])} |")
+                     f"{pct(rates['found'])} | {pct(rates['directions'])} | {pct(rates['invented'])} |")
     return "\n".join(lines) + "\n"
 
 
