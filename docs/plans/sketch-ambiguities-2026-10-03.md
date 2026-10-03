@@ -76,9 +76,9 @@ module boundaries", not here.
 
 | Step | What | Status |
 |---|---|---|
-| SK-01 | **Trees:** `Tree` views and `treeID` in `layout.py`; `DiagramGraph.trees`; the bars and one head in `sketch.py` and `sketch_svg.py`; no head on members' stubs.<br>**Tests:** a fixture diagram with a tree, parent above and below the bar: one head, at the parent's edge, and none on the stubs; the legend unchanged. | |
-| SK-02 | **Drawing order:** larger shapes first within a depth.<br>**Tests:** a frame around a shape, listed after it: the shape's box is drawn over the frame. | |
-| SK-03 | **Labels and association classes:** `AssociationTextBox` and `MessageSignature` as decorations; `LinkAttribute` dashed.<br>**Tests:** neither label is in the legend or drawn; the association class's line is dashed. | |
+| SK-01 | **Trees:** `Tree` views and `treeID` in `layout.py`; `DiagramGraph.trees`; the bars and one head in `sketch.py` and `sketch_svg.py`; no head on members' stubs.<br>**Tests:** a fixture diagram with a tree, parent above and below the bar: one head, at the parent's edge, and none on the stubs; the legend unchanged. | Done: EOSS's "Instruments" now draws one bar and one head at the parent |
+| SK-02 | **Drawing order:** larger shapes first within a depth.<br>**Tests:** a frame around a shape, listed after it: the shape's box is drawn over the frame. | Done: `diagram_graph.drawing_order`, shared by the PNG and SVG sketches |
+| SK-03 | **Labels and association classes:** `AssociationTextBox` and `MessageSignature` as decorations; `LinkAttribute` dashed.<br>**Tests:** neither label is in the legend or drawn; the association class's line is dashed. | Done |
 | SK-04 | **Validation:** connections invented, in the scores, the report and the one-line summary; `validate.sample` with the sample's size as parameters; `scripts/validate_sketches.py` (the sample by key, from a file or chosen; a targeted stratum; results as JSON and Markdown).<br>**Tests:** a reader that adds a connection per sketch is scored for it; the script on the fiction. | |
 | SK-05 | **Before and after,** on the samples and the fiction:<br>- 12 sketches per stratum, and 12 targeted, with 0.13.0 (a worktree at b2037c4) and with the fixes;<br>- for gemma-4, and Qwen3-VL;<br>- in a research note, with the sketches of the six diagrams named above.<br>**Also:** 0.14.0; README; a `--no-llm` tree compared with 0.13.0's, every difference explained (sketches, SVGs, legends without the labels). A few cents. | |
 | SK-06 | **The release check's run,** as in the design. | |

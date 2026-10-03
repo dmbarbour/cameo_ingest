@@ -205,3 +205,97 @@ def test_large_diagram_modules(tmp_path, fake_chat):
     page = (project_dir(out) / "diagrams/Drone_BDD.md").read_text()
     assert "## Module" not in page and "generated:module_description" not in (out / "chunks.jsonl").read_text()
     assert main(["run", "-o", str(out), "--diagram-modules", "25:6"]) == 2
+
+
+# The Drone diagram with Battery's kinds drawn as Cameo draws a tree of generalizations (each
+# member's stub reaches a bar, and a `Tree` view joins the bar to the parent), a frame listed
+# after the shape it encloses, an association's name box, and an association-class line (plan SK).
+MODEL_SK = MODEL.replace("<packagedElement xmi:type='uml:Class' xmi:id='b2' name='Battery'/>", """\
+<packagedElement xmi:type='uml:Class' xmi:id='b2' name='Battery'/>
+   <packagedElement xmi:type='uml:Class' xmi:id='k1' name='LiPo'>
+    <generalization xmi:type='uml:Generalization' xmi:id='g1' general='b2'/></packagedElement>
+   <packagedElement xmi:type='uml:Class' xmi:id='k2' name='NiMH'>
+    <generalization xmi:type='uml:Generalization' xmi:id='g2' general='b2'/></packagedElement>
+   <packagedElement xmi:type='uml:Class' xmi:id='k3' name='LiFe'>
+    <generalization xmi:type='uml:Generalization' xmi:id='g3' general='b2'/></packagedElement>""")
+LAYOUT_SK = LAYOUT.replace("</mdOwnedViews>", "".join(
+    f"<mdElement elementClass='Class' xmi:id='k{i}v'><elementID xmi:idref='k{i}'/>"
+    f"<geometry>{50 + 100 * i}, 200, 80, 40</geometry></mdElement>"
+    f"<mdElement elementClass='Generalization' xmi:id='g{i}v'><elementID xmi:idref='g{i}'/>"
+    f"<linkFirstEndID xmi:idref='v2'/><linkSecondEndID xmi:idref='k{i}v'/>"
+    f"<geometry>{90 + 100 * i}, 150; {90 + 100 * i}, 200; </geometry><treeID xmi:idref='t1'/></mdElement>"
+    for i in (1, 2, 3)) + """
+ <mdElement elementClass='Tree' xmi:id='t1'><geometry>190, 150, 200, 0</geometry><baseShape xmi:idref='v2'/>
+  <verticalBarX xmi:value='50'/><verticalBarY xmi:value='70'/><horizontalBarLeft xmi:value='190'/>
+  <horizontalBarRight xmi:value='390'/><horizontalBarY xmi:value='150'/></mdElement>
+ <mdElement elementClass='RectangularShape' xmi:id='fr'><text>Frame</text><geometry>0, 0, 150, 100</geometry></mdElement>
+ <mdElement elementClass='AssociationTextBox' xmi:id='atb'><text>powers</text><geometry>140, 30, 40, 12</geometry>
+ </mdElement>
+ <mdElement elementClass='LinkAttribute' xmi:id='la'><linkFirstEndID xmi:idref='v3'/><linkSecondEndID xmi:idref='k1v'/>
+  <geometry>155, 40; 155, 200; </geometry></mdElement>
+</mdOwnedViews>""")
+
+
+def test_trees_frames_labels_and_association_classes(monkeypatch):
+    """Plan SK: a tree's bars are drawn, with one hollow head at the parent and none on the
+    members' stubs; a frame lies under the shapes inside it; an association's name box is no
+    shape; an association-class line is dashed. The legend still lists each generalization."""
+    from cameo_ingest import sketch, sketch_svg
+    from cameo_ingest.archive import discover
+    from cameo_ingest.diagram_graph import drawing_order
+    from cameo_ingest.diagram_text import describe
+    from cameo_ingest.pipeline import load_layouts, parse_project
+    from cameo_ingest.provenance import ContentInfo
+    from cameo_ingest.view import ProjectView
+
+    project = next(discover(make_mdzip(MODEL_SK, LAYOUT_SK), "drone.mdzip"))
+    ix = parse_project(project)
+    view = ProjectView(ContentInfo(project.sha256, "drone.mdzip"), project, ix, layouts=load_layouts(project, ix))
+    g = view.graph("d1")
+    (tree,) = g.trees
+    battery = g.node_of["v2"]
+    assert tree.parent is battery and tree.vertical == ((250.0, 70.0), (250.0, 150.0)) and len(tree.members) == 3
+    assert [n.label for n in g.nodes if n.view.cls in ("AssociationTextBox", "RectangularShape")] == ['"Frame"']
+    _, connections = describe(ix, g)
+    assert sum("Generalization" in c and "Battery" in c for c in connections) == 3, connections
+    order = [n.view.view_id for n in drawing_order(g)]
+    assert order.index("fr") < order.index("v1")  # the frame first: under the Drone it encloses
+
+    heads, lines = [], []
+    arrowhead, polyline = sketch._arrowhead, sketch._polyline
+    monkeypatch.setattr(sketch, "_arrowhead", lambda d, p, q, hollow, **kw: heads.append((p, q, hollow))
+                        or arrowhead(d, p, q, hollow, **kw))
+    monkeypatch.setattr(sketch, "_polyline", lambda d, pts, dashed, **kw: lines.append(dashed)
+                        or polyline(d, pts, dashed, **kw))
+    assert sketch.render_png(ix, g, "BDD") is not None
+    ((p, q, _),) = [h for h in heads if h[2]]  # one hollow head: the tree's, at the parent
+    assert q[1] < p[1]  # pointing up, at Battery's lower edge
+    assert lines.count(True) == 1  # the association-class line, and nothing else, dashed
+    svg = sketch_svg.render_svg(ix, g, "BDD")
+    assert "generalizations of [2]" in svg and svg.count('stroke-dasharray') == 1
+
+
+def test_a_tree_below_its_parent():
+    """A tree whose parent is below its bar: the head points down, at the parent's upper edge."""
+    from cameo_ingest import sketch
+    from cameo_ingest.archive import discover
+    from cameo_ingest.pipeline import load_layouts, parse_project
+    from cameo_ingest.provenance import ContentInfo
+    from cameo_ingest.view import ProjectView
+
+    layout = LAYOUT_SK.replace("<verticalBarY xmi:value='70'/>", "<verticalBarY xmi:value='10'/>").replace(
+        "<horizontalBarY xmi:value='150'/>", "<horizontalBarY xmi:value='-30'/>")
+    project = next(discover(make_mdzip(MODEL_SK, layout), "drone.mdzip"))
+    ix = parse_project(project)
+    view = ProjectView(ContentInfo(project.sha256, "drone.mdzip"), project, ix, layouts=load_layouts(project, ix))
+    (tree,) = view.graph("d1").trees
+    assert tree.vertical == ((250.0, 10.0), (250.0, -30.0))
+    heads = []
+    arrowhead = sketch._arrowhead
+    sketch._arrowhead = lambda d, p, q, hollow, **kw: heads.append((p, q, hollow)) or arrowhead(d, p, q, hollow, **kw)
+    try:
+        sketch.render_png(ix, view.graph("d1"), "BDD")
+    finally:
+        sketch._arrowhead = arrowhead
+    ((p, q, _),) = [h for h in heads if h[2]]
+    assert q[1] > p[1]  # pointing down

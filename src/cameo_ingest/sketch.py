@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from PIL import Image, ImageDraw, ImageFont
 
 from .config import IMAGE_PIXELS, SKETCH
-from .diagram_graph import DiagramGraph, Node
+from .diagram_graph import DiagramGraph, Node, drawing_order
 from .layout import View
 from .model import ModelIndex
 from .partition import Partition
@@ -49,7 +49,8 @@ class SketchStyle:
 
 STYLE = SketchStyle()
 FONT_PX, TITLE_PX = STYLE.font_px, STYLE.title_px
-DASHED = {"Dependency", "Abstraction", "Realization", "Usage", "Include", "Extend", "InterfaceRealization"}
+DASHED = {"Dependency", "Abstraction", "Realization", "Usage", "Include", "Extend", "InterfaceRealization",
+          "LinkAttribute"}  # the last: an association to its class, as UML draws it (plan SK)
 HOLLOW = {"Generalization", "Realization", "InterfaceRealization"}
 ROUND = {"UseCase", "InitialNode", "ActivityFinalNode", "FlowFinalNode", "PseudoNode"}
 
@@ -107,6 +108,10 @@ def render_png(ix: ModelIndex, g: DiagramGraph, title: str, pixels: int = IMAGE_
             for x, y in lk.view.points:
                 xs.append(x)
                 ys.append(y)
+        for t in g.trees:
+            for x, y in (*t.vertical, *t.horizontal):
+                xs.append(x)
+                ys.append(y)
     if not xs:
         return None
     x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
@@ -131,7 +136,7 @@ def render_png(ix: ModelIndex, g: DiagramGraph, title: str, pixels: int = IMAGE_
         return g.node_of.get(view.view_id or "") if view is not None else None
 
     boxes = []
-    for n in sorted((n for n in g.nodes if n.view.rect), key=lambda n: n.depth):
+    for n in drawing_order(g):
         x, y, rw, rh = n.view.rect  # type: ignore[misc]
         a, c = P(x, y), P(x + rw, y + rh)
         c = (max(c[0], a[0] + 3), max(c[1], a[1] + 3))
@@ -144,6 +149,13 @@ def render_png(ix: ModelIndex, g: DiagramGraph, title: str, pixels: int = IMAGE_
             d.rectangle([a, c], outline=ink, fill=fill, width=1)
         boxes.append((n, a, c))
     stubs: list[tuple[int, tuple[float, float]]] = []  # far shapes of connections leaving the picture
+    in_trees = {t.view.view_id for t in g.trees}
+    for t in g.trees:  # the bars, and one hollow head at the parent (plan SK)
+        shown = lit(t.parent) or any(lit(end_node(m.source)) for m in t.members)
+        for a, b in (t.vertical, t.horizontal):
+            _polyline(d, [P(*a), P(*b)], dashed=False, fill=None if shown else FADED_LINE, width=style.line_px)
+        _arrowhead(d, P(*t.vertical[1]), P(*t.vertical[0]), hollow=True, fill="black" if shown else FADED_LINE,
+                   size=style.arrow_px, stroke=style.head_stroke)
     for lk in g.links:
         if len(lk.view.points) < 2:
             continue
@@ -155,7 +167,7 @@ def render_png(ix: ModelIndex, g: DiagramGraph, title: str, pixels: int = IMAGE_
             if len(seg.points) >= 2:
                 _polyline(d, [P(*p) for p in seg.points], dashed=lk.view.cls in DASHED,
                           fill=None if shown else FADED_LINE, width=style.line_px)
-        if lk.directed:
+        if lk.directed and lk.view.tree not in in_trees:  # a tree's member: the tree has the head
             tip, prev = (pts[0], pts[1]) if lk.target_at_first_point else (pts[-1], pts[-2])
             _arrowhead(d, prev, tip, hollow=lk.view.cls in HOLLOW, fill="black" if shown else FADED_LINE,
                        size=style.arrow_px, stroke=style.head_stroke)

@@ -5,6 +5,11 @@ Each `mdElement` is a presentation element: `elementClass` (shape kind), an opti
 "x1, y1; x2, y2; ..." for paths), nested `mdOwnedViews`, and for paths
 `linkFirstEndID` / `linkSecondEndID` pointing at other presentation elements.
 Coordinates are absolute diagram coordinates.
+
+A tree of generalizations (plan SK) is a `Tree` element: a horizontal bar (`horizontalBarLeft`,
+`horizontalBarRight`, `horizontalBarY`) and a vertical bar from the parent shape (`baseShape`,
+at `verticalBarX` from its left edge and `verticalBarY`) to it. Each member path names it by
+`treeID`, and runs only from its child to the bar.
 """
 
 from __future__ import annotations
@@ -27,6 +32,12 @@ NON_VISUAL = {
     "IntegerProperty", "DiagramPropertiesShape",
 }
 _NUM = re.compile(r"-?\d+(?:\.\d+)?")
+TREE_BARS = ("verticalBarX", "verticalBarY", "horizontalBarLeft", "horizontalBarRight", "horizontalBarY")
+
+
+def _number(text: str | None) -> float | None:
+    m = _NUM.search(text or "")
+    return float(m.group(0)) if m else None
 
 
 @dataclass
@@ -40,6 +51,10 @@ class View:
     first: str | None = None  # view ids at the ends of a path
     second: str | None = None
     parent: str | None = None  # view id of the enclosing view
+    tree: str | None = None  # a path's tree of generalizations (the Tree view's id)
+    base: str | None = None  # a Tree's parent shape (its view id)
+    bars: tuple[float, float, float, float, float] | None = None  # a Tree's verticalBarX, verticalBarY,
+    #                                                                horizontalBarLeft, horizontalBarRight, horizontalBarY
 
     @property
     def is_path(self) -> bool:
@@ -112,6 +127,7 @@ def parse_layout(stream: IO[bytes]) -> Layout:
                 continue
             vid = _attr(md, "id")
             view = View(view_id=vid, cls=cls, element=None, parent=parent_view)
+            bars: dict[str, float | None] = {}
             for child in md.iterchildren():
                 tag = child.tag if isinstance(child.tag, str) else ""
                 if tag == "elementID":
@@ -124,6 +140,14 @@ def parse_layout(stream: IO[bytes]) -> Layout:
                     view.first = _idref(child)
                 elif tag == "linkSecondEndID":
                     view.second = _idref(child)
+                elif tag == "treeID":
+                    view.tree = _idref(child)
+                elif tag == "baseShape":
+                    view.base = _idref(child)
+                elif tag in TREE_BARS:
+                    bars[tag] = _number(_attr(child, "value"))
+            if cls == "Tree" and all(bars.get(k) is not None for k in TREE_BARS):
+                view.bars = tuple(bars[k] for k in TREE_BARS)  # type: ignore[assignment]
             out.views.append(view)
             for owned in md.iterchildren("mdOwnedViews"):
                 walk(owned, vid)

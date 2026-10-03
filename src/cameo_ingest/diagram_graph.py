@@ -18,7 +18,9 @@ from .semantics import ItemFlow, Relationship
 from .text import one_line
 
 # Views that only decorate another view (labels, connector ends, roles): never shapes (FU-007).
-DECORATION = {"TextBox", "TextBoxWithIcon", "ConnectorEnd", "Role", "NoteAnchor", "DiagramShape", "FlowConnector"}
+# An association's and a sequence message's name boxes are their connections' text (plan SK).
+DECORATION = {"TextBox", "TextBoxWithIcon", "ConnectorEnd", "Role", "NoteAnchor", "DiagramShape", "FlowConnector",
+              "AssociationTextBox", "MessageSignature"}
 # Drawn on the border of the shape that owns them, and named as "Owner.pin" in text.
 ATTACHED = {"Pin", "Port", "ParameterNode", "ObjectNode"}
 DIRECTED = {
@@ -81,6 +83,18 @@ class Link:
 
 
 @dataclass
+class Tree:
+    """Generalizations drawn as one tree (plan SK): a vertical bar from the parent shape down (or
+    up) to a horizontal bar, which each member's stub reaches from its child."""
+
+    view: View
+    parent: Node | None
+    vertical: tuple[tuple[float, float], tuple[float, float]]  # from the parent's edge to the bar
+    horizontal: tuple[tuple[float, float], tuple[float, float]]
+    members: list[Link]
+
+
+@dataclass
 class DiagramGraph:
     nodes: list[Node] = field(default_factory=list)
     links: list[Link] = field(default_factory=list)
@@ -90,10 +104,19 @@ class DiagramGraph:
     # Connector circles where a flow's segments break off (FU-017), each with the label drawn
     # beside it: the shape the flow continues to ("to 12") or comes from ("from 12").
     connectors: list[tuple[View, str]] = field(default_factory=list)
+    trees: list[Tree] = field(default_factory=list)
 
     def trivial(self) -> bool:
         """Too little to describe: fewer than 3 shapes, unless 2 shapes are connected (FU-010)."""
         return len(self.nodes) < 3 and not (len(self.nodes) == 2 and self.links)
+
+
+def drawing_order(g: DiagramGraph) -> list[Node]:
+    """The shapes to draw, outer before inner: by nesting, then larger first, so that a frame
+    drawn around shapes it doesn't own (a `RectangularShape`) lies under them, as in Cameo (plan
+    SK)."""
+    return sorted((n for n in g.nodes if n.view.rect),
+                  key=lambda n: (n.depth, -n.view.rect[2] * n.view.rect[3]))  # type: ignore[index]
 
 
 def build(ix: ModelIndex, layout: Layout, rels: dict[str, Relationship],
@@ -199,4 +222,12 @@ def build(ix: ModelIndex, layout: Layout, rels: dict[str, Relationship],
             source, target, at_first = target, source, not at_first
             items = [i[:-1] + "→" for i in items]
         g.links.append(Link(v, source, target, directed, label, verb, items, at_first, more))
+    for v in layout.views:
+        base = by_id.get(v.base or "")
+        members = [lk for lk in g.links if lk.view.tree and lk.view.tree == v.view_id]
+        if v.cls != "Tree" or v.bars is None or base is None or base.rect is None or not members:
+            continue
+        vx, vy, left, right, hy = v.bars
+        x = base.rect[0] + vx
+        g.trees.append(Tree(v, g.node_of.get(v.base or ""), ((x, vy), (x, hy)), ((left, hy), (right, hy)), members))
     return g

@@ -13,7 +13,7 @@ import math
 from xml.sax.saxutils import escape as _escape
 from xml.sax.saxutils import quoteattr as _quoteattr
 
-from .diagram_graph import DiagramGraph
+from .diagram_graph import DiagramGraph, drawing_order
 from .layout import View
 from .model import ModelIndex
 from .sketch import DASHED, HOLLOW, ROUND
@@ -90,6 +90,10 @@ def render_svg(ix: ModelIndex, g: DiagramGraph, title: str) -> str | None:
         for x, y in lk.view.points:
             xs.append(x)
             ys.append(y)
+    for t in g.trees:
+        for x, y in (*t.vertical, *t.horizontal):
+            xs.append(x)
+            ys.append(y)
     if not xs:
         return None
     x0, y0 = min(xs) - MARGIN, min(ys) - MARGIN - TITLE
@@ -103,7 +107,7 @@ def render_svg(ix: ModelIndex, g: DiagramGraph, title: str) -> str | None:
     def end(view: View | None):
         return g.node_of.get(view.view_id or "") if view is not None else None
 
-    shapes = sorted((n for n in g.nodes if n.view.rect), key=lambda n: n.depth)
+    shapes = drawing_order(g)
     for n in shapes:  # outlines first, outer before inner
         x, y, rw, rh = n.view.rect  # type: ignore[misc]
         rw, rh = max(rw, 3), max(rh, 3)
@@ -118,6 +122,12 @@ def render_svg(ix: ModelIndex, g: DiagramGraph, title: str) -> str | None:
             out.append(f'<rect x="{_n(x)}" y="{_n(y)}" width="{_n(rw)}" height="{_n(rh)}" fill="white" '
                        f'fill-opacity="0.9" stroke="{INK}"/>')
         out.append("</g>")
+    in_trees = {t.view.view_id for t in g.trees}
+    for t in g.trees:  # the bars, and one hollow head at the parent (plan SK)
+        (a, b), (c, e) = t.vertical, t.horizontal
+        out.append(f'<g><title>{escape(f"generalizations of [{t.parent.num if t.parent else chr(63)}]")}</title>'
+                   f'<polyline points="{_pts([a, b])}" fill="none" stroke="{LINE}"/>'
+                   f'<polyline points="{_pts([c, e])}" fill="none" stroke="{LINE}"/>{_arrowhead(b, a, True)}</g>')
     for lk in g.links:
         if len(lk.view.points) < 2:
             continue
@@ -125,7 +135,7 @@ def render_svg(ix: ModelIndex, g: DiagramGraph, title: str) -> str | None:
         parts = [f'<polyline points="{_pts(seg.points)}" fill="none" stroke="{LINE}"{dash}/>'
                  for seg in [lk.view, *lk.more] if len(seg.points) >= 2]
         pts = lk.view.points
-        if lk.directed:
+        if lk.directed and lk.view.tree not in in_trees:  # a tree's member: the tree has the head
             tip, prev = (pts[0], pts[1]) if lk.target_at_first_point else (pts[-1], pts[-2])
             parts.append(_arrowhead(prev, tip, lk.view.cls in HOLLOW))
         dirs = {i[-1:] for i in lk.items}
