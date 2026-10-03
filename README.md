@@ -141,8 +141,13 @@ of a large package (`docs/research/sandwiching-2026-09-30.md`).
 
 ### Calibrating sketches to the vision model
 
-Sketches are drawn to sizes found by hand for gemma-4 on DeepInfra: 12 px text, arrowheads
-with 10 px legs, 1 px lines, the pixel budget above, and modules of at most 25 shapes.
+Uncalibrated, sketches are drawn to the sizes measured for gemma-4 on DeepInfra
+(`docs/research/vision-calibration-gemma4-2026-10-03.md`):
+- 13 px text;
+- arrowheads with 10 px legs, and 1 px lines;
+- the pixel budget above;
+- modules of at most 25 shapes.
+
 Another model or host may need others. `cameo-ingest calibrate-vision -o OUT` measures them.
 It draws eye charts with the sketches' own font, number tags, lines and arrowheads, filled
 at random so that nothing can be guessed, and asks the tree's vision model to read them:
@@ -154,24 +159,31 @@ at random so that nothing can be guessed, and asks the tree's vision model to re
   2 px. The model lists each arrow from box to box, as a diagram's description must.
 - **Density:** 9 to 36 boxes in one image, for the size of a large diagram's modules.
 
-The standard suite is 68 requests; `--suite quick` (11) checks a model. The answers are kept
+The reading comes first, and decides the budget and the font. The arrows and density cards
+are then drawn at that font and budget, so that nothing measured depends on the tree's
+current sizes. The standard suite is 80 requests; `--suite quick` (11) checks a model. The answers are kept
 in the tree's LLM store, so running it again costs nothing. It writes
 `OUT/calibration/<model>-<date>/`: the cards, `results.json` with every reply and score, and
 `report.md` with the measurements and the recommendations.
 
-A recommendation changes a setting only where the current value falls short, since every
-change costs a redraw:
+Each recommendation comes from the measurements alone. The tree's current value is shown
+beside it but never preferred, and keeping cached answers is no reason to keep a value:
 
-| Setting | Changed when |
+| Setting | Recommended |
 |---|---|
-| `--image-pixels` | Text reads smaller in a smaller image: the host's budget is below this one. |
-| `--sketch-font-px` | The size read 90% of the time, times 1.3, is above the current size. |
-| `--sketch-arrow-px`, `--sketch-line-px` | Fewer than 95% of arrows are read the right way round. The smallest that pass are chosen. |
-| `--diagram-modules` | Fewer than 90% of connections are read right among as many shapes as a module holds. |
+| `--image-pixels` | For a host that shrinks images to a budget of its own: the largest image in which text reads as well as in the smallest. For a model that reads at native resolution: kept as configured, since there the budget is a matter of cost. |
+| `--sketch-font-px` | 1.3 times the size read 90% of the time, at that budget. |
+| `--sketch-arrow-px`, `--sketch-line-px` | The thinnest lines and smallest heads with 95% of arrows read the right way round. |
+| `--diagram-modules` | Modules of up to the most shapes among which 90% of connections are found, either way round. |
+
+Where the eye charts decide nothing (no arrow size passes, say), the recommendation is the
+default above, not the tree's current value.
 
 `--apply` writes the recommendations to the tree's settings. The next run then redraws every
 sketch and asks again for its description, about one request per sketch (the command gives
-the count). The settings can also be given by hand, as run flags.
+the count). The settings can also be given by hand, as run flags. A test that means to push a
+model past what it reads comfortably should say so, and set its sizes from the calibration
+(for example, the font at the 90% threshold itself).
 
 ## Output
 

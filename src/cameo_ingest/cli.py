@@ -32,7 +32,7 @@ from typing import Any
 from . import __version__
 from . import runner as tree
 from .archive import ZIP_MAGIC, sniff_xmi
-from .config import IMAGE_PIXELS, ProjectOptions, TreeSettings, parse_modules
+from .config import IMAGE_PIXELS, MODULES, SKETCH, ProjectOptions, TreeSettings, parse_modules
 from .llm import EnrichmentSession, LLMConfig, connect
 from .progress import Progress
 from .runner import Runner
@@ -148,16 +148,20 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--no-llm", action="store_true", help="no LLM enrichment (required when no model is configured)")
     flag_pair(g, "render", "render diagram sketches", "do not render sketches", default=True)
     g.add_argument("--image-pixels", type=int, metavar="N",
-                   help="pixel budget of diagram sketches and of images sent to the vision model (default 645120: "
-                        "gemma-4's 280 soft tokens of 48 x 48 px, all that DeepInfra gives it)")
+                   help=f"pixel budget of diagram sketches and of images sent to the vision model (default "
+                        f"{IMAGE_PIXELS}, uncalibrated: gemma-4's 280 soft tokens of 48 x 48 px at DeepInfra; "
+                        "`calibrate-vision` measures the vision model's)")
     g.add_argument("--diagram-modules", metavar="N:MIN:MAX",
                    help="split diagrams of more than N shapes into modules of MIN to MAX shapes, each drawn and "
-                        "described on its own (default 25:6:25; N = 0 never splits). For tuning: the default "
-                        "should serve")
+                        f"described on its own (default {':'.join(map(str, MODULES))}, uncalibrated; N = 0 never "
+                        "splits)")
     g.add_argument("--sketch-font-px", type=int, metavar="PX",
-                   help="sketches' font size (default 12); `calibrate-vision` measures it for the vision model")
-    g.add_argument("--sketch-arrow-px", type=float, metavar="PX", help="sketches' arrowhead legs (default 10)")
-    g.add_argument("--sketch-line-px", type=int, metavar="PX", help="sketches' connection lines (default 1)")
+                   help=f"sketches' font size (default {SKETCH[0]}, uncalibrated: gemma-4's; `calibrate-vision` "
+                        "measures it for the vision model)")
+    g.add_argument("--sketch-arrow-px", type=float, metavar="PX",
+                   help=f"sketches' arrowhead legs (default {SKETCH[1]:g}, uncalibrated)")
+    g.add_argument("--sketch-line-px", type=int, metavar="PX",
+                   help=f"sketches' connection lines (default {SKETCH[2]}, uncalibrated)")
     flag_pair(g, "rag-files", "write rag/: every chunk as a .txt file, ending with its source and trace, for RAG "
               "tools that read files but not JSONL", "do not write rag/ (chunks.jsonl has the same chunks)",
               default=True)
@@ -234,7 +238,7 @@ def build_parser() -> argparse.ArgumentParser:
     cv = sub.add_parser("calibrate-vision", parents=[common, running], help=about, description=about)
     c = cv.add_argument_group("calibration")
     c.add_argument("--suite", choices=("quick", "standard"), default="standard",
-                   help="quick: 11 eye charts, to check a model; standard: 68, to calibrate it (the default)")
+                   help="quick: 11 eye charts, to check a model; standard: 80, to calibrate it (the default)")
     c.add_argument("--apply", action="store_true",
                    help="write the recommended settings to the tree's settings; the next run then draws every "
                         "sketch again and asks again for its description")
@@ -569,8 +573,7 @@ def calibrate_vision(out: Path, args: argparse.Namespace) -> int:
     they call for, and with --apply those settings written to the tree."""
     import datetime as dt
 
-    from . import calibrate, eyechart
-    from .sketch import SketchStyle
+    from . import calibrate
 
     stored = stored_settings(out)
     settings = effective_settings(args, stored)
@@ -587,9 +590,9 @@ def calibrate_vision(out: Path, args: argparse.Namespace) -> int:
     if not args.no_preflight and not check_endpoint(llm):
         return 5
     pixels = settings.image_pixels or IMAGE_PIXELS
-    cards = eyechart.suite(args.suite, pixels, SketchStyle(*settings.sketch))
     try:
-        results = calibrate.ask(llm, cards, settings.llm_concurrency or 1, Progress(heartbeat=args.heartbeat))
+        cards, results = calibrate.measure(llm, args.suite, pixels, settings.llm_concurrency or 1,
+                                           Progress(heartbeat=args.heartbeat))
     except KeyboardInterrupt:
         print("interrupted; the answers so far are stored, so running again asks only for the rest", file=sys.stderr)
         return 130
@@ -608,6 +611,7 @@ def calibrate_vision(out: Path, args: argparse.Namespace) -> int:
     problem = (f"{summary['unasked']} of {summary['cards']} eye charts were not asked (failures or the call budget)"
                if summary["unasked"] else
                f"{summary['unreadable']} of {asked} replies could not be read" if summary["unreadable"] * 2 > asked
+               else "the model read no font size on the eye charts" if not any(a["threshold"] for a in summary["read"])
                else None)
     if problem:
         print(f"warning: {problem}; see the replies in {dest / 'results.json'}", file=sys.stderr)

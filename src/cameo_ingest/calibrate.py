@@ -2,9 +2,9 @@
 
 `ask` has the model read eye charts (`eyechart.py`) through the session, so that answers are
 stored and a rerun costs nothing; `summarize` fits what it read; `recommend` derives the sketch
-settings. A recommendation keeps the current value unless the measurement shows it falls short:
-every change redraws the sketches and asks again for every description of them, so a setting
-changes only to fix what fails. The report shows each measured limit beside the current value.
+settings from the measurements alone. The tree's current values are shown beside them but never
+preferred, and no cache is a reason to keep one: a change redraws the sketches, and asks again
+for their descriptions, as it should (the maintainer's policy, 2026-10-03).
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ from .config import MODULES, SKETCH
 from .llm import EnrichmentSession
 from .progress import QUIET, Progress
 from .prompts import Slot, Template
+from .sketch import SketchStyle
 from .vision import PATCH_PX
 
 _CARD = Slot("CARD", "image", "the eye chart: random codes and numbers, or numbered boxes joined by arrows")
@@ -39,7 +40,7 @@ PATCH_AREA = PATCH_PX * PATCH_PX
 
 
 def ask(llm: EnrichmentSession, cards: list[ec.Card], concurrency: int = 4, progress: Progress = QUIET,
-        ) -> list[dict[str, Any]]:
+        label: str = "eye charts") -> list[dict[str, Any]]:
     """Each card drawn, asked and scored."""
     def one(card: ec.Card) -> dict[str, Any]:
         drawn = ec.render(card)
@@ -51,7 +52,7 @@ def ask(llm: EnrichmentSession, cards: list[ec.Card], concurrency: int = 4, prog
         return {**ec.card_record(drawn), "reply": reply, "answer": answer, "asked": res is not None,
                 **ec.score(card, drawn.truth, answer)}
 
-    with progress.phase("eye charts", len(cards), "card") as ph, ThreadPoolExecutor(max(1, concurrency)) as pool:
+    with progress.phase(label, len(cards), "card") as ph, ThreadPoolExecutor(max(1, concurrency)) as pool:
         futures = [pool.submit(one, card) for card in cards]
         for done in as_completed(futures):  # counted as answered, not in order: a slow card holds nothing up
             done.result()
@@ -110,75 +111,94 @@ def _patches(pixels: float) -> int:
     return max(1, int(pixels // PATCH_AREA)) * PATCH_AREA
 
 
-def recommend(summary: dict[str, Any], pixels: int, sketch: tuple[int, float, int] = SKETCH,
-              modules: tuple[int, int, int] = MODULES) -> list[Recommendation]:
-    """The settings the measurements call for, each kept unless it falls short."""
-    font, arrow, line = sketch
+def measure(llm: EnrichmentSession, name: str, pixels: int, concurrency: int = 4, progress: Progress = QUIET,
+            ) -> tuple[list[ec.Card], list[dict[str, Any]]]:
+    """A suite's cards and their results, in two stages: the reading cards, then the arrow and
+    density cards at the font and budget the reading calls for, so that nothing measured depends
+    on the tree's current sizes."""
+    first = ec.reading(name, pixels)
+    results = ask(llm, first, concurrency, progress, "eye charts: reading")
+    chosen = {r.setting: r.recommended for r in _reading(summarize(results), pixels, SKETCH[0])}
+    style = SketchStyle(chosen["sketch_font_px"], *SKETCH[1:])
+    second = ec.drawings(name, chosen.get("image_pixels", pixels), style)
+    return first + second, results + ask(llm, second, concurrency, progress, "eye charts: arrows and density")
+
+
+def _reading(summary: dict[str, Any], pixels: int, font: int) -> list[Recommendation]:
+    """The budget and the font, from the reading cards; the default font when nothing was read."""
     reads = {a["area"]: a["threshold"] for a in summary["read"]}
     known = [t for t in reads.values() if t is not None]
     if not known:
-        return [Recommendation("sketch_font_px", font, font, "no font size was read by 90%",
+        return [Recommendation("sketch_font_px", font, SKETCH[0], "no font size was read by 90%",
                                "the model reads none of the eye charts: check its replies before calibrating")]
     floor = min(known)
-    flat = sorted(a for a, t in reads.items() if t is not None and t <= FLAT * floor)  # areas read as the best
+    flat = {a for a, t in reads.items() if t is not None and t <= FLAT * floor}  # areas read as well as any
     shown = ", ".join(f"{a:g}x: {f'{t:g} px' if t is not None else 'none'}" for a, t in sorted(reads.items()))
     measured = f"90% read at, by image area: {shown}"
-    if 1.0 in flat or not any(a < 1 for a in flat):
-        if len(flat) == len(reads):
-            why = ("the threshold doesn't grow with the image: the model reads at native resolution, so a larger "
-                   "budget would cost tokens and read no smaller text")
-        else:
-            why = (f"the threshold holds up to {max(flat):g} times the budget and grows beyond: the host shrinks "
-                   "larger images")
-        recs = [Recommendation("image_pixels", pixels, pixels, measured, why)]
+    if len(flat) == len(reads):
+        recs = [Recommendation("image_pixels", pixels, pixels, measured,
+                               "the threshold doesn't grow with the image: the model reads at native resolution, "
+                               "where more pixels cost more tokens and read no smaller text; the budget is a "
+                               "matter of cost, kept as configured")]
         threshold_px = reads.get(1.0) or floor
-    else:  # text reads smaller in smaller images: the host's budget is below ours
-        best = max(a for a in flat if a < 1)
+    else:  # the host shrinks images to a budget of its own: the largest area read as well as the smallest
+        areas = sorted(reads)
+        held = [a for k, a in enumerate(areas) if all(b in flat for b in areas[:k + 1])]
+        best = max(held) if held else max(flat)
         recs = [Recommendation("image_pixels", pixels, _patches(best * pixels), measured,
-                               f"text reads smaller at {best:g} times the budget: the host shrinks images of the "
-                               "current budget")]
+                               f"text reads as well up to {best:g} times the budget and worse beyond: the host "
+                               "shrinks larger images to about that budget")]
         threshold_px = reads[best]
     needed = math.ceil(FONT_MARGIN * threshold_px)
-    recs.append(Recommendation(
-        "sketch_font_px", font, max(font, needed),
-        f"90% read at {threshold_px:g} px: {needed} px with a {FONT_MARGIN:g}x margin",
-        f"{font} px is {font / threshold_px:.2f}x the threshold: "
-        + ("the margin holds" if font >= needed else f"short of the {FONT_MARGIN:g}x margin")))
+    recs.append(Recommendation("sketch_font_px", font, needed, f"90% read at {threshold_px:g} px",
+                               f"{FONT_MARGIN:g} times the threshold (the current size is "
+                               f"{font / threshold_px:.2f} times it)"))
+    return recs
+
+
+def recommend(summary: dict[str, Any], pixels: int, sketch: tuple[int, float, int] = SKETCH,
+              modules: tuple[int, int, int] = MODULES) -> list[Recommendation]:
+    """The settings the measurements call for, derived from them alone: the tree's current values
+    are shown beside them, never preferred. What the cards leave undecided falls back to the tool's
+    uncalibrated defaults (`SKETCH`, `MODULES`), and the budget of a model that
+    reads at native resolution, a matter of cost, stays as configured."""
+    font, arrow, line = sketch
+    recs = _reading(summary, pixels, font)
+    if not any(a["threshold"] is not None for a in summary["read"]):
+        return recs
     arrows = summary["arrows"]
     passing = [a for a in arrows if a["right"] >= ARROWS_PASS]
-    current = next((a for a in arrows if (a["arrow_px"], a["line_px"]) == (arrow, line)), None)
-    table = (f"{arrow:g} px heads, {line} px lines: {current['right']:.0%} the right way round, "
-             f"{current['reversed']:.0%} reversed (see Arrows)" if current is not None else "see Arrows")
-    # Untested values pass when smaller ones do: larger heads and lines only read more easily.
-    holds = (current["right"] >= ARROWS_PASS if current is not None
-             else any(a["arrow_px"] <= arrow and a["line_px"] <= line for a in passing))
-    if holds or not arrows:
-        pick, why = (arrow, line), "the current arrowheads and lines are read the right way round"
-    elif passing:
-        best = min(passing, key=lambda a: (a["line_px"], a["arrow_px"]))
-        pick, why = (best["arrow_px"], best["line_px"]), f"the smallest read {ARROWS_PASS:.0%} the right way round"
+    if passing:
+        best_a = min(passing, key=lambda a: (a["line_px"], a["arrow_px"]))
+        pick = (best_a["arrow_px"], best_a["line_px"])
+        why = f"the thinnest lines and smallest heads read {ARROWS_PASS:.0%} the right way round"
     else:
-        best = max(arrows, key=lambda a: a["right"])
-        pick, why = (arrow, line), (f"none reaches {ARROWS_PASS:.0%} (the best, {best['right']:.0%}): kept; the "
-                                    "diagrams' descriptions may misread arrows whatever their size")
+        pick = SKETCH[1:]
+        top = max((a["right"] for a in arrows), default=0.0)
+        why = (f"none reaches {ARROWS_PASS:.0%} (the best, {top:.0%}): the default sizes; descriptions get "
+               "every connection's direction as text")
+    chosen = next((a for a in arrows if (a["arrow_px"], a["line_px"]) == pick), None)
+    table = (f"{pick[0]:g} px heads, {pick[1]} px lines: {chosen['right']:.0%} the right way round, "
+             f"{chosen['reversed']:.0%} reversed (see Arrows)" if chosen is not None else "see Arrows")
     recs.append(Recommendation("sketch_arrow_px", arrow, pick[0], table, why))
     recs.append(Recommendation("sketch_line_px", line, pick[1], table, why))
     # The modules' size is judged on connections found, either way round: a direction misread is the
     # arrows' measure, and happens among few shapes as among many (plan VC, results).
-    large, lo, hi = modules
     dens = summary["density"]
     # Connections can only be harder to find among more shapes: a dip at one size is averaged out.
     fitted = list(zip([d["shapes"] for d in dens], reversed(ec.monotone([d["found"] for d in reversed(dens)])),
                       strict=True))
     table = "connections found among " + ", ".join(f"{d['shapes']} shapes: {d['found']:.0%}" for d in dens)
     ok = [n for n, found in fitted if found >= DENSITY_PASS]
-    if not dens or all(found >= DENSITY_PASS for n, found in fitted if n <= hi):
-        rec, why = modules, f"connections are found in images of up to {hi} shapes"
-    elif ok:
-        top = max(ok)
-        rec, why = (min(large, top), min(lo, top), top), f"connections are missed among more than {top} shapes"
+    if ok:
+        top_n = max(ok)
+        rec = (top_n, min(MODULES[1], top_n), top_n)
+        why = (f"connections are found among up to {top_n} shapes"
+               + (" (the most tested)" if top_n == max(n for n, _ in fitted) else ", and missed among more"))
     else:
-        rec, why = modules, "connections are missed even among the fewest shapes: the modules are kept; look at why"
+        rec = MODULES
+        why = ("connections are missed even among the fewest shapes: the default modules; look at why"
+               if dens else "not measured: the default modules")
     recs.append(Recommendation("diagram_modules", ":".join(map(str, modules)), ":".join(map(str, rec)), table, why))
     return recs
 

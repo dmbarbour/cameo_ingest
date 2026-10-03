@@ -1,8 +1,15 @@
 # Plan: calibrating sketches to the vision model, by eye chart, 2026-10-03
 
 - **Status:** Approved on 2026-10-03 ("Looks good… Go", with a few dollars of DeepInfra allowed).
-  CP1, CP2 (0.11.0) and CP3 done. Halted for the maintainer: the font recommendation for gemma-4
-  (12 → 13 px) is not applied to any tree.
+  Done on 2026-10-03 (0.12.0). CP1, CP2 (0.11.0) and CP3 done. Then, following the maintainer's
+  decisions:
+  - **Recommendations:** from the measurements alone ("no special exceptions just for
+    maintaining the existing test cache").
+  - **The defaults:** gemma-4's figures, 13 px text among them, are the uncalibrated defaults
+    "for now".
+
+  Plan VA (`vision-autocalibration-2026-10-03.md`) builds on this, calibrating automatically to
+  whichever vision model is configured.
 - **Step prefix:** `VC`, so steps are `VC-01`, `VC-02` and so on
 - **Addresses:** the tentative plan "Vision calibration by eye chart" (plan index). Sketches are
   drawn to constants found by hand for gemma-4 on DeepInfra (FU-012, FU-015):
@@ -50,14 +57,19 @@ calibrates it.
 - **Arrows:** right, reversed, wrong ends, missed or spurious.
 - **The fit:** a monotone fit per image size, with the threshold where 90% are read.
 
-**What it recommends,** each derived with a margin. The report shows the current value
-beside each, and the scores behind it:
+**What it recommends,** from the measurements alone. The report shows the current value beside
+each, and the scores behind it, but the current value is never preferred: no cache is a reason
+to keep a size (the maintainer's policy, 2026-10-03). Where the cards decide nothing, the
+uncalibrated defaults serve.
+
+The reading cards are asked first. The arrow and density cards are then drawn at the font and
+budget the reading calls for (80 cards in all, the arrows with four seeds).
 
 | Setting | Derived from |
 |---|---|
-| `image_pixels` | The largest area at which the reading threshold still holds, at a whole number of 48 px patches; for a model reading at native resolution, the current budget is kept, as more pixels then cost more tokens |
-| Sketch font size | The smallest size read by 90% at the chosen budget, times 1.3 |
-| Arrowhead legs, line width | The smallest with 95% of arrows the right way round |
+| `image_pixels` | The largest area read as well as the smallest, at a whole number of 48 px patches. For a model reading at native resolution, the budget is a cost, kept as configured |
+| Sketch font size | The size read by 90% at the chosen budget, times 1.3 |
+| Arrowhead legs, line width | The thinnest lines and smallest heads with 95% of arrows the right way round |
 | `diagram_modules` maximum | The most shapes with 90% of connections found, either way round. Direction is the arrows' measure (changed after the live run: see Results) |
 
 **Applying.**
@@ -65,8 +77,11 @@ beside each, and the scores behind it:
   other switches.
 - **The font, arrowhead and line sizes become settings**, as `image_pixels` and
   `diagram_modules` are. `sketch.py` takes them as a style rather than module constants.
-- **The defaults stay today's values,** so a tree that doesn't calibrate draws the same sketches
-  and keeps its projects' option hashes.
+- **The defaults:** 0.11.0 kept today's values, and kept the sizes out of the option hashes at
+  their defaults. 0.12.0 changed both, by the maintainer's decisions:
+  - gemma-4's figures (13 px text) are the uncalibrated defaults;
+  - the sizes are always in the options. A new version rebuilds every project anyway, so leaving
+    them out spared nothing.
 - **The cost:** a changed setting redraws every sketch, and every diagram is described again by
   the LLM (on the samples, about 1,100 requests, about $1). The command says so, with the count,
   before it applies.
@@ -110,8 +125,23 @@ The standard suite on gemma-4 at DeepInfra: 68 requests in 3 min 45 s, about 2 c
   - progress counted as cards are answered;
   - the report's wording;
   - box centres in the cards' truth.
-- **For the maintainer:** whether to adopt 13 px. The note recommends keeping 12 px, as above.
-  If 13 px were adopted, every sketch would be redrawn and every description asked again.
+- **The maintainer's decision:** no exceptions to keep caches. The note's advice to keep 12 px is
+  withdrawn, and the policy is applied:
+  - recommendations unanchored;
+  - two stages;
+  - four seeds for arrows;
+  - narrower card boxes;
+  - 13 px as the default.
+
+**The second run** (0.12.0): the reading from the store, plus 32 new arrow and density cards at
+13 px. Every recommendation is now the default: the maintainer took gemma-4's figures as the
+uncalibrated defaults "for now".
+- **Arrowheads:** 10 px heads read 42 of 44 the right way round, at the rule's edge; 14 px read
+  all 44.
+- **Modules:** connections are found among 25 shapes 93% of the time, among 36 86%.
+- **The comparison tree:** a `--no-llm` tree of the samples and the fiction differs from 0.11.0's
+  only in its sketches.
+- **The cost:** trees with LLM descriptions ask again for each sketch's description when next run.
 
 ## When to stop and ask
 

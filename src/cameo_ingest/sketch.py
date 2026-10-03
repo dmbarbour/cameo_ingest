@@ -31,8 +31,8 @@ MARGIN = 8
 
 @dataclass(frozen=True)
 class SketchStyle:
-    """Sizes a sketch is drawn with, in the image's pixels: found by hand for gemma-4 on
-    DeepInfra (FU-012, FU-015), and calibrated for another model by `calibrate-vision` (plan VC)."""
+    """Sizes a sketch is drawn with, in the image's pixels: the uncalibrated defaults (`config.SKETCH`),
+    or a tree's settings, which `calibrate-vision --apply` sets for its vision model (plan VC)."""
 
     font_px: int = SKETCH[0]  # names, number tags and the title
     arrow_px: float = SKETCH[1]  # an arrowhead's legs

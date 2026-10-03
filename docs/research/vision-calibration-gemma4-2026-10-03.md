@@ -105,22 +105,12 @@ times the budget.
   The sketch serves for the layout, and its number tags tie shapes to the legend. So a model
   that reverses an upward arrow in a card is not thereby writing reversed relationships. The
   text tells it the direction.
-- **What the tool recommends:** every constant kept, except the font, 12 → 13 px.
-  - The 13 px rests on a 2% shortfall from a margin chosen by judgment, measured on two cards per
-    size.
-  - 12 px read every code at the budget.
-  - Labels reach the model as text in any case. In the sketch, only the number tags (one to
-    three digits) must be read from the image.
-  - A larger font also takes more room in sketches drawn to a fixed budget (not measured here).
-- **Recommendation:** keep 12 px for gemma-4, so that no tree is redrawn, and record this
-  calibration as its evidence. Then:
-  - The rule could stay as it is, as a cautious default for other models.
-  - Or it could ask for the margin only when the current size reads less than, say, 98% at the
-    budget.
+- **What the tool recommended:** every constant kept, except the font, 12 → 13 px. 12 px is 1.27
+  times the threshold, short of the 1.3× margin.
+- **My first advice, withdrawn:** keep 12 px so that no tree would be redrawn. That made the cache
+  a reason, and the maintainer ruled it out (below).
 
-  Either is the maintainer's call (plan VC, "When to stop and ask").
-
-## Changes to the tool from this run
+## Changes to the tool after the first run
 
 - **Density:** judged on connections found, either way round, rather than on connections the
   right way round. Direction is the arrows family's measure. Reversals happen among few shapes as
@@ -134,8 +124,64 @@ times the budget.
 - **The cards' truth:** each arrow card now records its boxes' centres. The images and requests
   are unchanged, so stored answers still serve. The analysis by direction above uses them.
 
+## The maintainer's policy, and a second run
+
+**The policy (2026-10-03):** "I'd rather not have special exceptions just for maintaining the
+existing test cache."
+- **Defaults follow the calibration.** Each recommendation is derived from the measurements
+  alone; the tree's current value is shown, never preferred.
+- **Undecided measurements:** where the cards decide nothing (no arrow size passes, say), the
+  tool's reference values serve, never the tree's.
+- **The budget at native resolution:** a matter of cost, kept as configured.
+- **Pressure:** a test that means to push a model past what it reads comfortably says so, and
+  sets its sizes from the calibration.
+
+**What changed in the tool** (0.12.0):
+- **Recommendations:** no longer anchored to the current values. A perfect reader now gets the
+  smallest sizes tested, and a model whose host has a larger budget gets the larger budget.
+- **Two stages:** the reading cards first, which decide the budget and the font. Then the arrow
+  and density cards, drawn at that font and budget rather than the tree's current ones.
+- **Arrow cards:** four seeds instead of two, so 44 arrows per size. 95% then allows two
+  reversals, where 22 arrows allowed one. The standard suite is 80 cards.
+- **The cards' boxes:** narrower (2 font sizes of padding, not 3), so that 36 boxes fit at 13 px.
+  A count that doesn't fit at the chosen font is left out.
+- **The default font:** 13 px. The maintainer took gemma-4's figures as the uncalibrated
+  defaults "for now", until a run calibrates to whichever vision model is configured (plan VA).
+  The sketch sizes are now always in the
+  projects' options hash. A new version rebuilds every project anyway, so leaving them out at
+  their defaults spared nothing.
+
+**The second run:**
+- The 48 reading cards came from the store. 32 new arrow and density cards were drawn at 13 px,
+  taking 5 min at 4 at once, for under a cent.
+- **The recommendations:** every one is today's default. The budget, 10 px heads, 1 px lines and
+  modules of 25 hold; the font is 13 px, now the default.
+
+| Arrowhead | Line | Right (of 44) | Reversed |
+|---|---|---|---|
+| 6 px | 1 px | 82% | 14% |
+| 6 px | 2 px | 73% | 27% |
+| 10 px | 1 px | 95% (42) | 5% |
+| 10 px | 2 px | 89% | 11% |
+| 14 px | 1 px | 100% (44) | 0% |
+| 14 px | 2 px | 95% | 5% |
+
+| Shapes | Connections found | The right way round |
+|---|---|---|
+| 9 | 100% | 82% |
+| 16 | 97% | 84% |
+| 25 | 93% | 72% |
+| 36 | 86% | 57% |
+
+- **10 px heads pass at the rule's edge:** one more reversal in 44 would have recommended 14 px,
+  which read all 44. The rule has no margin, unlike the font's.
+- **2 px lines read worse than 1 px** in this run (89% and 95%, against 95% and 100%).
+- **Upward arrows,** over all 32 cards: 24% reversed, against 13% right, 17% left and 8% down.
+
 ## Open questions
 
+- **The arrows' rule:** should it carry a margin, as the font's does? 10 px heads pass at
+  95.5% (42 of 44), and 14 px read all 44.
 - **Upward arrows:**
   - Would a filled head, or the mid-line arrow that flows already get, cut the bias?
   - Does it matter, given that directions reach the model as text? A spot check of descriptions

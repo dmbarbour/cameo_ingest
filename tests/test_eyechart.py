@@ -12,7 +12,7 @@ from cameo_ingest.eyechart import Card, monotone, parse, perfect, render, score,
 def test_suites_draw_and_a_perfect_reader_scores_full():
     """Every card of both suites draws within its size, the same bytes each time, and the
     answer of a model that reads everything right scores 1."""
-    for name, n in (("standard", 68), ("quick", 11)):
+    for name, n in (("standard", 80), ("quick", 11)):
         cards = suite(name, IMAGE_PIXELS)
         assert len(cards) == n and len({c.id for c in cards}) == n
         for card in cards:

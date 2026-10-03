@@ -78,23 +78,41 @@ def sides(pixels: float) -> tuple[int, int]:
 
 
 # -- suites ----------------------------------------------------------------------------------------
-def suite(name: str, pixels: int, style: SketchStyle = sketch.STYLE) -> list[Card]:
-    """The cards of a suite, for a candidate budget of `pixels`. `standard`: 68 cards, to calibrate;
-    `quick`: 11, to check a model. Boxes are named in `style`'s font, and the density cards drawn
-    in it whole."""
+def reading(name: str, pixels: int) -> list[Card]:
+    """The reading cards of a suite, in images of a half to four times a budget of `pixels`."""
     standard = name == "standard"
     seeds = (1, 2) if standard else (1,)
     fonts = (6, 7, 8, 10, 12, 16) if standard else (6, 8, 12)
     areas = (0.5, 1.0, 2.0, 4.0) if standard else (1.0, 4.0)
-    cards = [Card("read", *sides(pixels * a), font_px=f, seed=s, area=a) for a in areas for f in fonts for s in seeds]
+    return [Card("read", *sides(pixels * a), font_px=f, seed=s, area=a) for a in areas for f in fonts for s in seeds]
+
+
+def drawings(name: str, pixels: int, style: SketchStyle = sketch.STYLE) -> list[Card]:
+    """The arrow and density cards of a suite, at a budget of `pixels`, named in `style`'s font,
+    with the density cards drawn in it whole. A count of boxes that doesn't fit is left out."""
+    standard = name == "standard"
     w, h = sides(pixels)
-    for arrow in (6, 10, 14):
-        for line in ((1, 2) if standard else (1,)):
-            cards += [Card("arrows", w, h, style.font_px, arrow, line, count=9, seed=s) for s in seeds]
-    for n in ((9, 16, 25, 36) if standard else (16, 36)):
-        cards += [Card("density", w, h, style.font_px, style.arrow_px, style.line_px, count=n, seed=s)
-                  for s in seeds]
-    return cards
+    cards = [Card("arrows", w, h, style.font_px, arrow, line, count=9, seed=s)
+             for arrow in (6, 10, 14) for line in ((1, 2) if standard else (1,))
+             for s in ((1, 2, 3, 4) if standard else (1,))]
+    cards += [Card("density", w, h, style.font_px, style.arrow_px, style.line_px, count=n, seed=s)
+              for n in ((9, 16, 25, 36) if standard else (16, 36)) for s in ((1, 2) if standard else (1,))]
+    return [c for c in cards if fits(c)]
+
+
+def suite(name: str, pixels: int, style: SketchStyle = sketch.STYLE) -> list[Card]:
+    """Every card of a suite. `standard`: 80 cards, to calibrate; `quick`: 11, to check a model.
+    Calibration asks the reading cards first, and draws the rest at the font and budget they call
+    for (`calibrate.measure`)."""
+    return reading(name, pixels) + drawings(name, pixels, style)
+
+
+def fits(card: Card) -> bool:
+    try:
+        render(card)
+    except ValueError:
+        return False
+    return True
 
 
 # -- random content --------------------------------------------------------------------------------
@@ -197,7 +215,7 @@ def _boxes(card: Card, rng: random.Random, d: ImageDraw.ImageDraw, font) -> tupl
     for k in range(n):
         col, row = k % cols, k // cols
         tw = d.textlength(str(nums[k]), font=font)
-        bw = tw + d.textlength(names[k], font=font) + 3.0 * card.font_px
+        bw = tw + d.textlength(names[k], font=font) + 2.0 * card.font_px
         bh = 2.6 * card.font_px
         if bw > cell_w * 0.85 or bh > cell_h * 0.6:
             raise ValueError(f"{card.id}: too many boxes for the image at this font")

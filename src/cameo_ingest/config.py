@@ -15,16 +15,20 @@ from typing import Any
 
 from .provenance import sha256_text
 
-# A vision model's pixel budget: gemma-4 fills 280 soft tokens of 48 x 48 px (645,120 px) at the
-# image's own aspect ratio, sides in multiples of 48 (docs/research/gemma4-images-2026-09-30.md,
-# FU-015). Diagram sketches are drawn to it, and larger images scaled to it.
+# The sketches' uncalibrated defaults: gemma-4's figures at DeepInfra, for now (the maintainer's
+# decision, 2026-10-03; docs/research/gemma4-images-2026-09-30.md and
+# vision-calibration-gemma4-2026-10-03.md). `calibrate-vision` measures them for the configured
+# vision model, and `--apply` sets them as the tree's settings (plan VC).
+#
+# The pixel budget: gemma-4 fills 280 soft tokens of 48 x 48 px (645,120 px) at the image's own
+# aspect ratio, sides in multiples of 48. Diagram sketches are drawn to it, and larger images
+# scaled to it.
 IMAGE_PIXELS = 280 * 48 * 48
 # Diagrams with more shapes than the first are split into modules of the second to the third
-# (plan DV); --diagram-modules, for tuning: the defaults should serve.
+# (plan DV).
 MODULES = (25, 6, 25)
-# Sketches' font size, arrowhead legs and line width, in pixels: found by hand for gemma-4 (FU-012),
-# calibrated for another model by `calibrate-vision` (plan VC).
-SKETCH = (12, 10.0, 1)
+# Sketches' font size, arrowhead legs and line width, in pixels.
+SKETCH = (13, 10.0, 1)
 
 
 @dataclass(frozen=True)
@@ -111,12 +115,9 @@ class ProjectOptions:
         """As run.json records them, and as they are hashed."""
         out = {"render": self.render, "text_model": self.text_model, "vision_model": self.vision_model,
                "max_calls": self.max_calls, "image_pixels": self.image_pixels, "modules": list(self.modules),
-               "templates": list(self.templates)}
-        if tuple(self.sketch) != SKETCH:  # only when calibrated: so that today's hashes stand (plan VC)
-            out["sketch"] = list(self.sketch)
+               "templates": list(self.templates), "sketch": list(self.sketch)}
         return out
 
     def hash(self) -> str:
-        """Of the options that change a project's output: the same as before options were typed,
-        so that no project is made again for it."""
+        """Of the options that change a project's output."""
         return sha256_text(json.dumps(self.as_dict(), sort_keys=True))[:16]
