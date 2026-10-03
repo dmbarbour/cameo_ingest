@@ -43,6 +43,7 @@ many files, bundles or names it turns up under.
 | `cameo-ingest groups -o OUT [--csv FILE]` | Versions of the same model, found by the element ids they share, newest first (see "Versions and removal"). |
 | `cameo-ingest remove -o OUT TOKEN... [--dry-run]` / `restore` | Removes projects from the tree, and keeps them out of later runs while their inputs remain; `restore` undoes it. |
 | `cameo-ingest export -o OUT [--workbook FILE] [--search-page FILE]` | Writes the catalog of the tree's models for people to search without tools: a workbook, a self-contained search page, or both (see "Searching without tools"). Apart from `run`, since it is a distribution step. |
+| `cameo-ingest calibrate-vision -o OUT [--suite quick\|standard] [--apply]` | Measures what the tree's vision model reads, with eye charts drawn as sketches are, and recommends the sketch settings; `--apply` writes them to the tree (see "Calibrating sketches to the vision model"). |
 
 - **Output directories.** A missing or empty directory starts a tree. A directory with
   `state.sqlite` is continued. Any other non-empty directory is refused.
@@ -137,6 +138,40 @@ made mostly of instance specifications (at least 80%, such as analysis results) 
 instead in one request, from a digest of its instances by classifier and slot. Short parts
 keep each request well within what the model reads evenly; one long request loses the middle
 of a large package (`docs/research/sandwiching-2026-09-30.md`).
+
+### Calibrating sketches to the vision model
+
+Sketches are drawn to sizes found by hand for gemma-4 on DeepInfra: 12 px text, arrowheads
+with 10 px legs, 1 px lines, the pixel budget above, and modules of at most 25 shapes.
+Another model or host may need others. `cameo-ingest calibrate-vision -o OUT` measures them.
+It draws eye charts with the sketches' own font, number tags, lines and arrowheads, filled
+at random so that nothing can be guessed, and asks the tree's vision model to read them:
+
+- **Reading:** lines of codes and numbers at 6 to 16 px, in images of half to four times the
+  budget. A threshold that grows with the image means the host shrinks images to a budget of
+  its own.
+- **Arrows:** numbered boxes joined by arrows, with heads of 6, 10 and 14 px and lines of 1 and
+  2 px. The model lists each arrow from box to box, as a diagram's description must.
+- **Density:** 9 to 36 boxes in one image, for the size of a large diagram's modules.
+
+The standard suite is 68 requests; `--suite quick` (11) checks a model. The answers are kept
+in the tree's LLM store, so running it again costs nothing. It writes
+`OUT/calibration/<model>-<date>/`: the cards, `results.json` with every reply and score, and
+`report.md` with the measurements and the recommendations.
+
+A recommendation changes a setting only where the current value falls short, since every
+change costs a redraw:
+
+| Setting | Changed when |
+|---|---|
+| `--image-pixels` | Text reads smaller in a smaller image: the host's budget is below this one. |
+| `--sketch-font-px` | The size read 90% of the time, times 1.3, is above the current size. |
+| `--sketch-arrow-px`, `--sketch-line-px` | Fewer than 95% of arrows are read the right way round. The smallest that pass are chosen. |
+| `--diagram-modules` | Fewer than 90% of connections are read right among as many shapes as a module holds. |
+
+`--apply` writes the recommendations to the tree's settings. The next run then redraws every
+sketch and asks again for its description, about one request per sketch (the command gives
+the count). The settings can also be given by hand, as run flags.
 
 ## Output
 

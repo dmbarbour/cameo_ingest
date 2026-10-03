@@ -27,6 +27,7 @@ from .llm import EnrichmentSession
 from .pipeline import ingest_project
 from .progress import Progress
 from .provenance import TOOL, ContentInfo, sha256_bytes, utc_now
+from .sketch import SketchStyle
 from .state import State
 
 log = logging.getLogger(__name__)
@@ -247,7 +248,8 @@ class Runner:
         try:
             result = ingest_project(content, project, work, self.llm, render=self.options.render,
                                     progress=self.progress, concurrency=self.concurrency,
-                                    image_pixels=self.options.image_pixels, modules=self.options.modules)
+                                    image_pixels=self.options.image_pixels, modules=self.options.modules,
+                                    style=SketchStyle(*self.options.sketch))
         except Exception as e:  # one bad project must not stop the others (BASE-004)
             log.error("project %s (sha256:%s) failed: %s: %s", content.name, sha[:16], type(e).__name__, e)
             log.debug("traceback for %s", content.name, exc_info=True)

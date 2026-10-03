@@ -1,6 +1,7 @@
 # Plan: calibrating sketches to the vision model, by eye chart, 2026-10-03
 
-- **Status:** Proposed on 2026-10-03.
+- **Status:** Approved on 2026-10-03 ("Looks good… Go", with a few dollars of DeepInfra allowed).
+  CP1 and CP2 done (0.11.0); CP3 in progress.
 - **Step prefix:** `VC`, so steps are `VC-01`, `VC-02` and so on
 - **Addresses:** the tentative plan "Vision calibration by eye chart" (plan index). Sketches are
   drawn to constants found by hand for gemma-4 on DeepInfra (FU-012, FU-015):
@@ -73,11 +74,11 @@ beside each, and the scores behind it:
 
 | Step | What | Status |
 |---|---|---|
-| VC-01 | **Cards** (`eyechart.py`): the three families, drawn with `sketch.py`'s primitives (which a style object parameterizes, VC-05), each card with its truth and prompt, seeded by its id.<br>**Tests:** the same bytes twice; every truth string fits its image; a perfect answer scores 1.0. | |
-| VC-02 | **Scoring and fitting:** the reading and arrow scores, the monotone fit and threshold, ported from `semantic_pdf_diff` (MIT, by the maintainer), with a note of where they came from.<br>**Tests:** each kind of error on hand-made answers; a threshold interpolated; a dip smoothed. | |
-| VC-03 | **`cameo-ingest calibrate-vision -o OUT [--suite quick\|standard] [--max-calls N] [--apply]`:** the cards asked through the session, answers stored. It writes `calibration/<model>-<date>/` with the cards (PNG), the answers, `results.json` and `report.md`.<br>**Tests:** a fake model that reads perfectly, and one that reverses every arrow. | |
-| VC-04 | **The recommendations** from the results, as in the design. The report shows the current value beside each, and the scores behind it.<br>**Tests:** results that imply a fixed budget, native resolution, and too-small arrowheads give the expected recommendations. | |
-| VC-05 | **A sketch style as settings:** `SketchStyle(font_px, arrow_px, line_px)`, through `render_png`, the presets and the SVG; in `TreeSettings` and `ProjectOptions`, in the hash only when not the default. `--apply` writes them, and `image_pixels` and `diagram_modules`, after showing what will be drawn and asked again.<br>**Tests:** a `--no-llm` tree at the defaults is the same as before (`treediff`); a changed style changes the sketches and the projects' hashes. | |
+| VC-01 | **Cards** (`eyechart.py`): the three families, drawn with `sketch.py`'s primitives (which a style object parameterizes, VC-05), each card with its truth and prompt, seeded by its id.<br>**Tests:** the same bytes twice; every truth string fits its image; a perfect answer scores 1.0. | Done |
+| VC-02 | **Scoring and fitting:** the reading and arrow scores, the monotone fit and threshold, ported from `semantic_pdf_diff` (MIT, by the maintainer), with a note of where they came from.<br>**Tests:** each kind of error on hand-made answers; a threshold interpolated; a dip smoothed. | Done |
+| VC-03 | **`cameo-ingest calibrate-vision -o OUT [--suite quick\|standard] [--apply]`** (with the run settings, `--llm-max-calls` among them, for this calibration only): the cards asked through the session, answers stored. It writes `calibration/<model>-<date>/` with the cards (PNG), the answers, `results.json` and `report.md`.<br>**Tests:** a fake model that reads perfectly, and one that reverses every arrow. | Done |
+| VC-04 | **The recommendations** from the results, as in the design. The report shows the current value beside each, and the scores behind it.<br>**Tests:** results that imply a fixed budget, native resolution, and too-small arrowheads give the expected recommendations. | Done |
+| VC-05 | **A sketch style as settings:** `SketchStyle(font_px, arrow_px, line_px)`, through `render_png`, the presets and the SVG; in `TreeSettings` and `ProjectOptions`, in the hash only when not the default. `--apply` writes them, and `image_pixels` and `diagram_modules`, after showing what will be drawn and asked again.<br>**Tests:** a `--no-llm` tree at the defaults is the same as before (`treediff`); a changed style changes the sketches and the projects' hashes. | Done |
 | VC-06 | **The live calibration:** the standard suite on gemma-4 at DeepInfra, a few cents. Its results go in a research note, comparing the recommendations with today's constants and with the eye chart's findings. | |
 
 ## Checkpoints

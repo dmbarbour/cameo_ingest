@@ -40,6 +40,12 @@ PASS = 0.9  # a font size is read when 90% of its items are
 ASPECT = 4 / 3
 RANDOM = "Everything written in it is random: nothing can be guessed or corrected from context, so read it."
 JSON_ONLY = "Return only JSON: "
+READ_PROMPT = ("The image shows a few lines of codes and numbers. " + RANDOM + " Transcribe every line exactly as "
+               "printed, top to bottom, keeping the order of the items in each line. Write ? for each character "
+               "you can't read.\n" + JSON_ONLY + '{"lines": ["first line", "second line"]}')
+ARROWS_PROMPT = ("The image shows numbered boxes, each with a name, joined by arrows. " + RANDOM + " List every "
+                 "arrow by the numbers of the two boxes it joins: the box it starts from, and the box its arrowhead "
+                 "points to.\n" + JSON_ONLY + '{"arrows": [{"from": 3, "to": 7}]}')
 
 
 @dataclass(frozen=True)
@@ -72,9 +78,10 @@ def sides(pixels: float) -> tuple[int, int]:
 
 
 # -- suites ----------------------------------------------------------------------------------------
-def suite(name: str, pixels: int) -> list[Card]:
+def suite(name: str, pixels: int, style: SketchStyle = sketch.STYLE) -> list[Card]:
     """The cards of a suite, for a candidate budget of `pixels`. `standard`: 68 cards, to calibrate;
-    `quick`: 11, to check a model."""
+    `quick`: 11, to check a model. Boxes are named in `style`'s font, and the density cards drawn
+    in it whole."""
     standard = name == "standard"
     seeds = (1, 2) if standard else (1,)
     fonts = (6, 7, 8, 10, 12, 16) if standard else (6, 8, 12)
@@ -83,9 +90,10 @@ def suite(name: str, pixels: int) -> list[Card]:
     w, h = sides(pixels)
     for arrow in (6, 10, 14):
         for line in ((1, 2) if standard else (1,)):
-            cards += [Card("arrows", w, h, arrow_px=arrow, line_px=line, count=9, seed=s) for s in seeds]
+            cards += [Card("arrows", w, h, style.font_px, arrow, line, count=9, seed=s) for s in seeds]
     for n in ((9, 16, 25, 36) if standard else (16, 36)):
-        cards += [Card("density", w, h, count=n, seed=s) for s in seeds]
+        cards += [Card("density", w, h, style.font_px, style.arrow_px, style.line_px, count=n, seed=s)
+                  for s in seeds]
     return cards
 
 
@@ -163,10 +171,7 @@ def _read(card: Card, rng: random.Random, d: ImageDraw.ImageDraw, font) -> tuple
     y0 = margin + rng.random() * max(0.0, card.h - 2 * margin - gap * len(lines))
     for k, line in enumerate(lines):
         d.text((x0, y0 + k * gap), line, fill="black", font=font)
-    prompt = ("The image shows a few lines of codes and numbers. " + RANDOM + " Transcribe every line exactly as "
-              "printed, top to bottom, keeping the order of the items in each line. Write ? for each character "
-              "you can't read.\n" + JSON_ONLY + '{"lines": ["first line", "second line"]}')
-    return {"lines": lines}, prompt
+    return {"lines": lines}, READ_PROMPT
 
 
 def _border(box: tuple[float, float, float, float], toward: tuple[float, float]) -> tuple[float, float]:
@@ -222,10 +227,7 @@ def _boxes(card: Card, rng: random.Random, d: ImageDraw.ImageDraw, font) -> tupl
         d.rectangle([box[0] + 1, box[1] + 1, box[0] + tw + 5, box[1] + card.font_px + 3], fill="#e4e4e4")
         d.text((box[0] + 3, box[1] + 1), str(nums[k]), fill="black", font=font)
         d.text((box[0] + tw + 8, box[1] + 1), names[k], fill="black", font=font)
-    prompt = ("The image shows numbered boxes, each with a name, joined by arrows. " + RANDOM + " List every "
-              "arrow by the numbers of the two boxes it joins: the box it starts from, and the box its arrowhead "
-              "points to.\n" + JSON_ONLY + '{"arrows": [{"from": 3, "to": 7}]}')
-    return {"arrows": [[nums[a], nums[b]] for a, b, _, _ in edges], "boxes": n}, prompt
+    return {"arrows": [[nums[a], nums[b]] for a, b, _, _ in edges], "boxes": n}, ARROWS_PROMPT
 
 
 # -- answers and scores ----------------------------------------------------------------------------

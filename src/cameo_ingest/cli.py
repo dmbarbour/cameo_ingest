@@ -12,6 +12,7 @@
     cameo-ingest remove -o OUT TOKEN... [--dry-run]   remove projects from the tree, and keep them out
     cameo-ingest restore -o OUT TOKEN...           undo `remove`; the next run builds them again
     cameo-ingest quality sample -o OUT [--n N]     draw a spot-check set of LLM requests and answers
+    cameo-ingest calibrate-vision -o OUT [--suite S] [--apply]   eye charts: the sketch settings for the model
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import shutil
 import signal
 import sys
@@ -30,7 +32,7 @@ from typing import Any
 from . import __version__
 from . import runner as tree
 from .archive import ZIP_MAGIC, sniff_xmi
-from .config import ProjectOptions, TreeSettings, parse_modules
+from .config import IMAGE_PIXELS, ProjectOptions, TreeSettings, parse_modules
 from .llm import EnrichmentSession, LLMConfig, connect
 from .progress import Progress
 from .runner import Runner
@@ -39,7 +41,7 @@ from .state import State, StateError
 log = logging.getLogger("cameo_ingest")
 
 COMMANDS = ("add", "run", "ingest", "status", "prune", "quality", "export", "scan", "projects", "groups", "remove",
-            "restore")
+            "restore", "calibrate-vision")
 
 NO_MODEL = """error: no LLM model is configured. Either
   - pass --no-llm to ingest without LLM summaries and descriptions, or
@@ -152,6 +154,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="split diagrams of more than N shapes into modules of MIN to MAX shapes, each drawn and "
                         "described on its own (default 25:6:25; N = 0 never splits). For tuning: the default "
                         "should serve")
+    g.add_argument("--sketch-font-px", type=int, metavar="PX",
+                   help="sketches' font size (default 12); `calibrate-vision` measures it for the vision model")
+    g.add_argument("--sketch-arrow-px", type=float, metavar="PX", help="sketches' arrowhead legs (default 10)")
+    g.add_argument("--sketch-line-px", type=int, metavar="PX", help="sketches' connection lines (default 1)")
     flag_pair(g, "rag-files", "write rag/: every chunk as a .txt file, ending with its source and trace, for RAG "
               "tools that read files but not JSONL", "do not write rag/ (chunks.jsonl has the same chunks)",
               default=True)
@@ -222,6 +228,16 @@ def build_parser() -> argparse.ArgumentParser:
     rm.add_argument("--dry-run", action="store_true", help="only list what would be removed")
     rs = sub.add_parser("restore", parents=[common], help="undo `remove`: the next run builds the projects again")
     rs.add_argument("tokens", nargs="+", metavar="TOKEN", help="as for remove")
+    about = ("measure what the tree's vision model reads, with eye charts drawn as sketches are, and recommend the "
+             "sketch settings (see README, Calibrating sketches to the vision model). Run settings given here serve "
+             "this calibration only; --apply writes the recommendations to the tree")
+    cv = sub.add_parser("calibrate-vision", parents=[common, running], help=about, description=about)
+    c = cv.add_argument_group("calibration")
+    c.add_argument("--suite", choices=("quick", "standard"), default="standard",
+                   help="quick: 11 eye charts, to check a model; standard: 68, to calibrate it (the default)")
+    c.add_argument("--apply", action="store_true",
+                   help="write the recommended settings to the tree's settings; the next run then draws every "
+                        "sketch again and asks again for its description")
     q = sub.add_parser("quality", help="measure the quality of LLM enrichment (see docs/plans/llm-quality-*.md)")
     qs = q.add_subparsers(dest="action", required=True, metavar="ACTION")
     qsample = qs.add_parser("sample", parents=[common], help="draw a spot-check set of requests and answers")
@@ -461,27 +477,52 @@ def effective_settings(args: argparse.Namespace, stored: dict[str, Any]) -> Tree
     return TreeSettings.from_stored(s)
 
 
-def run_tree(args: argparse.Namespace, argv: list[str]) -> int:
-    out: Path = args.out
-    stored: dict[str, Any] = {}
-    if State.exists(out):
-        st = State(out)
-        stored = st.settings()
+def stored_settings(out: Path) -> dict[str, Any]:
+    if not State.exists(out):
+        return {}
+    st = State(out)
+    try:
+        return st.settings()
+    finally:
         st.close()
-    settings = effective_settings(args, stored)
+
+
+def llm_config(settings: TreeSettings) -> LLMConfig | None:
+    """The LLM settings, after loading the --env file; None, with the error printed, when the
+    file is missing or the settings are malformed."""
     if settings.env:
         env = Path(settings.env)
         if not env.is_file():
             print(f"error: --env file {env} not found", file=sys.stderr)
-            return 2
+            return None
         load_env(env)
     try:
         parse_modules(settings.diagram_modules)  # a malformed --diagram-modules stops here
     except ValueError as e:
         print(f"error: {e}", file=sys.stderr)
+        return None
+    return LLMConfig.from_env(settings.text_model, settings.vision_model, timeout=settings.llm_timeout,
+                              retries=settings.llm_retries, max_calls=settings.llm_max_calls)
+
+
+def check_endpoint(llm: EnrichmentSession) -> bool:
+    """The endpoint answers each model; False, with the error printed, when it doesn't."""
+    cfg = llm.cfg
+    log.info("checking LLM endpoint %s", cfg.base_url or "(OpenAI default)")
+    err = llm.preflight()
+    if err:
+        print(f"error: LLM endpoint check failed ({cfg.base_url or 'OpenAI default endpoint'}): {err}\n"
+              "Check OPENAI_BASE_URL, OPENAI_API_KEY and the model name, or pass --no-preflight.", file=sys.stderr)
+    return not err
+
+
+def run_tree(args: argparse.Namespace, argv: list[str]) -> int:
+    out: Path = args.out
+    stored = stored_settings(out)
+    settings = effective_settings(args, stored)
+    cfg = llm_config(settings)
+    if cfg is None:
         return 2
-    cfg = LLMConfig.from_env(settings.text_model, settings.vision_model, timeout=settings.llm_timeout,
-                             retries=settings.llm_retries, max_calls=settings.llm_max_calls)
     if settings.no_llm:
         cfg.text_model = cfg.vision_model = None
     elif not cfg.enabled:  # fail fast rather than silently skip enrichment (BASE-020)
@@ -492,14 +533,8 @@ def run_tree(args: argparse.Namespace, argv: list[str]) -> int:
         return 2
     llm = EnrichmentSession(cfg, Path(settings.cache_dir) if settings.cache_dir else out / ".cache",
                             connect(cfg, args.llm_replay))
-    if cfg.enabled and not args.no_preflight:
-        log.info("checking LLM endpoint %s", cfg.base_url or "(OpenAI default)")
-        err = llm.preflight()
-        if err:
-            print(f"error: LLM endpoint check failed ({cfg.base_url or 'OpenAI default endpoint'}): {err}\n"
-                  "Check OPENAI_BASE_URL, OPENAI_API_KEY and the model name, or pass --no-preflight.",
-                  file=sys.stderr)
-            return 5
+    if cfg.enabled and not args.no_preflight and not check_endpoint(llm):
+        return 5
 
     state = State(out)
     try:
@@ -527,6 +562,85 @@ def run_tree(args: argparse.Namespace, argv: list[str]) -> int:
         return 2
     finally:
         state.close()
+
+
+def calibrate_vision(out: Path, args: argparse.Namespace) -> int:
+    """`calibrate-vision` (plan VC): eye charts read by the tree's vision model, the sketch settings
+    they call for, and with --apply those settings written to the tree."""
+    import datetime as dt
+
+    from . import calibrate, eyechart
+    from .sketch import SketchStyle
+
+    stored = stored_settings(out)
+    settings = effective_settings(args, stored)
+    cfg = llm_config(settings)
+    if cfg is None:
+        return 2
+    cfg.text_model = None  # images only
+    if settings.no_llm or not cfg.vision_model:
+        print("error: calibrate-vision needs a vision model: --vision-model, or CAMEO_INGEST_VISION_MODEL or the "
+              "text model's settings (see `run`)", file=sys.stderr)
+        return 2
+    llm = EnrichmentSession(cfg, Path(settings.cache_dir) if settings.cache_dir else out / ".cache",
+                            connect(cfg, args.llm_replay))
+    if not args.no_preflight and not check_endpoint(llm):
+        return 5
+    pixels = settings.image_pixels or IMAGE_PIXELS
+    cards = eyechart.suite(args.suite, pixels, SketchStyle(*settings.sketch))
+    try:
+        results = calibrate.ask(llm, cards, settings.llm_concurrency or 1, Progress(heartbeat=args.heartbeat))
+    except KeyboardInterrupt:
+        print("interrupted; the answers so far are stored, so running again asks only for the rest", file=sys.stderr)
+        return 130
+    summary = calibrate.summarize(results)
+    recs = calibrate.recommend(summary, pixels, settings.sketch, settings.modules)
+    stored_answers = llm.outcomes["cached"] + llm.outcomes["replayed"]
+    report = calibrate.render_report(cfg.vision_model, cfg.base_url, args.suite, summary, recs,
+                                     f"{llm.calls} requests sent; {stored_answers} answered from the store.")
+    model = re.sub(r"[^A-Za-z0-9._-]+", "_", cfg.vision_model)
+    dest = out / "calibration" / f"{model}-{dt.datetime.now(dt.UTC).date().isoformat()}"
+    calibrate.save(dest, results, summary, recs, report, cards)
+    for r in recs:
+        print(f"{r.setting}: {r.current}" + (f" -> {r.recommended}" if r.changes else " (kept)") + f": {r.why}")
+    print(f"the measurements are in {dest / 'report.md'}")
+    asked = summary["cards"] - summary["unasked"]
+    problem = (f"{summary['unasked']} of {summary['cards']} eye charts were not asked (failures or the call budget)"
+               if summary["unasked"] else
+               f"{summary['unreadable']} of {asked} replies could not be read" if summary["unreadable"] * 2 > asked
+               else None)
+    if problem:
+        print(f"warning: {problem}; see the replies in {dest / 'results.json'}", file=sys.stderr)
+    if not args.apply:
+        if any(r.changes for r in recs):
+            print("`--apply` writes the changes to the tree's settings")
+        return 0
+    if problem:
+        print("error: not applied: the calibration is incomplete", file=sys.stderr)
+        return 2
+    tree_now = TreeSettings.from_stored(stored)
+    current = {"image_pixels": tree_now.image_pixels or IMAGE_PIXELS,
+               "diagram_modules": ":".join(map(str, tree_now.modules)),
+               **dict(zip(("sketch_font_px", "sketch_arrow_px", "sketch_line_px"), tree_now.sketch, strict=True))}
+    writes = {r.setting: r.recommended for r in recs if r.recommended != current[r.setting]}
+    if not writes:
+        print(f"nothing to apply: {out}'s settings are already those recommended")
+        return 0
+    sketches = sum(1 for _ in (out / tree.exports.PROJECTS).glob("*/diagrams/**/*.png"))
+    state = State(out)
+    try:
+        state.lock()
+        state.save_settings(TreeSettings.from_stored({**stored, **writes}).stored())
+    except StateError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    finally:
+        state.close()
+    print(f"applied to {out}: " + ", ".join(f"{k} = {v}" for k, v in writes.items()) + ". The next run draws its "
+          f"{sketches:,} sketches again and asks again for their descriptions"
+          + (", and for those of other images" if "image_pixels" in writes else "")
+          + "; the other LLM answers come from the store")
+    return 0
 
 
 def _interrupt(signum: int, frame: Any) -> None:
@@ -568,7 +682,7 @@ def main(argv: list[str] | None = None) -> int:
     out: Path = args.out
     if not State.exists(out):
         if args.command in ("run", "status", "prune", "quality", "export", "scan", "projects", "groups", "remove",
-                            "restore"):
+                            "restore", "calibrate-vision"):
             print(f"error: no output tree at {out}; start one with `add` or `ingest`", file=sys.stderr)
             return 2
         if out.exists() and any(p.name != ".cache" for p in out.iterdir()):
@@ -612,6 +726,8 @@ def main(argv: list[str] | None = None) -> int:
         return export_catalog(out, args)
     if args.command in ("scan", "projects", "groups", "remove", "restore"):
         return versions_command(out, args)
+    if args.command == "calibrate-vision":
+        return calibrate_vision(out, args)
     if args.command == "prune":
         state = State(out)
         try:

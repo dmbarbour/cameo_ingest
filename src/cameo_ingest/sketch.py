@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 
 from PIL import Image, ImageDraw, ImageFont
 
-from .config import IMAGE_PIXELS
+from .config import IMAGE_PIXELS, SKETCH
 from .diagram_graph import DiagramGraph, Node
 from .layout import View
 from .model import ModelIndex
@@ -34,9 +34,9 @@ class SketchStyle:
     """Sizes a sketch is drawn with, in the image's pixels: found by hand for gemma-4 on
     DeepInfra (FU-012, FU-015), and calibrated for another model by `calibrate-vision` (plan VC)."""
 
-    font_px: int = 12  # names, number tags and the title
-    arrow_px: float = 10  # an arrowhead's legs
-    line_px: int = 1  # connections
+    font_px: int = SKETCH[0]  # names, number tags and the title
+    arrow_px: float = SKETCH[1]  # an arrowhead's legs
+    line_px: int = SKETCH[2]  # connections
 
     @property
     def title_px(self) -> int:
@@ -88,7 +88,7 @@ def render_png(ix: ModelIndex, g: DiagramGraph, title: str, pixels: int = IMAGE_
     With a `frame`, only its region is drawn, around the shapes in focus: other shapes are
     faded, and a connection leaving the picture ends in its far shape's number."""
     f = frame or Frame()
-    FONT_PX, TITLE_PX = style.font_px, style.title_px  # noqa: N806 (the module's names, for this style)
+    FONT_PX, TITLE_PX = style.font_px, style.title_px  # the module's names, for this style
     focus = f.focus
     xs: list[float] = []
     ys: list[float] = []

@@ -113,6 +113,7 @@ SKETCH = "re-drawn from layout data, not a Cameo rendering"
 
 def ingest_project(content: ContentInfo, project: Project, root: Path, llm: EnrichmentSession, render: bool = True,
                    progress: Progress = QUIET, concurrency: int = 1, image_pixels: int = IMAGE_PIXELS,
+                   style: sketch.SketchStyle = sketch.STYLE,
                    modules: tuple[int, int, int] = MODULES) -> ProjectResult:
     """Parse, draw the sketches, ask the LLM (`enrich`), write."""
     ix = parse_project(project, progress)
@@ -135,9 +136,10 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: Enri
                 rel = writer.plan.dia_file[dia_id].removesuffix(".md") + ".png"
                 reused += (root / rel).exists()
                 if part is not None:
-                    drawn = _draw(root / rel, partial(sketch.overview_png, ix, part, title, image_pixels))
+                    drawn = _draw(root / rel, partial(sketch.overview_png, ix, part, title, image_pixels, style))
                 else:
-                    drawn = _draw(root / rel, partial(sketch.render_png, ix, graph, title, pixels=image_pixels))
+                    drawn = _draw(root / rel, partial(sketch.render_png, ix, graph, title, pixels=image_pixels,
+                                                      style=style))
                 if not drawn:
                     continue
                 _draw(root / (rel.removesuffix(".png") + ".svg"), partial(_svg, ix, graph, title))  # for people (KX)
@@ -150,7 +152,7 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: Enri
                     continue
                 for m in part.modules:
                     mrel = writer.plan.module_image(dia_id, m.num)
-                    if not _draw(root / mrel, partial(sketch.module_png, ix, part, m.num, title, image_pixels)):
+                    if not _draw(root / mrel, partial(sketch.module_png, ix, part, m.num, title, image_pixels, style)):
                         continue
                     annotations[dia_id].append(
                         Annotation(f"Module M{m.num} sketch ({SKETCH})", "", tr, image=mrel, module=m.num))

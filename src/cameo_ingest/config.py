@@ -22,6 +22,9 @@ IMAGE_PIXELS = 280 * 48 * 48
 # Diagrams with more shapes than the first are split into modules of the second to the third
 # (plan DV); --diagram-modules, for tuning: the defaults should serve.
 MODULES = (25, 6, 25)
+# Sketches' font size, arrowhead legs and line width, in pixels: found by hand for gemma-4 (FU-012),
+# calibrated for another model by `calibrate-vision` (plan VC).
+SKETCH = (12, 10.0, 1)
 
 
 @dataclass(frozen=True)
@@ -38,6 +41,9 @@ class TreeSettings:
     render: bool = True
     image_pixels: int | None = None
     diagram_modules: str | None = None  # "N:MIN:MAX"
+    sketch_font_px: int | None = None
+    sketch_arrow_px: float | None = None
+    sketch_line_px: int | None = None
     rag_files: bool = True
     rag_source: str = "trace"  # or "id"
     cross_index: bool = True
@@ -58,6 +64,11 @@ class TreeSettings:
     @property
     def modules(self) -> tuple[int, int, int]:
         return parse_modules(self.diagram_modules)
+
+    @property
+    def sketch(self) -> tuple[int, float, int]:
+        font, arrow, line = SKETCH
+        return (self.sketch_font_px or font, float(self.sketch_arrow_px or arrow), self.sketch_line_px or line)
 
 
 def parse_modules(spec: str | None) -> tuple[int, int, int]:
@@ -83,6 +94,7 @@ class ProjectOptions:
     image_pixels: int = IMAGE_PIXELS
     modules: tuple[int, int, int] = MODULES
     templates: tuple[str, ...] = ()  # the prompt templates' versions, when the LLM is on
+    sketch: tuple[int, float, int] = SKETCH  # font, arrowhead legs and line width, in pixels
 
     @classmethod
     def of(cls, settings: TreeSettings, text_model: str | None, vision_model: str | None,
@@ -92,13 +104,17 @@ class ProjectOptions:
 
         enabled = bool(text_model or vision_model)
         return cls(settings.render, text_model, vision_model, max_calls, settings.image_pixels or IMAGE_PIXELS,
-                   settings.modules, tuple(sorted(t.key for t in CURRENT.values())) if enabled else ())
+                   settings.modules, tuple(sorted(t.key for t in CURRENT.values())) if enabled else (),
+                   settings.sketch)
 
     def as_dict(self) -> dict[str, Any]:
         """As run.json records them, and as they are hashed."""
-        return {"render": self.render, "text_model": self.text_model, "vision_model": self.vision_model,
-                "max_calls": self.max_calls, "image_pixels": self.image_pixels, "modules": list(self.modules),
-                "templates": list(self.templates)}
+        out = {"render": self.render, "text_model": self.text_model, "vision_model": self.vision_model,
+               "max_calls": self.max_calls, "image_pixels": self.image_pixels, "modules": list(self.modules),
+               "templates": list(self.templates)}
+        if tuple(self.sketch) != SKETCH:  # only when calibrated: so that today's hashes stand (plan VC)
+            out["sketch"] = list(self.sketch)
+        return out
 
     def hash(self) -> str:
         """Of the options that change a project's output: the same as before options were typed,
