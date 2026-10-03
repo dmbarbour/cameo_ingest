@@ -20,7 +20,7 @@ from .provenance import utc_now
 
 STATE_FILE = "state.sqlite"
 LOCK_FILE = "state.lock"
-SCHEMA_VERSION = 2  # 2: fingerprints and removed (plan PV)
+SCHEMA_VERSION = 3  # 2: fingerprints and removed (plan PV); 3: calibrations (plan VA)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -101,6 +101,19 @@ CREATE TABLE IF NOT EXISTS removed (
     removed TEXT NOT NULL
 );
 
+-- The vision models' calibrations (plan VA): the sketch settings the eye charts call for, per
+-- endpoint ('' for the OpenAI default) and model, made again when the suite's version changes.
+CREATE TABLE IF NOT EXISTS calibrations (
+    endpoint TEXT NOT NULL,
+    model TEXT NOT NULL,
+    suite INTEGER NOT NULL,
+    settings TEXT NOT NULL,                       -- JSON, as tree settings name them
+    summary TEXT NOT NULL,                        -- JSON: what the eye charts measured
+    report TEXT NOT NULL,                         -- the report's directory, relative to the tree
+    created TEXT NOT NULL,
+    PRIMARY KEY (endpoint, model, suite)
+);
+
 -- Sightings in the current version of each input (missing inputs included, flagged).
 CREATE VIEW IF NOT EXISTS current_sightings AS
     SELECT s.content_sha256, c.name, i.id AS input_id, i.path, i.status AS input_status,
@@ -139,10 +152,11 @@ class State:
             self.db.execute("INSERT INTO meta VALUES ('schema_version', ?)", (str(SCHEMA_VERSION),))
         elif int(row[0]) > SCHEMA_VERSION:
             raise StateError(f"{self.path} was made by a newer cameo-ingest (schema {row[0]})")
-        elif int(row[0]) < 2:  # the new tables exist now; the status view learns of removals (plan PV)
+        elif int(row[0]) < SCHEMA_VERSION:  # the new tables exist now (executescript made them)
             with self.tx() as db:
-                db.execute("DROP VIEW project_status")
-                db.execute(SCHEMA[SCHEMA.index("CREATE VIEW IF NOT EXISTS project_status"):].strip().rstrip(";"))
+                if int(row[0]) < 2:  # the status view learns of removals (plan PV)
+                    db.execute("DROP VIEW project_status")
+                    db.execute(SCHEMA[SCHEMA.index("CREATE VIEW IF NOT EXISTS project_status"):].strip().rstrip(";"))
                 db.execute("UPDATE meta SET value = ? WHERE key = 'schema_version'", (str(SCHEMA_VERSION),))
         self._lock_fd: Any = None
 
@@ -359,6 +373,19 @@ class State:
     def restore(self, shas: list[str]) -> None:
         with self.tx() as db:
             db.executemany("DELETE FROM removed WHERE content_sha256 = ?", [(sha,) for sha in shas])
+
+    # -- calibrations (plan VA) -----------------------------------------------------------------------
+    def calibration(self, endpoint: str, model: str, suite: int) -> sqlite3.Row | None:
+        return self.db.execute("SELECT * FROM calibrations WHERE endpoint = ? AND model = ? AND suite = ?",
+                               (endpoint, model, suite)).fetchone()
+
+    def save_calibration(self, endpoint: str, model: str, suite: int, settings: dict[str, Any],
+                         summary: dict[str, Any], report: str) -> None:
+        self.db.execute("INSERT OR REPLACE INTO calibrations VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (endpoint, model, suite, json.dumps(settings), json.dumps(summary), report, utc_now()))
+
+    def calibrations(self) -> list[sqlite3.Row]:
+        return self.db.execute("SELECT * FROM calibrations ORDER BY created DESC").fetchall()
 
     def settings(self) -> dict[str, Any]:
         return {r["key"]: json.loads(r["value"]) for r in self.db.execute("SELECT * FROM settings")}

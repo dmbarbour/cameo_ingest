@@ -9,7 +9,7 @@ from helpers import ingest, tree
 
 from cameo_ingest.cli import main
 from cameo_ingest.fingerprint import parse_java_date
-from cameo_ingest.state import State
+from cameo_ingest.state import SCHEMA_VERSION, State
 
 
 def model(name: str, ids: list[str], saved: str | None = "Thu Nov 02 11:39:23 PDT 2023") -> bytes:
@@ -123,7 +123,7 @@ def test_a_tree_from_before_opens(tmp_path):
     sha = st.catalog()[0]["sha256"]
     st.remove([(sha, "x.mdzip")])
     assert st.catalog()[0]["status"] == "removed"
-    assert st.db.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0] == "2"
+    assert st.db.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0] == str(SCHEMA_VERSION)
     st.close()
     assert sqlite3.connect(tmp_path / "state.sqlite").execute("SELECT count(*) FROM removed").fetchone() == (1,)
 

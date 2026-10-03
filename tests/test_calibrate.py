@@ -1,39 +1,53 @@
-"""Calibrating sketches to the vision model: the command, its recommendations, and the sketch
-settings they change (plan VC-03 to VC-05)."""
+"""Calibrating sketches to the vision model: the command, its recommendations, the record a run
+uses, and the sketch settings they change (plans VC, VA)."""
 
 import base64
+import functools
 import hashlib
 import json
-import sqlite3
 
 from fixture_model import make_mdzip
 from helpers import ingest
 
-from cameo_ingest.calibrate import recommend
+from cameo_ingest.calibrate import SUITE_VERSION, recommend
 from cameo_ingest.cli import main
 from cameo_ingest.config import IMAGE_PIXELS, ProjectOptions, TreeSettings
-from cameo_ingest.eyechart import drawings, perfect, reading, render
+from cameo_ingest.eyechart import Drawn, drawings, perfect, reading, render
 from cameo_ingest.sketch import SketchStyle
-from cameo_ingest.state import State
+from cameo_ingest.state import SCHEMA_VERSION, State
+
+MODEL = "acme/eye-vl"
+
+
+@functools.cache
+def known_cards() -> dict[str, Drawn]:
+    """Both suites' cards, the drawn ones in the fonts the tests' readers call for: 8 px for a
+    reader that reads every size, 13 px (the default) for one that reads none."""
+    cards = {c.id: c for name in ("quick", "standard") for c in reading(name, IMAGE_PIXELS)}
+    for name in ("quick", "standard"):
+        for font in (8, 13):
+            cards.update({c.id: c for c in drawings(name, IMAGE_PIXELS, SketchStyle(font))})
+    return {hashlib.sha256(d.png).hexdigest(): d for d in map(render, cards.values())}
 
 
 class EyeReader:
-    """A vision model that knows the truth of each quick-suite card (drawn in the fonts the tests'
-    readers call for), and answers as `policy(card, drawn)` says: a dict as JSON, or a string."""
+    """A vision model that knows each card's truth and answers as `policy(card, drawn)` says: a
+    dict as JSON, or a string. Any other request (a sketch to describe) gets a fixed answer."""
 
     replays = False
 
     def __init__(self, policy):
         self.policy = policy
-        cards = reading("quick", IMAGE_PIXELS) + [c for font in (8, 13)
-                                                 for c in drawings("quick", IMAGE_PIXELS, SketchStyle(font))]
-        self.cards = {hashlib.sha256(d.png).hexdigest(): d for d in map(render, cards)}
         self.requests = 0
 
     def complete(self, model, messages, temperature):
         self.requests += 1
-        (image,) = [p for p in messages[0]["content"] if p["type"] == "image_url"]
-        drawn = self.cards[hashlib.sha256(base64.b64decode(image["image_url"]["url"].split(",", 1)[1])).hexdigest()]
+        content = messages[0]["content"]
+        images = [p for p in content if p["type"] == "image_url"] if isinstance(content, list) else []
+        png = base64.b64decode(images[0]["image_url"]["url"].split(",", 1)[1]) if images else b""
+        drawn = known_cards().get(hashlib.sha256(png).hexdigest())
+        if drawn is None:
+            return "A block definition diagram showing Drone composed of Battery."
         answer = self.policy(drawn.card, drawn)
         return answer if isinstance(answer, str) else json.dumps(answer)
 
@@ -49,47 +63,78 @@ def reader(monkeypatch, policy) -> list[EyeReader]:
     return made
 
 
-def calibrate(out, *flags) -> int:
-    return main(["calibrate-vision", "-o", str(out), "--suite", "quick", "--vision-model", "acme/eye-vl",
-                 "--no-preflight", *flags])
+def calibrate(out, *flags, suite="quick") -> int:
+    return main(["calibrate-vision", "-o", str(out), "--suite", suite, "--vision-model", MODEL, "--no-preflight",
+                 *flags])
 
 
-def test_a_perfect_reader_gets_the_smallest_sizes(tmp_path, monkeypatch, capsys):
-    """Everything read at every size: the smallest sizes tested, whatever the tree uses now; the
-    budget, a cost for a model reading at native resolution, as configured."""
-    out = ingest(tmp_path, ("m.mdzip", make_mdzip()), args=("--no-llm", "--no-render"))
+def run_with_model(out, *flags) -> int:
+    return main(["run", "-o", str(out), "--vision-model", MODEL, "--no-preflight", *flags])
+
+
+def options(out) -> dict:
+    return json.loads((out / "run.json").read_text())["options"]
+
+
+def sketches(out) -> dict:
+    return {p.relative_to(out): p.read_bytes() for p in out.glob("by-sha256/*/diagrams/*.png")}
+
+
+def record(out):
+    state = State(out)
+    try:
+        return state.calibration("", MODEL, SUITE_VERSION)
+    finally:
+        state.close()
+
+
+def test_a_calibration_is_recorded_and_runs_use_it(tmp_path, monkeypatch, capsys):
+    """A perfect reader: the smallest sizes tested, whatever the tree used; the budget, a cost for a
+    model reading at native resolution, as configured. The standard suite's calibration is recorded,
+    and runs with that model draw to it; runs without a vision model draw to the defaults."""
+    out = ingest(tmp_path, ("m.mdzip", make_mdzip()))
+    before = sketches(out)
     readers = reader(monkeypatch, lambda card, drawn: perfect(drawn))
-    assert calibrate(out) == 0
+    assert calibrate(out, suite="standard") == 0
     (dest,) = (out / "calibration").iterdir()
     assert dest.name.startswith("acme_eye-vl-")
     results = json.loads((dest / "results.json").read_text())
-    assert len(results["cards"]) == 11 and len(list((dest / "cards").glob("*.png"))) == 11
+    assert len(results["cards"]) == 80 and len(list((dest / "cards").glob("*.png"))) == 80
     assert all(c["score"] == 1.0 for c in results["cards"])
-    assert {r["setting"]: r["recommended"] for r in results["recommendations"]} == {
-        "image_pixels": IMAGE_PIXELS, "sketch_font_px": 8, "sketch_arrow_px": 6, "sketch_line_px": 1,
-        "diagram_modules": "36:6:36"}  # 8 px: 1.3 times the 6 px read
-    report = (dest / "report.md").read_text()
-    assert "| `sketch_font_px` | 13 | 8 **(change)** |" in report and "native resolution" in report
-    assert "`--apply` writes the changes" in capsys.readouterr().out
-    # The answers are stored: calibrating again sends nothing, and --apply writes the sizes.
+    expected = {"image_pixels": IMAGE_PIXELS, "sketch_font_px": 8, "sketch_arrow_px": 6.0, "sketch_line_px": 1,
+                "diagram_modules": "36:6:36"}  # 8 px: 1.3 times the 6 px read
+    assert {r["setting"]: r["recommended"] for r in results["recommendations"]} == expected
+    assert "| `sketch_font_px` | 13 | 8 **(change)** |" in (dest / "report.md").read_text()
+    printed = capsys.readouterr().out
+    assert f"recorded: runs with {MODEL} use these settings" in printed
+    assert f"draws the tree's {len(before)} sketches again" in printed
+    row = record(out)
+    assert json.loads(row["settings"]) == expected and row["report"] == f"calibration/{dest.name}"
+    # Calibrating again asks nothing: the answers are stored.
     sent = sum(r.requests for r in readers)
-    assert sent == 11
-    assert calibrate(out, "--apply") == 0
+    assert sent == 80
+    assert calibrate(out, suite="standard") == 0
     assert sum(r.requests for r in readers) == sent
-    assert "applied to" in capsys.readouterr().out
-    state = State(out)
-    stored = state.settings()
-    state.close()
-    assert (stored["sketch_font_px"], stored["sketch_arrow_px"], stored["diagram_modules"]) == (8, 6, "36:6:36")
-    assert "sketch_line_px" not in stored and "image_pixels" not in stored  # as they were
-    assert calibrate(out, "--apply") == 0
-    assert "nothing to apply" in capsys.readouterr().out
+    assert run_with_model(out) == 0
+    assert options(out)["sketch"] == [8, 6.0, 1] and options(out)["modules"] == [36, 6, 36]
+    assert sketches(out).keys() == before.keys() and sketches(out) != before
+    assert main(["run", "-o", str(out), "--no-llm"]) == 0
+    assert options(out)["sketch"] == [13, 10.0, 1] and sketches(out) == before
 
 
-def test_misread_arrowheads_are_enlarged_and_applied(tmp_path, monkeypatch, capsys):
-    """A model that reverses one arrow in three below 14 px heads: the heads grow to 14 px; --apply
-    writes that to the tree, and the next run draws the sketches again under another options hash."""
-    out = ingest(tmp_path, ("m.mdzip", make_mdzip()))
+def test_the_trees_own_settings_win(tmp_path, monkeypatch, capsys):
+    out = ingest(tmp_path, ("m.mdzip", make_mdzip()), args=("--no-llm", "--no-render", "--sketch-font-px", "15"))
+    reader(monkeypatch, lambda card, drawn: perfect(drawn))
+    assert calibrate(out, suite="standard") == 0
+    printed = capsys.readouterr().out
+    assert "sketch_font_px: 8 (was 15): " in printed and "the tree's own setting, 15, overrides it" in printed
+    assert run_with_model(out) == 0
+    assert options(out)["sketch"] == [15, 6.0, 1]
+
+
+def test_misread_arrowheads_are_enlarged(tmp_path, monkeypatch, capsys):
+    """A model that reverses one arrow in three below 14 px heads gets 14 px heads."""
+    out = ingest(tmp_path, ("m.mdzip", make_mdzip()), args=("--no-llm", "--no-render"))
 
     def policy(card, drawn):
         answer = perfect(drawn)
@@ -99,40 +144,18 @@ def test_misread_arrowheads_are_enlarged_and_applied(tmp_path, monkeypatch, caps
         return answer
 
     reader(monkeypatch, policy)
-    sketches = {p.relative_to(out): p.read_bytes() for p in out.glob("by-sha256/*/diagrams/*.png")}
-    assert sketches
-    db = sqlite3.connect(out / "state.sqlite")
-    (hash_before,) = db.execute("SELECT options_hash FROM projects").fetchone()
-    db.close()
-    capsys.readouterr()
-    assert calibrate(out, "--apply") == 0
+    assert calibrate(out, suite="standard") == 0
     printed = capsys.readouterr().out
-    assert "sketch_arrow_px: 10.0 -> 14" in printed and "sketch_line_px: 1 (kept)" in printed
-    assert "sketch_arrow_px = 14," in printed and f"The next run draws its {len(sketches)} sketches again" in printed
-    state = State(out)
-    assert state.settings()["sketch_arrow_px"] == 14
-    state.close()
+    assert "sketch_arrow_px: 14 (was 10.0)" in printed and "sketch_line_px: 1: " in printed
+    assert json.loads(record(out)["settings"])["sketch_arrow_px"] == 14.0
     report = (next((out / "calibration").iterdir()) / "report.md").read_text()
     assert "| 10 px | 1 px | 64% | 36% |" in report and "| 14 px | 1 px | 100% | 0% |" in report  # 4 of 11
 
-    def options_hash():
-        db = sqlite3.connect(out / "state.sqlite")
-        try:
-            return db.execute("SELECT options_hash FROM projects").fetchone()[0]
-        finally:
-            db.close()
-
-    assert main(["run", "-o", str(out)]) == 0
-    assert "1 project(s) written in this run" in capsys.readouterr().out
-    assert options_hash() != hash_before
-    # The fixture's one connection has no arrowhead; the font, 8 px for this reader, redraws it.
-    redrawn = {p.relative_to(out): p.read_bytes() for p in out.glob("by-sha256/*/diagrams/*.png")}
-    assert redrawn.keys() == sketches.keys() and redrawn != sketches
-
 
 def test_a_reader_that_reverses_every_arrow(tmp_path, monkeypatch, capsys):
-    """Every connection found, none the right way round: no arrowhead size helps, so the reference
-    sizes are recommended and flagged; the modules grow, since their measure is connections found."""
+    """Every connection found, none the right way round: no arrowhead size helps, so the default
+    sizes are recommended and flagged; the modules grow, since their measure is connections found.
+    The quick suite checks a model, and is not recorded."""
     out = ingest(tmp_path, ("m.mdzip", make_mdzip()), args=("--no-llm", "--no-render"))
 
     def policy(card, drawn):
@@ -144,19 +167,34 @@ def test_a_reader_that_reverses_every_arrow(tmp_path, monkeypatch, capsys):
     reader(monkeypatch, policy)
     assert calibrate(out) == 0
     printed = capsys.readouterr().out
-    assert "sketch_arrow_px: 10.0 (kept): none reaches 95% (the best, 0%): the default sizes" in printed
-    assert "diagram_modules: 25:6:25 -> 36:6:36: connections are found among up to 36 shapes (the most tested)" \
+    assert "sketch_arrow_px: 10.0: none reaches 95% (the best, 0%): the default sizes" in printed
+    assert "diagram_modules: 36:6:36 (was 25:6:25): connections are found among up to 36 shapes (the most tested)" \
         in printed
+    assert "the quick suite checks a model and is not recorded" in printed and record(out) is None
     report = (next((out / "calibration").iterdir()) / "report.md").read_text()
     assert "| 36 | 100% | 0% | 100% |" in report
 
 
-def test_unreadable_replies_are_not_applied(tmp_path, monkeypatch, capsys):
+def test_unreadable_replies_are_not_recorded(tmp_path, monkeypatch, capsys):
     out = ingest(tmp_path, ("m.mdzip", make_mdzip()), args=("--no-llm", "--no-render"))
     reader(monkeypatch, lambda card, drawn: "I cannot read this image.")
-    assert calibrate(out, "--apply") == 2
+    assert calibrate(out, suite="standard") == 2
     err = capsys.readouterr().err
-    assert "11 of 11 replies could not be read" in err and "not applied" in err
+    assert "80 of 80 replies could not be read" in err and "Not recorded" in err
+    assert record(out) is None
+
+
+def test_a_schema_2_tree_migrates(tmp_path):
+    st = State(tmp_path)
+    st.db.execute("DROP TABLE calibrations")
+    st.db.execute("UPDATE meta SET value = '2' WHERE key = 'schema_version'")
+    st.close()
+    st = State(tmp_path)
+    assert st.calibrations() == []
+    assert st.db.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0] == str(SCHEMA_VERSION)
+    st.save_calibration("", MODEL, SUITE_VERSION, {"sketch_font_px": 9}, {}, "calibration/x")
+    assert json.loads(st.calibration("", MODEL, SUITE_VERSION)["settings"]) == {"sketch_font_px": 9}
+    st.close()
 
 
 def summary(read, arrows=None, density=None):

@@ -43,7 +43,7 @@ many files, bundles or names it turns up under.
 | `cameo-ingest groups -o OUT [--csv FILE]` | Versions of the same model, found by the element ids they share, newest first (see "Versions and removal"). |
 | `cameo-ingest remove -o OUT TOKEN... [--dry-run]` / `restore` | Removes projects from the tree, and keeps them out of later runs while their inputs remain; `restore` undoes it. |
 | `cameo-ingest export -o OUT [--workbook FILE] [--search-page FILE]` | Writes the catalog of the tree's models for people to search without tools: a workbook, a self-contained search page, or both (see "Searching without tools"). Apart from `run`, since it is a distribution step. |
-| `cameo-ingest calibrate-vision -o OUT [--suite quick\|standard] [--apply]` | Measures what the tree's vision model reads, with eye charts drawn as sketches are, and recommends the sketch settings; `--apply` writes them to the tree (see "Calibrating sketches to the vision model"). |
+| `cameo-ingest calibrate-vision -o OUT [--suite quick\|standard]` | Measures what the tree's vision model reads, with eye charts drawn as sketches are, and records the sketch settings it calls for; runs with that model use them (see "Calibrating sketches to the vision model"). |
 
 - **Output directories.** A missing or empty directory starts a tree. A directory with
   `state.sqlite` is continued. Any other non-empty directory is refused.
@@ -179,11 +179,16 @@ beside it but never preferred, and keeping cached answers is no reason to keep a
 Where the eye charts decide nothing (no arrow size passes, say), the recommendation is the
 default above, not the tree's current value.
 
-`--apply` writes the recommendations to the tree's settings. The next run then redraws every
-sketch and asks again for its description, about one request per sketch (the command gives
-the count). The settings can also be given by hand, as run flags. A test that means to push a
-model past what it reads comfortably should say so, and set its sizes from the calibration
-(for example, the font at the 90% threshold itself).
+**The record.** The standard suite's calibration is recorded in the tree, per endpoint and
+model. Runs with that model use it, unless the tree sets a size itself (`--image-pixels`,
+`--diagram-modules`, `--sketch-*-px`): the tree's own settings win, then the calibration, then
+the defaults above. A run without a vision model draws to the defaults. When a calibration
+changes the sizes, the next run redraws every sketch and asks again for its description, about
+one request per sketch; the command gives the count. A calibration with unanswered or
+unreadable cards is not recorded.
+
+A test that means to push a model past what it reads comfortably should say so, and set its
+sizes from the calibration (for example, the font at the 90% threshold itself).
 
 ## Output
 

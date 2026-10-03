@@ -9,8 +9,10 @@ for their descriptions, as it should (the maintainer's policy, 2026-10-03).
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import math
+import re
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -18,11 +20,12 @@ from pathlib import Path
 from typing import Any
 
 from . import eyechart as ec
-from .config import MODULES, SKETCH
-from .llm import EnrichmentSession
+from .config import IMAGE_PIXELS, MODULES, SKETCH, TreeSettings
+from .llm import EnrichmentSession, LLMConfig
 from .progress import QUIET, Progress
 from .prompts import Slot, Template
 from .sketch import SketchStyle
+from .state import State
 from .vision import PATCH_PX
 
 _CARD = Slot("CARD", "image", "the eye chart: random codes and numbers, or numbered boxes joined by arrows")
@@ -32,6 +35,7 @@ TEMPLATES = {  # outside prompts.CURRENT: calibration changes no project's optio
                      text=prompt, slots=(_CARD,), image_first=True)
     for family, prompt in (("read", ec.READ_PROMPT), ("arrows", ec.ARROWS_PROMPT))
 }
+SUITE_VERSION = 1  # the cards and rules a calibration was made with: a new version calibrates again
 ARROWS_PASS = 0.95  # arrows the right way round, for an arrowhead size and line width to pass
 DENSITY_PASS = 0.9  # connections found (either way round), for a number of shapes to pass
 FONT_MARGIN = 1.3  # the font's size over the 90% threshold
@@ -203,9 +207,12 @@ def recommend(summary: dict[str, Any], pixels: int, sketch: tuple[int, float, in
     return recs
 
 
-def changed_settings(recs: list[Recommendation]) -> dict[str, Any]:
-    """The tree settings the recommendations change, as the tree stores them."""
-    return {r.setting: r.recommended for r in recs if r.changes}
+def calibrated_settings(recs: list[Recommendation]) -> dict[str, Any]:
+    """The recommendations as tree settings, for the calibration's record."""
+    out = {r.setting: r.recommended for r in recs}
+    if "sketch_arrow_px" in out:
+        out["sketch_arrow_px"] = float(out["sketch_arrow_px"])
+    return out
 
 
 def render_report(model: str, endpoint: str | None, suite: str, summary: dict[str, Any],
@@ -233,6 +240,61 @@ def render_report(model: str, endpoint: str | None, suite: str, summary: dict[st
     if cost_note:
         lines += ["", cost_note]
     return "\n".join(lines) + "\n"
+
+
+def problem(summary: dict[str, Any]) -> str | None:
+    """Why a calibration can't be trusted, or None."""
+    asked = summary["cards"] - summary["unasked"]
+    if summary["unasked"]:
+        return f"{summary['unasked']} of {summary['cards']} eye charts were not asked (failures or the call budget)"
+    if summary["unreadable"] * 2 > asked:
+        return f"{summary['unreadable']} of {asked} replies could not be read"
+    if not any(a["threshold"] for a in summary["read"]):
+        return "the model read no font size on the eye charts"
+    return None
+
+
+def recorded(state: State, cfg: LLMConfig) -> dict[str, Any] | None:
+    """The settings of the configured vision model's calibration in this tree, if it has one."""
+    row = state.calibration(cfg.base_url or "", cfg.vision_model or "", SUITE_VERSION) if cfg.vision_model else None
+    return json.loads(row["settings"]) if row else None
+
+
+@dataclass
+class Outcome:
+    dest: Path  # the report's directory
+    recs: list[Recommendation]
+    problem: str | None
+    settings: dict[str, Any] | None  # as recorded; None when not recorded
+
+
+def calibrate_model(out: Path, state: State, llm: EnrichmentSession, suite: str, pixels: int, using: TreeSettings,
+                    concurrency: int = 1, progress: Progress = QUIET) -> Outcome:
+    """Measure the session's vision model with a suite of eye charts, starting at a budget of
+    `pixels`, and report. The standard suite's calibration, when it can be trusted, is recorded in
+    the tree for runs with that model. `using`: the settings runs use now, shown beside the
+    recommendations."""
+    cfg = llm.cfg
+    model = cfg.vision_model or ""
+    cards, results = measure(llm, suite, pixels, concurrency, progress)
+    summary = summarize(results)
+    recs = recommend(summary, pixels, using.sketch, using.modules)
+    for r in recs:
+        if r.setting == "image_pixels":
+            r.current = using.image_pixels or IMAGE_PIXELS
+    stored_answers = llm.outcomes["cached"] + llm.outcomes["replayed"]
+    report = render_report(model, cfg.base_url, suite, summary, recs,
+                           f"{llm.calls} requests sent; {stored_answers} answered from the store.")
+    name = re.sub(r"[^A-Za-z0-9._-]+", "_", model)
+    dest = out / "calibration" / f"{name}-{dt.datetime.now(dt.UTC).date().isoformat()}"
+    save(dest, results, summary, recs, report, cards)
+    why = problem(summary)
+    settings = None
+    if why is None and suite == "standard":
+        settings = calibrated_settings(recs)
+        state.save_calibration(cfg.base_url or "", model, SUITE_VERSION, settings, summary,
+                               dest.relative_to(out).as_posix())
+    return Outcome(dest, recs, why, settings)
 
 
 def save(out_dir: Path, results: list[dict[str, Any]], summary: dict[str, Any], recs: list[Recommendation],

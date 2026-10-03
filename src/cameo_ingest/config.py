@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 from typing import Any
 
 from .provenance import sha256_text
@@ -29,6 +29,8 @@ IMAGE_PIXELS = 280 * 48 * 48
 MODULES = (25, 6, 25)
 # Sketches' font size, arrowhead legs and line width, in pixels.
 SKETCH = (13, 10.0, 1)
+# The tree settings a vision model's calibration sets, unless the tree sets them itself.
+CALIBRATED = ("image_pixels", "diagram_modules", "sketch_font_px", "sketch_arrow_px", "sketch_line_px")
 
 
 @dataclass(frozen=True)
@@ -74,6 +76,13 @@ class TreeSettings:
         font, arrow, line = SKETCH
         return (self.sketch_font_px or font, float(self.sketch_arrow_px or arrow), self.sketch_line_px or line)
 
+    def calibrated(self, calibration: dict[str, Any] | None) -> TreeSettings:
+        """These settings, with a vision model's calibration (plan VA) filling those the tree
+        leaves unset: explicit settings win, then the calibration, then the defaults."""
+        if not calibration:
+            return self
+        return replace(self, **{k: v for k, v in calibration.items() if k in CALIBRATED and getattr(self, k) is None})
+
 
 def parse_modules(spec: str | None) -> tuple[int, int, int]:
     """The --diagram-modules setting, 'N:MIN:MAX', as numbers; empty for the defaults. N = 0
@@ -102,10 +111,12 @@ class ProjectOptions:
 
     @classmethod
     def of(cls, settings: TreeSettings, text_model: str | None, vision_model: str | None,
-           max_calls: int | None) -> ProjectOptions:
-        """A run's options, from the tree's settings and the models the LLM configuration chose."""
+           max_calls: int | None, calibration: dict[str, Any] | None = None) -> ProjectOptions:
+        """A run's options, from the tree's settings, the models the LLM configuration chose, and
+        the vision model's calibration."""
         from .prompts import CURRENT
 
+        settings = settings.calibrated(calibration)
         enabled = bool(text_model or vision_model)
         return cls(settings.render, text_model, vision_model, max_calls, settings.image_pixels or IMAGE_PIXELS,
                    settings.modules, tuple(sorted(t.key for t in CURRENT.values())) if enabled else (),
