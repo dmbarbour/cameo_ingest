@@ -446,9 +446,12 @@ runner: inputs ─► archive.discover ─► state (contents, sightings) ─►
   so only their configuration (scope, columns, element types) is emitted. The next step is
   to recompute the common cases, such as requirement tables and allocation matrices, from
   the model.
-- **Used projects** (`proxy.*` entries) aren't ingested. References into them, such as
-  SysML library types, show as raw ids or hrefs. The next step is to read the proxies only
-  for labels.
+- **Used projects** (`proxy.*` entries) aren't ingested as projects.
+  - **References into them** read by the names in each model's cached copy of the used project.
+  - **References to the standard UML and SysML libraries** read by their names (`String`,
+    `Real`, `Block`).
+  - **Still shown as written:** ids inside text, such as DocGen's view lists, table column
+    settings and UUID-valued tagged values.
 - **`.mdzipx` SVGs** are deferred indefinitely: no sample exists, among the maintainer's files
   or in public. Their nested `.mdzip` is ingested as usual.
 - **Attachments** (`BINARY-*` PNG, JPEG or PDF) are listed at project level but not yet

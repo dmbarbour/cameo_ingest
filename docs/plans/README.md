@@ -15,7 +15,7 @@ here.
 | [Related facts brought together](related-facts-2026-10-01.md) | Completed 2026-10-01; facet lists deferred | The maintainer's request to bring related facts and requirements together for keyword search, tracing and provenance |
 | [Refactoring after the architecture review](refactoring-2026-10-02.md) | Done (2026-10-02, 0.7.2): every checkpoint checked; every review finding fixed; retrieval held; the new summaries adopted | AR-003R2 to AR-026: stages 2 to 4 of the review's remediation order, with the maintainer's decisions (Markdown chunks, studies and old templates retired; `cameo-ingest[eval]`) |
 | [Searching the corpus without tools](keyword-export-2026-10-02.md) | Proposed 2026-10-02, revised with the maintainer's answers: a workbook and a self-contained search page, made by `cameo-ingest export` from one set of records; sketches in the page an experiment; then a trial | The tentative plan for keyword search and an export; plan RE's finding that embeddings rarely find a requirement by its id |
-| [Labels for references outside a project](used-project-labels-2026-10-02.md) | In progress (approved 2026-10-02) | The tentative plan for labels from used projects: 12,987 references in the samples read as raw ids or library fragments |
+| [Labels for references outside a project](used-project-labels-2026-10-02.md) | Done (2026-10-02, 0.9.0): raw ids and library fragments in the samples' chunks fell from 17,056 to 3,268; about $1 of LLM requests change at the next live run | The tentative plan for labels from used projects: 12,987 references in the samples read as raw ids or library fragments |
 
 ## Deferred indefinitely
 
