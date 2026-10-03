@@ -32,6 +32,7 @@ class Phase:
     def __init__(self, label: str, total: int | None, unit: str):
         self.label, self.total, self.unit = label, total, unit
         self.done = 0
+        self.note = ""  # what the phase is on now ("TMT.mdzip (27 MB): fingerprinting"), shown with its progress
         self.started = time.monotonic()
         self._bar: Any = None
         self._lock = threading.Lock()
@@ -41,6 +42,11 @@ class Phase:
             self.done += n
         if self._bar is not None:
             self._bar.update(n)
+
+    def set_note(self, note: str) -> None:
+        self.note = note
+        if self._bar is not None:
+            self._bar.set_postfix_str(note[:80], refresh=True)
 
     def amount(self, n: int) -> str:
         if self.unit == "B":
@@ -55,6 +61,8 @@ class Phase:
         s += f", {_duration(elapsed)} elapsed"
         if self.total and self.done:
             s += f", about {_duration(elapsed * (self.total - self.done) / self.done)} left"
+        if self.note:
+            s += f"; now: {self.note}"
         return s
 
 
@@ -78,10 +86,17 @@ class Progress:
         level = logging.DEBUG if self.bars else logging.INFO
         stop = threading.Event()
         beat = None
-        if self.heartbeat > 0:
+        if self.heartbeat > 0 or ph._bar is not None:
             def run() -> None:
-                while not stop.wait(self.heartbeat):
-                    log.log(level, "%s", ph.status())
+                # A bar redraws once a second, so that its elapsed time moves while one item takes long.
+                tick = 1.0 if ph._bar is not None else self.heartbeat
+                last = time.monotonic()
+                while not stop.wait(tick):
+                    if ph._bar is not None:
+                        ph._bar.refresh()
+                    if self.heartbeat > 0 and time.monotonic() - last >= self.heartbeat:
+                        last = time.monotonic()
+                        log.log(level, "%s", ph.status())
 
             beat = threading.Thread(target=run, name=f"heartbeat {label}", daemon=True)
             beat.start()

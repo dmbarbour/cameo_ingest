@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+import time
 import uuid
 from collections import defaultdict
 from pathlib import Path
@@ -84,24 +85,56 @@ class Runner:
                 self.state.update_input(row["id"], status="pending")
 
     def scan(self) -> None:
+        """Hash the pending inputs and record the projects in them. Progress counts bytes, read in
+        pieces, so that it moves during a large file, or one that arrives slowly (a synced
+        folder's file on demand); its note names the file and the step."""
         pending = self.state.inputs("pending")
-        if pending:
-            with self.progress.phase("scanning inputs", len(pending), "input") as ph:
-                for row in pending:
-                    self.scan_input(row)
-                    ph.advance()
+        if not pending:
+            return
+        sizes = {}
+        for row in pending:
+            try:
+                sizes[row["id"]] = Path(row["path"]).stat().st_size
+            except OSError:
+                sizes[row["id"]] = 0
+        with self.progress.phase(f"scanning {len(pending):,} input{'s' if len(pending) != 1 else ''}",
+                                 sum(sizes.values()) or None, "B") as ph:
+            for k, row in enumerate(pending, 1):
+                started = time.monotonic()
+                label = f"{Path(row['path']).name} ({sizes[row['id']] / 1e6:,.1f} MB, {k}/{len(pending)})"
+                ph.set_note(f"reading {label}")
+                log.info("scanning %s", label)
+                self.scan_input(row, ph, label, sizes[row["id"]])
+                log.debug("scanned %s in %.1f s", label, time.monotonic() - started)
 
-    def scan_input(self, row: Any) -> None:
+    def _read(self, path: Path, ph: Any) -> bytes:
+        """The file's bytes, read in pieces that advance `ph`."""
+        buf = bytearray()
+        with path.open("rb") as f:
+            while chunk := f.read(8 << 20):
+                buf += chunk
+                if ph is not None:
+                    ph.advance(len(chunk))
+        return bytes(buf)
+
+    def scan_input(self, row: Any, ph: Any = None, label: str = "", size: int = 0) -> None:
         """Hash an input and record the projects in it (unless this version was scanned before)."""
         path = Path(row["path"])
+        label = label or path.name
         try:
-            data = path.read_bytes()
+            data = self._read(path, ph)
         except OSError as e:
             self._input_failed(row, f"cannot read: {e}")
             return
+        if ph is not None and len(data) < size:  # shrank since it was measured: keep the total right
+            ph.advance(size - len(data))
+        if ph is not None:
+            ph.set_note(f"hashing {label}")
         sha = sha256_bytes(data)
         st = path.stat()
         if not self.state.has_sighting(row["id"], sha):  # new or changed content: find the projects in it
+            if ph is not None:
+                ph.set_note(f"finding projects in {label}")
             try:
                 projects = list(discover(data, path.name))
             except UnsupportedInput as e:
@@ -113,10 +146,12 @@ class Runner:
             with self.state.tx():
                 for p in projects:
                     self.state.record_sighting(p.sha256, p.display_name, p.kind, p.data_size, row["id"], sha, p.chain)
-            log.info("found %d project(s) in %s", len(projects), path.name)
-            for p in projects:  # what each says about itself, for finding versions (plan PV)
-                if self.state.fingerprint(p.sha256) is None:
-                    self._fingerprint(p)
+            new = [p for p in projects if self.state.fingerprint(p.sha256) is None]
+            log.info("found %d project(s) in %s, %d not seen before", len(projects), path.name, len(new))
+            for j, p in enumerate(new, 1):  # what each says about itself, for finding versions (plan PV)
+                if ph is not None:
+                    ph.set_note(f"fingerprinting {j}/{len(new)} {p.display_name} in {label}")
+                self._fingerprint(p)
         self.state.update_input(row["id"], status="done", size=st.st_size, mtime_ns=st.st_mtime_ns, sha256=sha,
                                 processed=utc_now(), error=None)
 
@@ -147,6 +182,7 @@ class Runner:
                     ph.advance(len(wanted))
                     continue
                 for p in found:
+                    ph.set_note(f"{p.display_name} in {path.name}")
                     self._fingerprint(p)
                     done += 1
                 ph.advance(len(wanted))

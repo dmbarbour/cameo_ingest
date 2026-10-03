@@ -37,7 +37,8 @@ def test_save_times():
     assert parse_java_date("#Compatibility entry\n#Thu Nov 02 11:39:23 PDT 2023\nX=Y") == (
         "2023-11-02T11:39:23-07:00", "Thu Nov 02 11:39:23 PDT 2023")
     assert parse_java_date("#Sun Oct 26 20:33:19 CET 2025\n")[0] == "2025-10-26T20:33:19+01:00"
-    assert parse_java_date("#Mon Jan 05 01:02:03 XYZT 2026\n") == ("2026-01-05T01:02:03", "Mon Jan 05 01:02:03 XYZT 2026")
+    assert parse_java_date("#Mon Jan 05 01:02:03 XYZT 2026\n") == (
+        "2026-01-05T01:02:03", "Mon Jan 05 01:02:03 XYZT 2026")
     assert parse_java_date("no date here") == (None, None)
 
 
@@ -48,7 +49,8 @@ def test_groups_versions_forks_and_templates(tmp_path, capsys):
     out = tmp_path / "out"
     inputs = [
         ("plant/v1/plant.mdzip", model("Plant", BASE, "Mon Jan 08 10:00:00 PST 2024")),
-        ("plant/v2/plant.mdzip", model("Plant", BASE + [f"_v2_{k}" for k in range(30)], "Tue Mar 05 10:00:00 PST 2024")),
+        ("plant/v2/plant.mdzip", model("Plant", BASE + [f"_v2_{k}" for k in range(30)],
+                                       "Tue Mar 05 10:00:00 PST 2024")),
         ("fork/a.mdzip", model("Rig", [f"_rig_{k}" for k in range(100)] + [f"_a_{k}" for k in range(20)],
                                "Mon Jan 08 10:00:00 CET 2024")),
         ("fork/b.mdzip", model("Rig", [f"_rig_{k}" for k in range(100)] + [f"_b_{k}" for k in range(30)],
@@ -73,7 +75,8 @@ def test_groups_versions_forks_and_templates(tmp_path, capsys):
     assert "Template" not in report.split("## Related")[0] and "template.mdzip" in report.split("## Related")[1]
     st = State(out)
     rows = {r["name"]: r for r in st.catalog()}
-    older = next(r["sha256"] for r in st.catalog() if r["saved_raw"] and r["saved_raw"].startswith("Mon Jan 08 10:00:00 PST"))
+    older = next(r["sha256"] for r in st.catalog()
+                 if r["saved_raw"] and r["saved_raw"].startswith("Mon Jan 08 10:00:00 PST"))
     fork_a = rows["a.mdzip"]["sha256"]
     st.close()
     command = report.split("```sh\n")[1].split("\n")[0]
@@ -111,7 +114,8 @@ def test_a_tree_from_before_opens(tmp_path):
     st = State(tmp_path)
     st.db.execute("DROP VIEW project_status")
     st.db.execute("CREATE VIEW project_status AS SELECT c.sha256, c.name, COALESCE(p.status, 'pending') AS status, "
-                  "p.error, p.updated, 0 AS sightings FROM contents c LEFT JOIN projects p ON p.content_sha256 = c.sha256")
+                  "p.error, p.updated, 0 AS sightings FROM contents c "
+                  "LEFT JOIN projects p ON p.content_sha256 = c.sha256")
     st.db.execute("UPDATE meta SET value = '1' WHERE key = 'schema_version'")
     st.db.execute("INSERT INTO contents VALUES ('ab' || hex(zeroblob(31)), 'x.mdzip', 'zip', 1, 'now')")
     st.close()
@@ -122,3 +126,36 @@ def test_a_tree_from_before_opens(tmp_path):
     assert st.db.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0] == "2"
     st.close()
     assert sqlite3.connect(tmp_path / "state.sqlite").execute("SELECT count(*) FROM removed").fetchone() == (1,)
+
+
+def test_scan_reports_what_it_is_on(tmp_path, caplog, monkeypatch):
+    """A scan counts bytes, and its status lines name the input and the step, so that a long
+    file, or one that arrives slowly, doesn't look stuck."""
+    import logging
+    import time
+
+    from cameo_ingest.config import ProjectOptions
+    from cameo_ingest.llm import EnrichmentSession, LLMConfig
+    from cameo_ingest.progress import Progress
+    from cameo_ingest.runner import Runner
+
+    src = tmp_path / "slow.mdzip"
+    src.write_bytes(model("Slow", BASE))
+    out = tmp_path / "out"
+    assert main(["add", "-o", str(out), str(src)]) == 0
+    original = Runner._read
+
+    def slow(self, path, ph):
+        time.sleep(0.6)
+        return original(self, path, ph)
+
+    monkeypatch.setattr(Runner, "_read", slow)
+    st = State(out)
+    runner = Runner(st, out, EnrichmentSession(LLMConfig(None, None, None), out / ".cache", None), ProjectOptions(),
+                    Progress(heartbeat=0.2, bars=False))
+    with caplog.at_level(logging.INFO, logger="cameo_ingest"):
+        runner.scan()
+    st.close()
+    beats = [r.getMessage() for r in caplog.records if "now: reading slow.mdzip" in r.getMessage()]
+    assert beats and "scanning 1 input: 0.0 MB of 0.0 MB" in beats[0] and "(0.0 MB, 1/1)" in beats[0]
+    assert any("found 1 project(s) in slow.mdzip, 1 not seen before" in r.getMessage() for r in caplog.records)

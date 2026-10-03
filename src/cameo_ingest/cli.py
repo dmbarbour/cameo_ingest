@@ -364,7 +364,8 @@ def versions_command(out: Path, args: argparse.Namespace) -> int:
         if args.command == "scan":
             state.lock()
             cfg = LLMConfig(None, None, None)
-            runner = Runner(state, out, EnrichmentSession(cfg, out / ".cache", None), ProjectOptions(), Progress())
+            runner = Runner(state, out, EnrichmentSession(cfg, out / ".cache", None), ProjectOptions(),
+                            Progress(heartbeat=10))
             runner.check_inputs()
             runner.scan()
             caught_up = runner.fingerprint_missing()
