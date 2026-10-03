@@ -21,6 +21,7 @@ from typing import Any
 from . import exports
 from .archive import UnsupportedInput, discover
 from .config import ProjectOptions
+from .fingerprint import fingerprint
 from .llm import EnrichmentSession
 from .pipeline import ingest_project
 from .progress import Progress
@@ -113,8 +114,43 @@ class Runner:
                 for p in projects:
                     self.state.record_sighting(p.sha256, p.display_name, p.kind, p.data_size, row["id"], sha, p.chain)
             log.info("found %d project(s) in %s", len(projects), path.name)
+            for p in projects:  # what each says about itself, for finding versions (plan PV)
+                if self.state.fingerprint(p.sha256) is None:
+                    self._fingerprint(p)
         self.state.update_input(row["id"], status="done", size=st.st_size, mtime_ns=st.st_mtime_ns, sha256=sha,
                                 processed=utc_now(), error=None)
+
+    def _fingerprint(self, project: Any) -> None:
+        try:
+            self.state.save_fingerprint(project.sha256, fingerprint(project))
+        except Exception as e:  # an unreadable model fails its build later, with its own error
+            log.warning("%s: cannot fingerprint: %s", project.display_name, e)
+
+    def fingerprint_missing(self) -> int:
+        """Fingerprint contents scanned before fingerprints existed, reading their inputs again."""
+        shas = set(self.state.unfingerprinted())
+        if not shas:
+            return 0
+        by_input: dict[str, set[str]] = defaultdict(set)
+        for sha in shas:
+            where = next((s for s in self.state.sightings(sha) if s["input_status"] == "done"), None)
+            if where is not None:
+                by_input[where["path"]].add(sha)
+        done = 0
+        with self.progress.phase("fingerprinting", sum(len(v) for v in by_input.values()), "project") as ph:
+            for path_str, wanted in by_input.items():
+                path = Path(path_str)
+                try:
+                    found = [p for p in discover(path.read_bytes(), path.name) if p.sha256 in wanted]
+                except (OSError, UnsupportedInput) as e:
+                    log.warning("cannot read %s again: %s", path, e)
+                    ph.advance(len(wanted))
+                    continue
+                for p in found:
+                    self._fingerprint(p)
+                    done += 1
+                ph.advance(len(wanted))
+        return done
 
     def _input_failed(self, row: Any, error: str) -> None:
         log.error("input %s: %s", row["path"], error)

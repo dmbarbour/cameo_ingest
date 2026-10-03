@@ -86,13 +86,13 @@ def check_sketches(sample: Path) -> None:
     its shapes once (plan DV)."""
     from xml.etree import ElementTree
 
-    from cameo_ingest.sketch_svg import render_svg
     from cameo_ingest import diagram_graph as dg
     from cameo_ingest import semantics as sem
     from cameo_ingest import sketch
     from cameo_ingest.archive import discover
     from cameo_ingest.partition import partition
     from cameo_ingest.pipeline import load_layouts, parse_project
+    from cameo_ingest.sketch_svg import render_svg
 
     proj = next(discover(sample.read_bytes(), sample.name))
     ix = parse_project(proj)
@@ -133,3 +133,20 @@ def test_bundle_and_standalone_copies_share_projects(tmp_path):
         paths = [s["path"] for s in records[f"sha256:{hashlib.sha256(f.read_bytes()).hexdigest()}"]["sightings"]]
         assert sorted(Path(p).name for p in paths) == sorted([f.name, SAF[0].name])
     assert len(records) == len(list((out / "by-sha256").glob("[0-9a-f]*"))) == SAF_CONTENTS
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(not (SAMPLES_DIR / "TMT.mdzip").exists(), reason="samples not fetched (scripts/fetch_samples.py)")
+def test_versions_among_the_samples(tmp_path, capsys):
+    """Among all the samples, `groups` finds one group, TMT and TMT-2024x (different project ids,
+    88% of their element ids shared), newest first (plan PV)."""
+    out = tmp_path / "out"
+    assert main(["add", "-o", str(out), str(SAMPLES_DIR)]) == 0
+    assert main(["scan", "-o", str(out)]) == 0
+    capsys.readouterr()
+    assert main(["groups", "-o", str(out)]) == 0
+    report = capsys.readouterr().out
+    assert "1 group(s) of likely versions" in report and "## Related" not in report
+    group = report.split("## Group 1: ")[1]
+    assert group.startswith("TMT-2024x.mdzip") and group.index("TMT-2024x.mdzip") < group.index("| TMT.mdzip")
+    assert "98% shared" in group and "Check:" not in group

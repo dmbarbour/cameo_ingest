@@ -92,6 +92,16 @@ class Project:
         with self.open(entry) as f:
             return f.read()
 
+    def latest_entry_time(self):
+        """The latest date among the zip's entries, as written (local time, no zone); None for
+        a bare XMI file."""
+        import datetime as dt
+
+        if self._zip is None:
+            return None
+        times = [dt.datetime(*i.date_time) for i in self._zip.infolist() if i.date_time[0] >= 1981]
+        return max(times) if times else None
+
     def size(self, entry: str) -> int:
         if self._zip is not None:
             return self._zip.getinfo(entry).file_size

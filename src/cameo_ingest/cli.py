@@ -6,6 +6,11 @@
     cameo-ingest status -o OUT [--json]            what the tree holds, and the latest run
     cameo-ingest prune -o OUT [--dry-run]          drop missing inputs and the projects only they held
     cameo-ingest export -o OUT [--workbook F] [--search-page F]   the catalog, to search without tools
+    cameo-ingest scan -o OUT                       find the projects in the inputs, building nothing
+    cameo-ingest projects -o OUT [--csv FILE]      every project: status, save time, size, where found
+    cameo-ingest groups -o OUT [--csv FILE]        versions of the same model, by shared element ids
+    cameo-ingest remove -o OUT TOKEN... [--dry-run]   remove projects from the tree, and keep them out
+    cameo-ingest restore -o OUT TOKEN...           undo `remove`; the next run builds them again
     cameo-ingest quality sample -o OUT [--n N]     draw a spot-check set of LLM requests and answers
 """
 
@@ -15,6 +20,7 @@ import argparse
 import json
 import logging
 import os
+import shutil
 import signal
 import sys
 from dataclasses import fields
@@ -32,7 +38,8 @@ from .state import State, StateError
 
 log = logging.getLogger("cameo_ingest")
 
-COMMANDS = ("add", "run", "ingest", "status", "prune", "quality", "export")
+COMMANDS = ("add", "run", "ingest", "status", "prune", "quality", "export", "scan", "projects", "groups", "remove",
+            "restore")
 
 NO_MODEL = """error: no LLM model is configured. Either
   - pass --no-llm to ingest without LLM summaries and descriptions, or
@@ -197,6 +204,24 @@ def build_parser() -> argparse.ArgumentParser:
     ex.add_argument("--sketches", choices=("none", "webp", "svg"), default="none",
                     help="put the diagrams' sketches in the search page: the PNG sketches as WebP, or the SVG "
                          "sketches (default: none)")
+    sub.add_parser("scan", parents=[common],
+                   help="find the projects in the task list's inputs, and what each says about itself (its save time "
+                        "and element ids), building nothing; then `projects` and `groups` can show them")
+    pj = sub.add_parser("projects", parents=[common],
+                        help="every project in the tree: status, save time, Cameo version, size, where it was found")
+    pj.add_argument("--csv", type=Path, metavar="FILE", help="also write the list as CSV")
+    gr = sub.add_parser("groups", parents=[common],
+                        help="versions of the same model, found by the element ids they share, newest first")
+    gr.add_argument("--csv", type=Path, metavar="FILE", help="also write the groups as CSV")
+    gr.add_argument("--include-removed", action="store_true", help="compare removed projects too")
+    rm = sub.add_parser("remove", parents=[common],
+                        help="remove projects from the tree, and keep them out of later runs while their inputs "
+                             "remain (their LLM answers stay cached)")
+    rm.add_argument("tokens", nargs="+", metavar="TOKEN",
+                    help="a project's sha256 (sha256:... or its first 8 or more hex digits)")
+    rm.add_argument("--dry-run", action="store_true", help="only list what would be removed")
+    rs = sub.add_parser("restore", parents=[common], help="undo `remove`: the next run builds the projects again")
+    rs.add_argument("tokens", nargs="+", metavar="TOKEN", help="as for remove")
     q = sub.add_parser("quality", help="measure the quality of LLM enrichment (see docs/plans/llm-quality-*.md)")
     qs = q.add_subparsers(dest="action", required=True, metavar="ACTION")
     qsample = qs.add_parser("sample", parents=[common], help="draw a spot-check set of requests and answers")
@@ -301,6 +326,110 @@ def export_catalog(out: Path, args: argparse.Namespace) -> int:
         print(f"note: {len(missing)} project(s) were made before catalogs existed and are left out: "
               f"{', '.join(missing[:5])}{'…' if len(missing) > 5 else ''}; `run` makes them again", file=sys.stderr)
     return 0
+
+
+def _paths(state: State) -> dict[str, list[str]]:
+    """Each content's places: input path, then archive members, '!' between."""
+    out: dict[str, list[str]] = {}
+    for r in state.catalog():
+        out[r["sha256"]] = list(dict.fromkeys("!".join([s["path"], *json.loads(s["chain"])])
+                                              for s in state.sightings(r["sha256"])))
+    return out
+
+
+def _resolve(tokens: list[str], candidates: dict[str, str]) -> tuple[list[tuple[str, str]], list[str]]:
+    """Tokens (sha256:..., or 8 or more hex digits) to (sha256, name) among `candidates`; and errors."""
+    found, errors = [], []
+    for t in tokens:
+        hexes = t.removeprefix("sha256:").lower()
+        if len(hexes) < 8 or any(c not in "0123456789abcdef" for c in hexes):
+            errors.append(f"{t}: give sha256:... or at least 8 hex digits")
+            continue
+        hits = [(sha, name) for sha, name in candidates.items() if sha.startswith(hexes)]
+        if len(hits) != 1:
+            errors.append(f"{t}: {'no project' if not hits else f'{len(hits)} projects'} match")
+            continue
+        found.append(hits[0])
+    return found, errors
+
+
+def versions_command(out: Path, args: argparse.Namespace) -> int:
+    """`scan`, `projects`, `groups`, `remove` and `restore` (plan PV)."""
+    import csv
+
+    from . import groups as gp
+
+    state = State(out)
+    try:
+        if args.command == "scan":
+            state.lock()
+            cfg = LLMConfig(None, None, None)
+            runner = Runner(state, out, EnrichmentSession(cfg, out / ".cache", None), ProjectOptions(), Progress())
+            runner.check_inputs()
+            runner.scan()
+            caught_up = runner.fingerprint_missing()
+            counts = state.counts("projects")
+            print(f"scanned {out}: " + ", ".join(f"{n} {s}" for s, n in sorted(counts.items()))
+                  + (f"; {caught_up} fingerprinted from earlier scans" if caught_up else "")
+                  + f". See `cameo-ingest projects -o {out}` and `cameo-ingest groups -o {out}`")
+            return 3 if runner.failed_inputs else 0
+        if args.command == "projects":
+            rows, paths = state.catalog(), _paths(state)
+            for r in rows:
+                where = paths.get(r["sha256"], [])
+                print(f"{r['sha256'][:8]}  {r['status']:<8} {(r['saved_raw'] or '-'):<30} {(r['exporter'] or '-'):<24} "
+                      f"{(r['elements'] or 0):>8,}  {r['name']}  ({len(where)} place{'s' if len(where) != 1 else ''})")
+            print(f"{len(rows)} project(s); `groups` finds versions of the same model")
+            if args.csv:
+                with args.csv.open("w", encoding="utf-8", newline="") as f:
+                    w = csv.writer(f)
+                    w.writerow(["token", "name", "status", "saved", "saved_from", "exporter", "project_id",
+                                "elements", "paths"])
+                    for r in rows:
+                        w.writerow([f"sha256:{r['sha256']}", r["name"], r["status"], r["saved_raw"] or "",
+                                    r["saved_from"] or "", r["exporter"] or "", r["project_id"] or "",
+                                    r["elements"] or "", "; ".join(paths.get(r["sha256"], []))])
+            return 0
+        if args.command == "groups":
+            report = gp.find(state.catalog(), state.fingerprint_ids(), _paths(state), args.include_removed)
+            print(gp.render(report, out))
+            if args.csv:
+                gp.write_csv(report, args.csv)
+            return 0
+        if args.command == "remove":
+            items, errors = _resolve(args.tokens, {r["sha256"]: r["name"] for r in state.catalog()
+                                                   if r["status"] != "removed"})
+            for e in errors:
+                print(f"error: {e}", file=sys.stderr)
+            if errors:
+                return 2
+            for sha, name in items:
+                print(f"{'would remove' if args.dry_run else 'removing'} {name} sha256:{sha[:16]}")
+            if args.dry_run:
+                return 0
+            state.lock()
+            state.remove(items)
+            for sha, _ in items:
+                for d in (out / tree.exports.PROJECTS / sha, out / tree.exports.PROJECTS / tree.WORK / sha):
+                    if d.exists():
+                        shutil.rmtree(d)
+            tree.exports.rebuild(state, out)
+            print(f"removed {len(items)} project(s); later runs leave them out. `restore` undoes this")
+            return 0
+        items, errors = _resolve(args.tokens, {r["content_sha256"]: r["name"] for r in state.removed()})
+        for e in errors:
+            print(f"error: {e} (among removed projects)", file=sys.stderr)
+        if errors:
+            return 2
+        state.lock()
+        state.restore([sha for sha, _ in items])
+        print(f"restored {len(items)} project(s); the next `run` builds them again, reusing their LLM answers")
+        return 0
+    except StateError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    finally:
+        state.close()
 
 
 def flag_pair(group: Any, name: str, on: str, off: str, default: bool) -> None:
@@ -437,7 +566,8 @@ def main(argv: list[str] | None = None) -> int:
         args.out = Path(os.environ["CAMEO_INGEST_DEST"])
     out: Path = args.out
     if not State.exists(out):
-        if args.command in ("run", "status", "prune", "quality", "export"):
+        if args.command in ("run", "status", "prune", "quality", "export", "scan", "projects", "groups", "remove",
+                            "restore"):
             print(f"error: no output tree at {out}; start one with `add` or `ingest`", file=sys.stderr)
             return 2
         if out.exists() and any(p.name != ".cache" for p in out.iterdir()):
@@ -479,6 +609,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "export":
         return export_catalog(out, args)
+    if args.command in ("scan", "projects", "groups", "remove", "restore"):
+        return versions_command(out, args)
     if args.command == "prune":
         state = State(out)
         try:

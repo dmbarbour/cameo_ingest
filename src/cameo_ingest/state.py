@@ -20,7 +20,7 @@ from .provenance import utc_now
 
 STATE_FILE = "state.sqlite"
 LOCK_FILE = "state.lock"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2  # 2: fingerprints and removed (plan PV)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -80,6 +80,27 @@ CREATE TABLE IF NOT EXISTS runs (
 -- The tree's run settings (models, rendering, --env path...). Never secrets.
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
+-- What each content says about itself, for finding versions of a model (plan PV).
+CREATE TABLE IF NOT EXISTS fingerprints (
+    content_sha256 TEXT PRIMARY KEY REFERENCES contents(sha256) ON DELETE CASCADE,
+    saved TEXT,                                   -- when Cameo saved it, ISO 8601 (with its offset when known)
+    saved_raw TEXT,                               -- as the file says it
+    saved_from TEXT,                              -- 'records' (Records.properties) or 'zip' (its entries' dates)
+    project_id TEXT,                              -- PROJECT-..., from com.nomagic.ci.metamodel.project
+    exporter TEXT,                                -- e.g. "MagicDraw UML 2024x"
+    elements INTEGER NOT NULL,                    -- distinct xmi:ids
+    ids BLOB NOT NULL,                            -- their 64-bit hashes, sorted (array 'Q', little-endian)
+    made TEXT NOT NULL
+);
+
+-- Contents the maintainer removed from the tree (`remove`): never built while listed here, even
+-- if an input still holds them. Not tied to `contents`, so that a removal outlives a prune.
+CREATE TABLE IF NOT EXISTS removed (
+    content_sha256 TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    removed TEXT NOT NULL
+);
+
 -- Sightings in the current version of each input (missing inputs included, flagged).
 CREATE VIEW IF NOT EXISTS current_sightings AS
     SELECT s.content_sha256, c.name, i.id AS input_id, i.path, i.status AS input_status,
@@ -90,9 +111,12 @@ CREATE VIEW IF NOT EXISTS current_sightings AS
 
 -- Every content with the state of its output and how often it is currently seen.
 CREATE VIEW IF NOT EXISTS project_status AS
-    SELECT c.sha256, c.name, COALESCE(p.status, 'pending') AS status, p.error, p.updated,
+    SELECT c.sha256, c.name,
+           CASE WHEN r.content_sha256 IS NOT NULL THEN 'removed' ELSE COALESCE(p.status, 'pending') END AS status,
+           p.error, p.updated,
            (SELECT count(*) FROM current_sightings v WHERE v.content_sha256 = c.sha256) AS sightings
-    FROM contents c LEFT JOIN projects p ON p.content_sha256 = c.sha256;
+    FROM contents c LEFT JOIN projects p ON p.content_sha256 = c.sha256
+         LEFT JOIN removed r ON r.content_sha256 = c.sha256;
 """
 
 
@@ -115,6 +139,11 @@ class State:
             self.db.execute("INSERT INTO meta VALUES ('schema_version', ?)", (str(SCHEMA_VERSION),))
         elif int(row[0]) > SCHEMA_VERSION:
             raise StateError(f"{self.path} was made by a newer cameo-ingest (schema {row[0]})")
+        elif int(row[0]) < 2:  # the new tables exist now; the status view learns of removals (plan PV)
+            with self.tx() as db:
+                db.execute("DROP VIEW project_status")
+                db.execute(SCHEMA[SCHEMA.index("CREATE VIEW IF NOT EXISTS project_status"):].strip().rstrip(";"))
+                db.execute("UPDATE meta SET value = ? WHERE key = 'schema_version'", (str(SCHEMA_VERSION),))
         self._lock_fd: Any = None
 
     @staticmethod
@@ -250,7 +279,8 @@ class State:
         """Contents whose output is missing, failed or unfinished, or made by another tool or options."""
         return [r[0] for r in self.db.execute(
             "SELECT c.sha256 FROM contents c LEFT JOIN projects p ON p.content_sha256 = c.sha256 "
-            "WHERE p.status IS NULL OR p.status != 'written' OR p.tool != ? OR p.options_hash != ? "
+            "WHERE (p.status IS NULL OR p.status != 'written' OR p.tool != ? OR p.options_hash != ?) "
+            "AND c.sha256 NOT IN (SELECT content_sha256 FROM removed) "
             "ORDER BY c.name, c.sha256", (tool, options_hash))]
 
     def count_projects(self, status: str, tool: str, options_hash: str) -> int:
@@ -289,6 +319,46 @@ class State:
             db.execute("DELETE FROM sightings WHERE NOT EXISTS (SELECT 1 FROM inputs i "
                        "WHERE i.id = sightings.input_id AND i.sha256 = sightings.input_sha256)")
             db.executemany("DELETE FROM contents WHERE sha256 = ?", [(sha,) for sha in orphans])
+
+    # -- fingerprints and removals (plan PV) -------------------------------------------------------
+    def fingerprint(self, sha256: str) -> sqlite3.Row | None:
+        return self.db.execute("SELECT * FROM fingerprints WHERE content_sha256 = ?", (sha256,)).fetchone()
+
+    def save_fingerprint(self, sha256: str, fp: dict[str, Any]) -> None:
+        self.db.execute("INSERT OR REPLACE INTO fingerprints VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (sha256, fp["saved"], fp["saved_raw"], fp["saved_from"], fp["project_id"], fp["exporter"],
+                         fp["elements"], fp["ids"], utc_now()))
+
+    def unfingerprinted(self) -> list[str]:
+        """Contents still to be fingerprinted (those scanned before plan PV)."""
+        return [r[0] for r in self.db.execute(
+            "SELECT sha256 FROM contents WHERE sha256 NOT IN (SELECT content_sha256 FROM fingerprints) "
+            "ORDER BY name, sha256")]
+
+    def catalog(self) -> list[sqlite3.Row]:
+        """Every content, with its status and fingerprint (without the ids), by name."""
+        return self.db.execute(
+            "SELECT s.*, f.saved, f.saved_raw, f.saved_from, f.project_id, f.exporter, f.elements "
+            "FROM project_status s LEFT JOIN fingerprints f ON f.content_sha256 = s.sha256 "
+            "ORDER BY s.name, s.sha256").fetchall()
+
+    def fingerprint_ids(self) -> dict[str, bytes]:
+        return dict(self.db.execute("SELECT content_sha256, ids FROM fingerprints").fetchall())
+
+    def removed(self) -> list[sqlite3.Row]:
+        return self.db.execute("SELECT * FROM removed ORDER BY name, content_sha256").fetchall()
+
+    def remove(self, items: list[tuple[str, str]]) -> None:
+        """Remove contents (sha256, name) from the tree: their output's record goes, and the
+        removal is kept."""
+        with self.tx() as db:
+            db.executemany("INSERT OR REPLACE INTO removed VALUES (?, ?, ?)",
+                           [(sha, name, utc_now()) for sha, name in items])
+            db.executemany("DELETE FROM projects WHERE content_sha256 = ?", [(sha,) for sha, _ in items])
+
+    def restore(self, shas: list[str]) -> None:
+        with self.tx() as db:
+            db.executemany("DELETE FROM removed WHERE content_sha256 = ?", [(sha,) for sha in shas])
 
     def settings(self) -> dict[str, Any]:
         return {r["key"]: json.loads(r["value"]) for r in self.db.execute("SELECT * FROM settings")}

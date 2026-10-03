@@ -38,6 +38,10 @@ many files, bundles or names it turns up under.
 | `cameo-ingest ingest -o OUT PATH... [options]` | `add`, then `run`. It is the default command: `cameo-ingest FILE -o OUT`. |
 | `cameo-ingest status -o OUT [--json]` | Inputs and projects by status, failures, the latest run. Works while a run is going. |
 | `cameo-ingest prune -o OUT [--dry-run]` | Drops missing inputs, and the projects that no remaining input contains. |
+| `cameo-ingest scan -o OUT` | Finds the projects in the task list's inputs, and what each says about itself (save time, Cameo version, element ids), building nothing. |
+| `cameo-ingest projects -o OUT [--csv FILE]` | Every project: status, save time, Cameo version, size, and every path where it was found. |
+| `cameo-ingest groups -o OUT [--csv FILE]` | Versions of the same model, found by the element ids they share, newest first (see "Versions and removal"). |
+| `cameo-ingest remove -o OUT TOKEN... [--dry-run]` / `restore` | Removes projects from the tree, and keeps them out of later runs while their inputs remain; `restore` undoes it. |
 | `cameo-ingest export -o OUT [--workbook FILE] [--search-page FILE]` | Writes the catalog of the tree's models for people to search without tools: a workbook, a self-contained search page, or both (see "Searching without tools"). Apart from `run`, since it is a distribution step. |
 
 - **Output directories.** A missing or empty directory starts a tree. A directory with
@@ -323,6 +327,36 @@ Suggestions, roughly in order of value, measured on the samples where the number
 7. **Cite with the trace.** Every chunk's `metadata.provenance.locator` names the content,
    entry, `xmi:id` and line, and `provenance.jsonl` maps its token to the files it came from.
    Ask the LLM to quote the locator so answers can be checked.
+
+## Versions and removal
+
+A folder of models collected over time holds several versions of the same model, under the same
+name or another, and copies of each. Copies cost nothing, since a project is known by its
+content and processed once. Versions are told apart by the tree's tools, and you choose which to
+keep (plan PV, `docs/plans/project-versions-2026-10-03.md`):
+
+```sh
+cameo-ingest add -o OUT path/to/models      # the task list
+cameo-ingest scan -o OUT                    # find the projects; build nothing
+cameo-ingest groups -o OUT                  # versions of the same model, newest first
+cameo-ingest remove -o OUT 9ffd7a2c3b7f     # the older ones, once checked (the report suggests the line)
+cameo-ingest run -o OUT                     # build what remains
+```
+
+- **How versions are found:** by the element ids they share. Cameo keeps an element's id across
+  saves, so versions share most of theirs. A project id can't be used alone: a model made from a
+  template keeps the template's, and a migrated model may get a new one.
+- **Which is newest:** by the save time that Cameo writes in each file (`Records.properties`),
+  which copying doesn't change. Without it, the dates inside the zip stand in, and the report
+  says so.
+- **What the report flags:**
+  - a member with many elements the newest lacks: a fork from a common model, or much deleted
+    since;
+  - projects that share only some elements, such as two models made from one template, listed
+    as related but not grouped.
+- **Removal:** a removed project's output goes, and later runs leave it out even while its file
+  is still in the task list, or turns up again elsewhere. Its LLM answers stay cached, so
+  `restore` costs only the build.
 
 ## Searching without tools
 
