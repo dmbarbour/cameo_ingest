@@ -81,6 +81,52 @@ def canvas(w: float, h: float, pixels: int = IMAGE_PIXELS, title_px: int = TITLE
     return W, H, max(0.01, min((W - 2 * m) / w, (H - 2 * m - t) / h))
 
 
+SEQUENCE = {"SequenceLifeline", "LifeLineLine", "Activation"}
+
+
+def conventions(g: DiagramGraph, focus: set[int] | None = None) -> set[str]:
+    """The drawing conventions a sketch of `g` uses (around the shapes in `focus`, for a module's
+    view), named as `prompts.GUIDE`'s sentences are, so that a request explains only those (plan SK)."""
+    def seen(n: Node | None) -> bool:
+        return n is not None and (focus is None or n.num in focus)
+
+    def node(v: View | None) -> Node | None:
+        return g.node_of.get(v.view_id or "") if v is not None else None
+
+    nodes = [n for n in g.nodes if seen(n)]
+    links = [lk for lk in g.links if seen(node(lk.source)) or seen(node(lk.target))]
+    found = {"tags"} if nodes else set()
+    if any(n.parent is not None for n in nodes):
+        found.add("nesting")
+    classes = {n.view.cls for n in nodes}
+    if "RectangularShape" in classes:
+        found.add("frames")
+    if "Bar" in classes:
+        found.add("bars")
+    if classes & SEQUENCE:
+        found.add("sequence")
+    kinds = {lk.view.cls for lk in links}
+    if kinds - {"LinkAttribute"}:
+        found.add("open")
+    if any(lk.directed and lk.view.cls in HOLLOW for lk in links):
+        found.add("hollow")
+    if kinds & DASHED - {"LinkAttribute"}:
+        found.add("dashed")
+    if "LinkAttribute" in kinds:
+        found.add("association-class")
+    for t in g.trees:
+        if any(m in links for m in t.members):
+            found.add("tree" if t.to_parent else "containment" if any(m.view.cls == "ContainmentLink"
+                                                                      for m in t.members) else "open")
+    if any(seen(g.node_of.get(v.view_id or "")) for v in g.pin_views):
+        found.add("pins")
+    if any({i[-1:] for i in lk.items} in ({"→"}, {"←"}) for lk in links):
+        found.add("flows")
+    if g.connectors:
+        found.add("breaks")
+    return found
+
+
 def render_png(ix: ModelIndex, g: DiagramGraph, title: str, pixels: int = IMAGE_PIXELS,
                frame: Frame | None = None, style: SketchStyle = STYLE, drawn: dict[int, str] | None = None,
                ) -> bytes | None:

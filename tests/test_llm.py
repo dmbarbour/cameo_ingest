@@ -151,11 +151,11 @@ def test_current_templates_pinned():
         return hashlib.sha256(f"{t.image_first}|{t.text}{f'|{t.fragments}' if t.fragments else ''}".encode()).hexdigest()[:16]
 
     assert {t.key: pin(t) for t in CURRENT.values()} == {
-        "diagram-description@v5": "254bc73164fa5d14",
+        "diagram-description@v6": "febe4654a66e0acc",
         "diagram-synthesis@v2": "864e9e9b3a1a3ce1",
         "image-description@v2": "abc49bf5c21deb2c",
         "instances-summary@v2": "7efe4dab7b5f2f97",
-        "module-description@v2": "3da13ee440c895af",
+        "module-description@v3": "5d339bf2c19fb77b",
         "module-summary@v3": "adb1988426c52a72",
         "package-summary@v4": "9b211fbe74c3e128",
         "package-synthesis@v3": "ffde10093ba92d11",
@@ -182,17 +182,17 @@ def test_templates_and_request_log(tmp_path, fake_chat):
     db = sqlite3.connect(out / ".cache/llm.sqlite")
     rows = db.execute("SELECT template, project, item, image_path, prompt, notes FROM requests ORDER BY template, "
                       "image_path").fetchall()
-    assert [(r[0], r[3]) for r in rows] == [("diagram-description@v5", "diagrams/Drone_BDD.png"),
+    assert [(r[0], r[3]) for r in rows] == [("diagram-description@v6", "diagrams/Drone_BDD.png"),
                                            ("image-description@v2", "images/BINARY-img1.png"),
                                            ("image-description@v2", "images/BINARY-img2.png"),
                                            ("package-summary@v4", None)]
     assert all(r[1] == token and r[2].startswith(token[:23]) for r in rows)
-    assert rows[0][4].startswith(TEMPLATES["diagram-description@v5"].text.split("{{")[0])
+    assert rows[0][4].startswith(TEMPLATES["diagram-description@v6"].text.split("{{")[0])
     assert "Diagram: Drone BDD (SysML Block Definition Diagram)" in rows[0][4]
     chunks = [json.loads(line) for line in (out / "chunks.jsonl").open()]
     templates = {c["metadata"]["provenance"]["derivation"].get("template") for c in chunks
                  if c["metadata"]["kind"].startswith("generated:")}
-    assert templates == {"diagram-description@v5", "image-description@v2", "package-summary@v4"}
+    assert templates == {"diagram-description@v6", "image-description@v2", "package-summary@v4"}
     # The image goes before the text (FU-015).
     request = json.loads(json.dumps(fake_chat[0].enrichment()[0][1]))
     assert [part["type"] for part in request[0]["content"]] == ["image_url", "text"]

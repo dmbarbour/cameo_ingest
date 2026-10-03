@@ -140,6 +140,42 @@ _DEPENDENCIES = (
 )
 
 
+# How to read a sketch (plan SK, 2026-10-03): one sentence per drawing convention, sent only when
+# the sketch uses it. The sketches are ours, so we know what each mark means; validation showed a
+# model reading a correct tree against its triangles. Part of each template that sends a sketch.
+GUIDE = (
+    ("guide", "Reading the sketch:"),
+    ("tags", ("- Each shape shows its number in a grey tag at its top left, then its name, cut short with '…' when it "
+              "doesn't fit (the legend has it whole).")),
+    ("nesting", "- A shape drawn inside another is nested in it, not connected to it."),
+    ("frames", "- A plain rectangle with a title, drawn around shapes, only groups them; it is not connected to them."),
+    ("open", ("- An open arrowhead marks where a directed connection ends: it runs from the line's other end to the "
+              "arrowhead. A line without an arrowhead is undirected.")),
+    ("hollow", ("- A hollow triangle marks the general end of a generalization (the parent), or the realized end of a "
+                "realization: the connection runs from the other end to the triangle.")),
+    ("tree", ("- Connections to one shape may be drawn as a tree: each line, with its own arrowhead, joins a shared "
+              "bar that leads to that shape. Each runs from its own end to that shape, whether the shape is above or "
+              "below.")),
+    ("containment", ("- Lines joined by a shared bar with no arrowhead show containment: the shape at the bar's root "
+                     "contains the others.")),
+    ("dashed", ("- A dashed line is a dependency (such as «satisfy», «deriveReqt», «verify», «refine», «trace» or a "
+                "usage), running from its tail to its arrowhead.")),
+    ("association-class", ("- A dashed line from the middle of a connection to a shape makes that shape the "
+                           "connection's association class; it is not a connection of its own.")),
+    ("pins", "- Small dots on a shape's border are its pins or ports; a line ending at a dot belongs to that shape."),
+    ("flows", "- A small arrow in the middle of a line shows the direction its items flow."),
+    ("breaks", "- A small circle labelled 'to N' or 'from N' continues a long line to or from shape N."),
+    ("bars", "- A thick black bar is a fork or a join: flows split or meet there."),
+    ("sequence", ("- Lifelines are the boxes along the top, with dashed lines below them; the narrow boxes on a "
+                  "lifeline's line are its activations, listed under it in the legend. Messages are the horizontal "
+                  "arrows between them, in time order from top to bottom.")),
+)
+GUIDE_SLOT = Slot("GUIDE", "text",
+                  "empty, or a paragraph 'Reading the sketch:' with one line for each drawing convention the sketch "
+                  "uses, from this version's fragments (tags, nesting, frames, arrowheads, triangles, trees, "
+                  "containment, dashed dependencies, association classes, pins, item flows, connector circles, "
+                  "fork and join bars, sequence diagrams).")
+
 # Version 4 of diagrams and 2 of images (2026-09-30): the image comes first, as Google advises,
 # drawn to fill gemma-4's pixel budget (FU-015).
 _SKETCH = Slot(
@@ -152,7 +188,7 @@ _SKETCH = Slot(
 
 DIAGRAM_DESCRIPTION = Template(
     id="diagram-description",
-    version=5,
+    version=6,
     purpose=(
         "A description of one diagram for a search index, stored as a generated:diagram_description chunk "
         "and shown on the diagram's page."
@@ -160,7 +196,7 @@ DIAGRAM_DESCRIPTION = Template(
     text=(
         "You are helping to index a systems engineering model (UML/SysML, authored in Cameo) for search. "
         "The image above is a sketch redrawn from one diagram's layout; below is the diagram's content as "
-        f"text. {_NOTATION} {_DEPENDENCIES}\n\n"
+        f"text. {_NOTATION} {_DEPENDENCIES}{{{{GUIDE}}}}\n\n"
         "Explain what this diagram tells a reader about the system: what it is for, what it shows the "
         "system or its parts doing or being made of, and what its main flows or dependencies achieve. "
         "Do not restate the legend or list every connection: they are already recorded exactly. Group or "
@@ -169,10 +205,10 @@ DIAGRAM_DESCRIPTION = Template(
         f"{_STYLE} At most 150 words.\n\n"
         "Diagram: {{DIAGRAM}}\nLegend:\n{{LEGEND}}\nConnections:\n{{CONNECTIONS}}{{CUT_NOTE}}"
     ),
-    slots=(*_DIAGRAM_SLOTS, _SKETCH),
+    slots=(*_DIAGRAM_SLOTS, GUIDE_SLOT, _SKETCH),
     image_first=True,
     fragments=(("cut", ("\n(Only the first {limit} shapes and connections are listed: the diagram has {shapes} "
-                        "shapes and {connections} connections.)")),),
+                        "shapes and {connections} connections.)")), *GUIDE),
 )
 
 IMAGE_DESCRIPTION = Template(
@@ -205,7 +241,7 @@ _MODULES = ("The diagram is too large to read in one image, so its shapes have b
 
 MODULE_DESCRIPTION = Template(
     id="module-description",
-    version=2,
+    version=3,
     purpose="A description of one module of a large diagram, for a search index, stored as a "
             "generated:module_description chunk (with the module's place in the diagram) and shown in the "
             "module's section of the diagram's page. The diagram-synthesis request builds on these.",
@@ -214,7 +250,7 @@ MODULE_DESCRIPTION = Template(
         f"{_MODULES} The image above is a sketch of one module, redrawn from the diagram's layout: the "
         "module's shapes are drawn in full and the rest of the diagram is faded; shapes of other modules "
         "that connect to this one keep their numbers, at the picture's edge when they lie outside it. "
-        f"Below is the module's content as text. {_NOTATION} {_DEPENDENCIES}\n\n"
+        f"Below is the module's content as text. {_NOTATION} {_DEPENDENCIES}{{{{GUIDE}}}}\n\n"
         "Explain what this part of the diagram shows about the system: what it does or is made of, what "
         "its main flows or dependencies achieve, and what it takes from or passes to the other modules, "
         "naming the shapes at the other end rather than their modules' numbers. "
@@ -237,6 +273,7 @@ MODULE_DESCRIPTION = Template(
         Slot("BOUNDARY", "text",
              "one line per connection between a shape of the module and one of another module, whose end "
              "reads '[n] label (in M<j>)', or '(none)'."),
+        GUIDE_SLOT,
         Slot("SKETCH", "image",
              "a PNG of the module's region of the diagram at the vision model's pixel budget (--image-pixels), "
              "sides in multiples of 48: the module's shapes numbered and named as in the whole sketch, other "
@@ -245,6 +282,7 @@ MODULE_DESCRIPTION = Template(
              "<n>'."),
     ),
     image_first=True,
+    fragments=GUIDE,
 )
 
 DIAGRAM_SYNTHESIS = Template(

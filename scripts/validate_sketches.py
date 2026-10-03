@@ -102,7 +102,7 @@ def choose(tree: Path, per_stratum: int, targeted: int, max_projects: int, sizes
 
 
 def ask(tree: Path, keys: list[dict], llm: EnrichmentSession, sizes: TreeSettings, image_first: bool,
-        concurrency: int) -> list[dict]:
+        concurrency: int, guides: bool = True) -> list[dict]:
     state = State(tree)
     pixels, style = sizes.image_pixels or IMAGE_PIXELS, SketchStyle(*sizes.sketch)
     drawn_all = []
@@ -124,23 +124,29 @@ def ask(tree: Path, keys: list[dict], llm: EnrichmentSession, sizes: TreeSetting
                 part = view.partition(k["dia"])
                 if k["module"] is None:
                     png = sketch.render_png(ix, g, title, pixels, style=style, drawn=drawn)
-                    ends = set(drawn)
+                    ends, focus = set(drawn), None
                 elif part is not None and k["module"] <= len(part.modules):
                     png = sketch.module_png(ix, part, k["module"], title, pixels, style, drawn)
                     m = part.modules[k["module"] - 1]
-                    ends = set(m.shapes) | set(m.boundary)
+                    ends, focus = set(m.shapes) | set(m.boundary), set(m.shapes)
                 else:
                     continue  # this version divides the diagram otherwise
+                values = {}  # how to read it, from versions that say (plan SK)
+                if guides and hasattr(sketch, "conventions"):
+                    values = {"GUIDE": validate.guide(validate.TEMPLATE, sketch.conventions(g, focus))}
+                elif "{{GUIDE}}" in validate.TEMPLATE.text:
+                    values = {"GUIDE": ""}
                 if png:
-                    drawn_all.append((k, name, kind, ix.qualified_name(k["dia"]), png, validate._truth(g, drawn, ends)))
+                    drawn_all.append((k, name, kind, ix.qualified_name(k["dia"]), png, validate._truth(g, drawn, ends),
+                                      values))
     finally:
         state.close()
 
     def one(item):
-        k, name, kind, diagram, png, truth = item
-        res = llm.ask(validate.TEMPLATE, {}, image=png, mime="image/png", project=f"validation:{name}",
+        k, name, kind, diagram, png, truth, values = item
+        res = llm.ask(validate.TEMPLATE, values, image=png, mime="image/png", project=f"validation:{name}",
                       inputs=(f"{k['content'][:12]}:{k['dia']}:{k['module']}",), image_first=image_first)
-        return {**k, "project": name, "kind": kind, "diagram": diagram, "truth": truth,
+        return {**k, "project": name, "kind": kind, "diagram": diagram, "truth": truth, "guide": values.get("GUIDE"),
                 "reply": res[0] if res else None, "version": cameo_ingest.__version__,
                 "png_sha256": hashlib.sha256(png).hexdigest()}
 
@@ -194,6 +200,7 @@ def main() -> None:
     a.add_argument("--cache-dir", type=Path, required=True)
     a.add_argument("--concurrency", type=int, default=4)
     a.add_argument("--image-last", action="store_true")
+    a.add_argument("--no-guides", action="store_true", help="leave out how to read the sketch (plan SK)")
     s = sub.add_parser("score")
     s.add_argument("runs", type=Path, nargs="+")
     args = ap.parse_args()
@@ -215,7 +222,8 @@ def main() -> None:
     cfg = LLMConfig.from_env(None, args.model)
     cfg.text_model = None
     llm = EnrichmentSession(cfg, args.cache_dir, connect(cfg, None))
-    rows = ask(args.tree, json.loads(args.keys.read_text()), llm, settings, not args.image_last, args.concurrency)
+    rows = ask(args.tree, json.loads(args.keys.read_text()), llm, settings, not args.image_last, args.concurrency,
+               not args.no_guides)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with args.out.open("w", encoding="utf-8") as f:
         for r in rows:

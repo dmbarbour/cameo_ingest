@@ -28,14 +28,15 @@ from .diagram_graph import DiagramGraph
 from .llm import EnrichmentSession
 from .pipeline import load_layouts, parse_project
 from .progress import QUIET, Progress
-from .prompts import Slot, Template
+from .prompt_values import guide
+from .prompts import GUIDE, GUIDE_SLOT, Slot, Template
 from .provenance import ContentInfo
 from .sketch import SketchStyle
 from .state import State
 from .view import ProjectView
 
 TEMPLATE = Template(  # outside prompts.CURRENT: validation changes no project's options
-    id="eye-sketch", version=1,
+    id="eye-sketch", version=2,
     purpose="One of the tree's own sketches, to measure what the vision model reads on it (plan VA); scored, "
             "not stored.",
     text=("The image is a sketch of a diagram from a systems engineering model: shapes, each tagged with a number "
@@ -43,10 +44,11 @@ TEMPLATE = Template(  # outside prompts.CURRENT: validation changes no project's
           "connection ends. A name too long for its shape is cut short with '…'. Shapes drawn faded are context: "
           "leave them out, except as the ends of connections. List every numbered shape with its name as written, "
           "and every connection by the numbers of the shapes it joins: from the shape it starts at to the shape "
-          "its arrowhead points to, either way round for a connection without one.\n"
+          "its arrowhead points to, either way round for a connection without one.{{GUIDE}}\n"
           + ec.JSON_ONLY + '{"shapes": [{"number": 3, "name": "Battery"}], "connections": [{"from": 3, "to": 7}]}'),
-    slots=(Slot("SKETCH", "image", "one of the tree's sketches, drawn at the calibrated sizes"),),
+    slots=(GUIDE_SLOT, Slot("SKETCH", "image", "one of the tree's sketches, drawn at the calibrated sizes")),
     image_first=True,
+    fragments=GUIDE,
 )
 SMALL = 9  # shapes: a small diagram; above it and up to the modules' threshold, medium
 PER_STRATUM = 4
@@ -67,6 +69,7 @@ class Sketch:
     content: str = ""  # the project's sha256
     dia_id: str = ""
     module: int | None = None
+    guide: str = ""  # how to read it (plan SK)
 
 
 def strata(large: int) -> dict[str, str]:
@@ -143,16 +146,19 @@ def sample(state: State, settings: TreeSettings, progress: Progress = QUIET, per
                 if num is None:
                     png = sketch.render_png(ix, g, title, pixels, style=style, drawn=drawn)
                     ends = set(drawn)
+                    found = sketch.conventions(g)
                 else:
                     part = view.partition(dia_id)
                     png = sketch.module_png(ix, part, num, title, pixels, style, drawn)
                     m = part.modules[num - 1]
                     ends = set(m.shapes) | set(m.boundary)
+                    found = sketch.conventions(g, set(m.shapes))
                 if png is None or not drawn:
                     continue
                 pool[stratum].append(Sketch(f"{r['sha256'][:12]}:{dia_id}" + (f":M{num}" if num else ""), r["name"],
                                             ix.qualified_name(dia_id) + (f" (module M{num})" if num else ""), kind,
-                                            stratum, png, _truth(g, drawn, ends), r["sha256"], dia_id, num))
+                                            stratum, png, _truth(g, drawn, ends), r["sha256"], dia_id, num,
+                                            guide(TEMPLATE, found)))
     chosen = []
     for stratum in strata(modules[0]):
         by_kind: dict[str, list[Sketch]] = defaultdict(list)
@@ -234,7 +240,7 @@ def score(truth: dict[str, Any], answer: dict[str, Any] | None) -> dict[str, Any
 def ask(llm: EnrichmentSession, sketches: list[Sketch], image_first: bool, concurrency: int = 1,
         progress: Progress = QUIET) -> list[dict[str, Any]]:
     def one(s: Sketch) -> dict[str, Any]:
-        res = llm.ask(TEMPLATE, {}, image=s.png, mime="image/png", project=f"validation:{s.project}",
+        res = llm.ask(TEMPLATE, {"GUIDE": s.guide}, image=s.png, mime="image/png", project=f"validation:{s.project}",
                       inputs=(s.key,), image_first=image_first)
         reply = res[0] if res else None
         answer = ec.parse(reply)

@@ -197,7 +197,7 @@ def test_large_diagram_modules(tmp_path, fake_chat):
     db = sqlite3.connect(out / ".cache/llm.sqlite")
     rows = db.execute("SELECT template, prompt, image_path FROM requests WHERE template LIKE 'module%' "
                       "OR template LIKE 'diagram%' ORDER BY rowid").fetchall()
-    assert [r[0] for r in rows] == ["module-description@v2"] * 2 + ["diagram-synthesis@v2"]
+    assert [r[0] for r in rows] == ["module-description@v3"] * 2 + ["diagram-synthesis@v2"]
     assert "Module: M2 of 2" in rows[1][1] and "(in M" in rows[1][1]
     assert rows[2][1].count("A block definition diagram showing Drone") == 2 and rows[2][2] == "diagrams/Drone_BDD.png"
 
@@ -313,3 +313,31 @@ def test_a_tree_below_its_parent():
         sketch._arrowhead = arrowhead
     hollow = [h for h in heads if h[2]]
     assert len(hollow) == 4 and sum(q[1] > p[1] for p, q, _ in hollow) == 1  # the tree's head points down
+
+
+def test_reading_guides():
+    """Plan SK: a request explains the drawing conventions its sketch uses, and no others; a
+    module's request those of its own shapes."""
+    from cameo_ingest import prompt_values as pv
+    from cameo_ingest import sketch
+    from cameo_ingest.archive import discover
+    from cameo_ingest.pipeline import load_layouts, parse_project
+    from cameo_ingest.prompts import CURRENT
+    from cameo_ingest.provenance import ContentInfo
+    from cameo_ingest.view import ProjectView
+
+    project = next(discover(make_mdzip(MODEL_SK, LAYOUT_SK), "drone.mdzip"))
+    ix = parse_project(project)
+    view = ProjectView(ContentInfo(project.sha256, "drone.mdzip"), project, ix, layouts=load_layouts(project, ix))
+    g = view.graph("d1")
+    assert sketch.conventions(g) == {"tags", "frames", "open", "hollow", "tree", "association-class"}
+    guide = pv.diagram_description(ix, g, ix.diagrams["d1"]).values["GUIDE"]
+    t = CURRENT["diagram-description"]
+    assert guide.startswith("\n\nReading the sketch:\n") and t.fragment("tree") in guide
+    assert t.fragment("sequence") not in guide and t.fragment("pins") not in guide
+    assert guide.index(t.fragment("tags")) < guide.index(t.fragment("tree"))  # in the template's order
+    assert sketch.conventions(g, {1}) == {"tags", "open"}  # around the Drone alone: its association
+    plain = next(discover(make_mdzip(), "drone.mdzip"))
+    ix = parse_project(plain)
+    view = ProjectView(ContentInfo(plain.sha256, "drone.mdzip"), plain, ix, layouts=load_layouts(plain, ix))
+    assert pv.diagram_description(ix, view.graph("d1"), ix.diagrams["d1"]).values["GUIDE"].count("\n- ") == 2

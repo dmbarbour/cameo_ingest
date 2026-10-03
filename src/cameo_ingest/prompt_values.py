@@ -15,7 +15,8 @@ from . import semantics as sem
 from .diagram_graph import DiagramGraph
 from .model import Diagram, Element, ModelIndex
 from .partition import Partition
-from .prompts import CURRENT, DIAGRAM_ITEMS, DIGEST_CHARS, OWN_CHARS, PART_CHARS
+from .prompts import CURRENT, DIAGRAM_ITEMS, DIGEST_CHARS, GUIDE, OWN_CHARS, PART_CHARS, Template
+from .sketch import conventions
 from .text import one_line, plural
 
 
@@ -30,10 +31,18 @@ def diagram_name(d: Diagram) -> str:
     return f"{d.name} ({d.diagram_type or 'unknown type'})"
 
 
+def guide(template: Template, found: set[str]) -> str:
+    """The template's sentences on reading a sketch, for the conventions `found` in it (plan SK):
+    empty when there are none, else a paragraph after the text before it."""
+    names = [k for k, _ in template.fragments if k in found and k in dict(GUIDE)]
+    return "\n\n" + "\n".join([template.fragment("guide"), *map(template.fragment, names)]) if names else ""
+
+
 def diagram_description(ix: ModelIndex, g: DiagramGraph, d: Diagram) -> Values:
     nodes, edges = dt.describe(ix, g)
     out = Values({"DIAGRAM": diagram_name(d), "LEGEND": "\n".join(nodes[:DIAGRAM_ITEMS]),
-                  "CONNECTIONS": "\n".join(edges[:DIAGRAM_ITEMS]) or "(none)", "CUT_NOTE": ""})
+                  "CONNECTIONS": "\n".join(edges[:DIAGRAM_ITEMS]) or "(none)", "CUT_NOTE": "",
+                  "GUIDE": guide(CURRENT["diagram-description"], conventions(g))})
     if max(len(nodes), len(edges)) > DIAGRAM_ITEMS:
         out.values["CUT_NOTE"] = CURRENT["diagram-description"].fragment(
             "cut", limit=DIAGRAM_ITEMS, shapes=len(nodes), connections=len(edges))
@@ -44,8 +53,10 @@ def diagram_description(ix: ModelIndex, g: DiagramGraph, d: Diagram) -> Values:
 
 def module_description(ix: ModelIndex, part: Partition, num: int, d: Diagram) -> Values:
     legend, lines, boundary = dt.module_lists(ix, part, num)
+    m = part.modules[num - 1]
     return Values({"DIAGRAM": diagram_name(d), "MODULE": f"M{num} of {len(part.modules)}", "LEGEND": "\n".join(legend),
-                   "CONNECTIONS": "\n".join(lines) or "(none)", "BOUNDARY": "\n".join(boundary) or "(none)"},
+                   "CONNECTIONS": "\n".join(lines) or "(none)", "BOUNDARY": "\n".join(boundary) or "(none)",
+                   "GUIDE": guide(CURRENT["module-description"], conventions(part.graph, set(m.shapes)))},
                   {"module": f"M{num} of {len(part.modules)}"})
 
 
