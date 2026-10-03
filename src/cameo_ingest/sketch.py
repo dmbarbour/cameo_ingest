@@ -81,12 +81,14 @@ def canvas(w: float, h: float, pixels: int = IMAGE_PIXELS, title_px: int = TITLE
 
 
 def render_png(ix: ModelIndex, g: DiagramGraph, title: str, pixels: int = IMAGE_PIXELS,
-               frame: Frame | None = None, style: SketchStyle = STYLE) -> bytes | None:
+               frame: Frame | None = None, style: SketchStyle = STYLE, drawn: dict[int, str] | None = None,
+               ) -> bytes | None:
     """A sketch that fills the model's pixel budget (FU-015): shapes tagged with their legend
     numbers, connections with arrowheads at the target, pins as dots (FU-007, FU-008).
 
     With a `frame`, only its region is drawn, around the shapes in focus: other shapes are
-    faded, and a connection leaving the picture ends in its far shape's number."""
+    faded, and a connection leaving the picture ends in its far shape's number. `drawn`, if
+    given, gets each shape in focus's name as drawn ("" when none fits), for validation."""
     f = frame or Frame()
     FONT_PX, TITLE_PX = style.font_px, style.title_px  # the module's names, for this style
     focus = f.focus
@@ -198,8 +200,11 @@ def render_png(ix: ModelIndex, g: DiagramGraph, title: str, pixels: int = IMAGE_
             d.text((a[0] + 3, a[1] + 1), tag, fill=text_fill, font=font)
         room = c[0] - a[0] - tw - 10
         name = n.shown or n.view.text or ""
-        if room > 4 * FONT_PX * 0.5 and c[1] - a[1] >= FONT_PX + 2 and name:
-            d.text((a[0] + tw + 8, a[1] + 1), _fit(d, name, font, room), fill=text_fill, font=font)
+        text = _fit(d, name, font, room) if room > 4 * FONT_PX * 0.5 and c[1] - a[1] >= FONT_PX + 2 and name else ""
+        if text:
+            d.text((a[0] + tw + 8, a[1] + 1), text, fill=text_fill, font=font)
+        if drawn is not None and lit(n):
+            drawn[n.num] = text
     big = ImageFont.load_default(size=FONT_PX + 4)
     for label, (bx0, by0, bx1, by1), colour in f.outlines:  # an overview's modules
         a, c = P(bx0, by0), P(bx1, by1)
@@ -330,7 +335,7 @@ def overview_png(ix: ModelIndex, part: Partition, title: str, pixels: int = IMAG
 
 
 def module_png(ix: ModelIndex, part: Partition, num: int, title: str, pixels: int = IMAGE_PIXELS,
-               style: SketchStyle = STYLE) -> bytes | None:
+               style: SketchStyle = STYLE, drawn: dict[int, str] | None = None) -> bytes | None:
     """Module `num` drawn on its own: its shapes numbered as in the diagram's legend, the
     rest of the diagram faded, and shapes of other modules it connects to keeping their
     numbers (at the picture's edge when they lie outside it)."""
@@ -338,5 +343,5 @@ def module_png(ix: ModelIndex, part: Partition, num: int, title: str, pixels: in
     x0, y0, x1, y1 = m.box
     pad = max(20.0, 0.04 * max(x1 - x0, y1 - y0))
     frame = Frame(region=(x0 - pad, y0 - pad, x1 + pad, y1 + pad), focus=set(m.shapes), tagged=set(m.boundary))
-    return render_png(ix, part.graph, f"{title}: module M{num} of {len(part.modules)}", pixels, frame, style)
+    return render_png(ix, part.graph, f"{title}: module M{num} of {len(part.modules)}", pixels, frame, style, drawn)
 

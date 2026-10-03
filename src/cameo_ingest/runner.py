@@ -303,7 +303,9 @@ def status(state: State) -> dict[str, Any]:
                        for r in state.project_rows("failed")],
         },
         "calibrations": [{"model": r["model"], "endpoint": r["endpoint"], "created": r["created"],
-                          "settings": json.loads(r["settings"]), "report": r["report"]} for r in state.calibrations()],
+                          "settings": json.loads(r["settings"]), "report": r["report"],
+                          "validation": json.loads(r["validation"]) if r["validation"] else None}
+                         for r in state.calibrations()],
         "latest_run": None if run is None else {
             "id": run["id"], "started": run["started"], "finished": run["finished"], "outcome": run["outcome"],
             "llm_calls": json.loads(run["llm"])["calls"] if run["llm"] else None,

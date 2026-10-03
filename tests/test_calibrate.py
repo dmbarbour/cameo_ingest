@@ -32,15 +32,26 @@ def known_cards() -> dict[str, Drawn]:
     return {hashlib.sha256(d.png).hexdigest(): d for d in map(render, cards.values())}
 
 
+def read_sketch(truth, every=0):
+    """A model's answer on one of the tree's sketches: everything as drawn, or with every `every`-th
+    shape's name left out."""
+    shapes = [{"number": int(n), "name": "" if every and k % every == every - 1 else name}
+              for k, (n, name) in enumerate(truth["shapes"].items())]
+    return {"shapes": shapes, "connections": [{"from": a, "to": b} for a, b, _ in truth["links"]]}
+
+
 class EyeReader:
     """A vision model that knows each card's truth and answers as `policy(card, drawn)` says: a
-    dict as JSON, or a string. `text_first_only`: it reads nothing when the image comes first.
-    Any other request (a sketch to describe) gets a fixed answer, its order noted."""
+    dict as JSON, or a string; and knows each validation sketch's truth, answering as `sketches`
+    says. `text_first_only`: it reads no card when the image comes first. Any other request (a
+    sketch to describe) gets a fixed answer. The order of every request about the tree's own
+    sketches is noted."""
 
     replays = False
 
-    def __init__(self, policy, text_first_only=False):
-        self.policy, self.text_first_only = policy, text_first_only
+    def __init__(self, policy, text_first_only=False, sketches=read_sketch, truths=None):
+        self.policy, self.text_first_only, self.sketches = policy, text_first_only, sketches
+        self.truths = truths if truths is not None else {}
         self.requests = 0
         self.described: list[str] = []  # each description request's first part: "text" or "image_url"
 
@@ -49,13 +60,16 @@ class EyeReader:
         content = messages[0]["content"]
         images = [p for p in content if p["type"] == "image_url"] if isinstance(content, list) else []
         png = base64.b64decode(images[0]["image_url"]["url"].split(",", 1)[1]) if images else b""
-        drawn = known_cards().get(hashlib.sha256(png).hexdigest())
-        if drawn is None:
-            if images:
-                self.described.append(content[0]["type"])
-            return "A block definition diagram showing Drone composed of Battery."
-        if self.text_first_only and content[0]["type"] == "image_url":
+        sha = hashlib.sha256(png).hexdigest()
+        drawn = known_cards().get(sha)
+        if images and drawn is None:  # a sketch of the tree's, to validate or to describe
+            self.described.append(content[0]["type"])
+        if self.text_first_only and drawn is not None and content[0]["type"] == "image_url":
             return "?"
+        if sha in self.truths:
+            return json.dumps(self.sketches(self.truths[sha]))
+        if drawn is None:
+            return "A block definition diagram showing Drone composed of Battery."
         answer = self.policy(drawn.card, drawn)
         return answer if isinstance(answer, str) else json.dumps(answer)
 
@@ -63,11 +77,23 @@ class EyeReader:
         pass
 
 
-def reader(monkeypatch, policy, text_first_only=False) -> list[EyeReader]:
-    from cameo_ingest import llm
+def reader(monkeypatch, policy, text_first_only=False, sketches=read_sketch) -> list[EyeReader]:
+    """Fake vision models, each made kept in the list; validation's sketches are noted as drawn, so
+    that the models know their truth."""
+    from cameo_ingest import llm, validate
 
+    truths: dict[str, dict] = {}
+    sample = validate.sample
+
+    def noting(*args, **kw):
+        picked = sample(*args, **kw)
+        truths.update({hashlib.sha256(s.png).hexdigest(): s.truth for s in picked})
+        return picked
+
+    monkeypatch.setattr(validate, "sample", noting)
     made: list[EyeReader] = []
-    monkeypatch.setattr(llm, "OpenAIChat", lambda cfg: made.append(EyeReader(policy, text_first_only)) or made[-1])
+    monkeypatch.setattr(llm, "OpenAIChat",
+                        lambda cfg: made.append(EyeReader(policy, text_first_only, sketches, truths)) or made[-1])
     return made
 
 
@@ -121,7 +147,7 @@ def test_a_calibration_is_recorded_and_runs_use_it(tmp_path, monkeypatch, capsys
     assert json.loads(row["settings"]) == expected and row["report"] == f"calibration/{dest.name}"
     # Calibrating again asks nothing: the answers are stored.
     sent = sum(r.requests for r in readers)
-    assert sent == 88  # 4 of the trial's cards are reading cards too
+    assert sent == 89  # 4 of the trial's cards are reading cards too; 1 validation sketch
     assert calibrate(out, suite="standard") == 0
     assert sum(r.requests for r in readers) == sent
     assert run_with_model(out) == 0
@@ -252,9 +278,60 @@ def test_a_model_that_reads_only_after_the_text(tmp_path, monkeypatch, capsys):
     assert run_with_model(out) == 0
     settings = json.loads(record(out)["settings"])
     assert settings["image_first"] is False and settings["sketch_font_px"] == 8  # read as well as the perfect reader
-    assert options(out)["image_first"] is False and readers[-1].described == ["text"] * 3
+    assert options(out)["image_first"] is False and set(readers[-1].described) == {"text"}  # validated, described
     report = (next((out / "calibration").iterdir()) / "report.md").read_text()
     assert "with it after the text (difference +100%" in report and "asked with the image after the text" in report
+
+
+def fiction_scanned(tmp_path, settings=None):
+    """The fictional projects added and scanned, not built; `settings`: the tree's own."""
+    from cameo_ingest.evaluation.fiction import PROJECTS
+
+    for prefix in sorted(PROJECTS):
+        project = PROJECTS[prefix]()
+        src = tmp_path / "in" / project.path
+        src.parent.mkdir(parents=True, exist_ok=True)
+        src.write_bytes(project.mdzip())
+    out = tmp_path / "out"
+    assert main(["add", str(tmp_path / "in"), "-o", str(out)]) == 0
+    assert main(["scan", "-o", str(out)]) == 0
+    if settings:
+        state = State(out)
+        state.save_settings(settings)
+        state.close()
+    return out
+
+
+def test_validation_on_the_trees_sketches(tmp_path, monkeypatch, capsys):
+    """A model that reads every sketch as drawn: every name, connection and direction, reported
+    in one line, in validation.md, and by `status`."""
+    out = fiction_scanned(tmp_path)
+    reader(monkeypatch, lambda card, drawn: perfect(drawn))
+    capsys.readouterr()
+    assert calibrate(out, suite="standard") == 0
+    err = capsys.readouterr().err
+    assert (f"expected quality with {MODEL}: on 8 of the tree's sketches, 100% of names read, 100% of connections "
+            "found, 100% of directions right") in err
+    dest = next((out / "calibration").iterdir())
+    summary = json.loads((dest / "validation.json").read_text())["summary"]
+    assert set(summary["strata"]) == {"small", "medium"} and not summary["warnings"]
+    assert len(list((dest / "validation").glob("*.png"))) == 8 and "| all | 8 |" in (dest / "validation.md").read_text()
+    assert json.loads(record(out)["validation"])["overall"]["names"] == 1.0
+    assert main(["status", "-o", str(out)]) == 0
+    assert "expected quality: on 8 of the tree's sketches, 100% of names read" in capsys.readouterr().out
+
+
+def test_validation_warns_of_what_will_suffer(tmp_path, monkeypatch, capsys):
+    """A model that leaves out every third shape's name: about two thirds read, and a warning. With
+    modules of at most 6 shapes, the sample takes modules of the larger diagrams too."""
+    out = fiction_scanned(tmp_path, {"diagram_modules": "9:3:6"})
+    reader(monkeypatch, lambda card, drawn: perfect(drawn), sketches=lambda truth: read_sketch(truth, every=3))
+    assert calibrate(out, suite="standard") == 0
+    summary = json.loads(record(out)["validation"])
+    assert 0.55 < summary["overall"]["names"] < 0.8 and summary["overall"]["found"] == 1.0
+    assert "modules" in summary["strata"]
+    assert any("names read; their descriptions rely on the legend's text" in w for w in summary["warnings"])
+    assert "of names read; their descriptions rely on the legend's text for names" in capsys.readouterr().err
 
 
 def test_a_schema_2_tree_migrates(tmp_path):

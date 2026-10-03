@@ -111,6 +111,7 @@ CREATE TABLE IF NOT EXISTS calibrations (
     summary TEXT NOT NULL,                        -- JSON: what the eye charts measured
     report TEXT NOT NULL,                         -- the report's directory, relative to the tree
     created TEXT NOT NULL,
+    validation TEXT,                              -- JSON: what the model read on the tree's sketches
     PRIMARY KEY (endpoint, model, suite)
 );
 
@@ -381,8 +382,13 @@ class State:
 
     def save_calibration(self, endpoint: str, model: str, suite: int, settings: dict[str, Any],
                          summary: dict[str, Any], report: str) -> None:
-        self.db.execute("INSERT OR REPLACE INTO calibrations VALUES (?, ?, ?, ?, ?, ?, ?)",
+        self.db.execute("INSERT OR REPLACE INTO calibrations (endpoint, model, suite, settings, summary, report, "
+                        "created) VALUES (?, ?, ?, ?, ?, ?, ?)",
                         (endpoint, model, suite, json.dumps(settings), json.dumps(summary), report, utc_now()))
+
+    def save_validation(self, endpoint: str, model: str, suite: int, summary: dict[str, Any]) -> None:
+        self.db.execute("UPDATE calibrations SET validation = ? WHERE endpoint = ? AND model = ? AND suite = ?",
+                        (json.dumps(summary), endpoint, model, suite))
 
     def calibrations(self) -> list[sqlite3.Row]:
         return self.db.execute("SELECT * FROM calibrations ORDER BY created DESC").fetchall()

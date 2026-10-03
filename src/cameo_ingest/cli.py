@@ -590,22 +590,40 @@ def calibration_for_run(out: Path, state: State, llm: EnrichmentSession, setting
     cfg = llm.cfg
     if not settings.calibrate or not cfg.vision_model:
         return None
-    found = calibrate.recorded(state, cfg)
-    if found is not None or not settings.render:
-        return found
-    print(f"calibrating the sketches to {cfg.vision_model}, which this tree has no calibration for: about 90 eye "
-          "charts, a few minutes on a hosted model; the answers are stored, so this happens once per model "
-          "(--no-calibrate skips it)", file=sys.stderr)
-    result = calibrate.calibrate_model(out, state, llm, "standard", settings.image_pixels or IMAGE_PIXELS, settings,
-                                       settings.llm_concurrency or 1, progress, settings.image_first)
-    report = result.dest / "report.md"
-    if result.problem or result.settings is None:
-        log.warning("the calibration of %s is incomplete (%s): this run draws to the uncalibrated defaults; see %s",
-                    cfg.vision_model, result.problem, report)
+    row = state.calibration(cfg.base_url or "", cfg.vision_model, calibrate.SUITE_VERSION)
+    if row is not None:
+        found, report_dir = json.loads(row["settings"]), out / row["report"]
+        if row["validation"] is not None or not settings.render:
+            return found
+    elif not settings.render:
         return None
-    print(f"calibrated to {cfg.vision_model}: " + ", ".join(f"{k} {v}" for k, v in result.settings.items())
-          + f" (the tree's own settings win; see {report})", file=sys.stderr)
-    return result.settings
+    else:
+        print(f"calibrating the sketches to {cfg.vision_model}, which this tree has no calibration for: about 90 eye "
+              "charts, a few minutes on a hosted model; the answers are stored, so this happens once per model "
+              "(--no-calibrate skips it)", file=sys.stderr)
+        result = calibrate.calibrate_model(out, state, llm, "standard", settings.image_pixels or IMAGE_PIXELS,
+                                           settings, settings.llm_concurrency or 1, progress, settings.image_first)
+        if result.problem or result.settings is None:
+            log.warning("the calibration of %s is incomplete (%s): this run draws to the uncalibrated defaults; "
+                        "see %s", cfg.vision_model, result.problem, result.dest / "report.md")
+            return None
+        print(f"calibrated to {cfg.vision_model}: " + ", ".join(f"{k} {v}" for k, v in result.settings.items())
+              + f" (the tree's own settings win; see {result.dest / 'report.md'})", file=sys.stderr)
+        found, report_dir = result.settings, result.dest
+    report_validation(state, llm, settings.calibrated(found), report_dir, settings.llm_concurrency or 1, progress)
+    return found
+
+
+def report_validation(state: State, llm: EnrichmentSession, sizes: TreeSettings, report_dir: Path,
+                      concurrency: int, progress: Progress) -> None:
+    """The calibration validated on the tree's own sketches (plan VA-05): a line, and warnings."""
+    from . import validate
+
+    summary = validate.validate(state, llm, sizes, report_dir, concurrency, progress)
+    print(f"expected quality with {llm.cfg.vision_model}: {validate.one_line(summary)}"
+          + (f" (see {report_dir / 'validation.md'})" if summary["overall"]["sketches"] else ""), file=sys.stderr)
+    for w in summary["warnings"]:
+        log.warning("%s", w)
 
 
 def _sizes(t: TreeSettings) -> tuple[Any, ...]:
@@ -662,6 +680,16 @@ def calibrate_vision(out: Path, args: argparse.Namespace) -> int:
         print("the quick suite checks a model and is not recorded; runs use the standard suite's calibration")
         return 0
     print(f"recorded: runs with {cfg.vision_model} use these settings, unless the tree sets them itself")
+    state = State(out)
+    try:
+        state.lock()
+        report_validation(state, llm, own.calibrated(result.settings), result.dest, settings.llm_concurrency or 1,
+                          Progress(heartbeat=args.heartbeat))
+    except StateError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    finally:
+        state.close()
     if _sizes(own.calibrated(result.settings)) != _sizes(using):
         sketches = sum(1 for _ in (out / tree.exports.PROJECTS).glob("*/diagrams/**/*.png"))
         print(f"the next run with {cfg.vision_model} draws the tree's {sketches:,} sketches again and asks again for "
@@ -687,6 +715,10 @@ def print_status(state: State, as_json: bool) -> None:
     for c in s["calibrations"]:
         sizes = ", ".join(f"{k} {v}" for k, v in c["settings"].items())
         print(f"calibrated: {c['model']} on {c['created'][:10]}: {sizes} ({c['report']}/report.md)")
+        if c["validation"]:
+            from .validate import one_line
+
+            print(f"  expected quality: {one_line(c['validation'])}")
     for p in s["projects"]["failed"]:
         print(f"  failed: {p['name']} {p['token'][:23]} ({p['error']})")
     run = s["latest_run"]

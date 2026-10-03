@@ -1,6 +1,6 @@
 [project]
 name = "cameo-ingest"
-version = "0.12.0"
+version = "0.13.0"
 description = "Convert Cameo / MagicDraw project files (.mdzip, .mdzipx, .rdzip) into provenance-tagged Markdown, CSV and JSON for RAG ingestion"
 readme = "README.md"
 authors = [

@@ -146,7 +146,8 @@ model calibrates the sketches to it, before building:
 - **What happens:** the run draws eye charts with the sketches' own font, number tags, lines
   and arrowheads, filled at random so that nothing can be guessed. It asks the model to read
   them, and derives the sizes to draw with.
-- **Its cost:** about 90 requests, a few minutes on a hosted model.
+- **Its cost:** about 90 requests, a few minutes on a hosted model, and about a dozen more to
+  validate it.
 - **Once per model and endpoint:** the result is recorded in the tree, and the answers stored,
   so later runs ask nothing. `--no-calibrate` skips it.
 
@@ -190,10 +191,33 @@ a value:
 
 Where the eye charts decide nothing (no arrow size passes, say), the default serves.
 
+**Validation on the tree's own sketches.** The eye charts measure what the model reads on
+cards made for it. Validation then measures what it reads on the tree's own diagrams:
+- **The sample:** up to 4 each of small diagrams (up to 9 shapes), medium ones and modules of
+  large ones, the commonest diagram types first, from up to 4 of the tree's projects (under
+  30 MB each).
+- **The question:** each is drawn at the sizes the run will use, and the model is asked, from
+  the image alone, for each shape's number and name and for every connection.
+- **The scores,** against the diagram's own names and connections:
+  - names read, word by word, as drawn;
+  - connections found, either way round;
+  - directions right.
+
+The run prints a line before building, for example "expected quality with acme/eye-vl: on 12
+of the tree's sketches, 96% of names read, 91% of connections found, 83% of directions right".
+Each score under 90% gets a warning naming what will suffer, and the run carries on. A
+description gets every name and connection as text too, so it should do better than what the
+model reads from the image alone. `validation.md` beside the calibration's report has the
+details, sketch by sketch, and `status` repeats the line.
+
 **Reports and recalibrating:**
-- **Reports:** each calibration writes `OUT/calibration/<model>-<date>/`: the cards,
-  `results.json` with every reply and score, and `report.md` with the measurements and the
-  recommendations. `status` lists the tree's calibrations.
+- **Reports:** each calibration writes `OUT/calibration/<model>-<date>/`:
+  - the cards;
+  - `results.json`, with every reply and score;
+  - `report.md`, with the measurements and the recommendations;
+  - the validation: its sketches, `validation.json` and `validation.md`.
+
+  `status` lists the tree's calibrations, with their expected quality.
 - **Recalibrating:** `cameo-ingest calibrate-vision -o OUT` calibrates on demand, after a host
   changes its limits, say. `--suite quick` (11 cards) checks a model without recording.
 - **An incomplete calibration** (unanswered or mostly unreadable cards) is not recorded, and the
@@ -222,7 +246,8 @@ out/
     text/<project>/      a .txt file per chunk, named <sha256 of its text>.txt
     meta/<project>/      each file's metadata, <sha256>.json, at the same path
   run.json               the latest run: times, command, options, LLM calls and outcomes
-  calibration/           the vision models' calibrations: eye charts, replies, reports
+  calibration/           the vision models' calibrations: eye charts, replies, reports, and
+                         their validation on the tree's own sketches
   quality/               spot-check sets of LLM requests and answers (`quality sample`)
   .cache/llm.sqlite      LLM answers
   by-sha256/<sha256>/    one project, named by the sha256 of its own bytes:
