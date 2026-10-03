@@ -1,7 +1,7 @@
 # Plan: searching the corpus without tools, 2026-10-02
 
-- **Status:** Proposed on 2026-10-02, and revised the same day with the maintainer's answers
-  (Decisions).
+- **Status:** CP1 to CP4 done (0.8.0 to 0.8.3); CP5, the maintainer's trial, is pending. Proposed
+  on 2026-10-02, and revised the same day with the maintainer's answers (Decisions).
   - Both formats, a workbook and a self-contained search page, come from one set of records.
   - A separate command makes them, and a trial decides between them.
   - Sketches in the page are an experiment.
