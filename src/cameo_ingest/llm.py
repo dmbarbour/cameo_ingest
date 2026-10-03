@@ -231,6 +231,7 @@ class EnrichmentSession:
         self._budget_warned = False
         self._lock = threading.Lock()
         self._store: ResponseStore | None = None
+        self.image_first: bool | None = None  # the vision model's order (plan VA); None: each template's
 
     def close(self) -> None:
         """Stop requests in flight (used when a run is interrupted)."""
@@ -351,7 +352,8 @@ class EnrichmentSession:
 
     def ask(self, template: Template, values: dict[str, str], *, image: bytes | None = None,
             mime: str = "image/png", image_path: str | None = None, project: str = "",
-            inputs: tuple[str, ...] = (), notes: dict[str, Any] | None = None) -> tuple[str, Derivation] | None:
+            inputs: tuple[str, ...] = (), notes: dict[str, Any] | None = None,
+            image_first: bool | None = None) -> tuple[str, Derivation] | None:
         """Send one request built from `template`; `inputs` are the locators of what it is
         about (the first one names the item). Returns the answer with its derivation, or
         None when the item gets no generated text."""
@@ -365,7 +367,8 @@ class EnrichmentSession:
             assert image is not None, f"{template.key} needs an image"
             url = f"data:{mime};base64,{base64.b64encode(image).decode()}"
             parts = [{"type": "text", "text": text}, {"type": "image_url", "image_url": {"url": url}}]
-            if template.image_first:  # as Google advises for gemma (FU-015)
+            first = next(x for x in (image_first, self.image_first, template.image_first) if x is not None)
+            if first:  # by default, as Google advises for gemma (FU-015); calibrated per model (plan VA)
                 parts.reverse()
             messages = [{"role": "user", "content": parts}]
         key = request_key(messages)

@@ -69,9 +69,14 @@ def run(tmp_path: Path, name: str, data: bytes) -> Path:
     return ingest(tmp_path, (name, data), args=("--meta", "program=test", "--no-llm"))
 
 
+DIAGNOSTICS = ("calibration", "quality")  # the tool's reports to the maintainer, not the models' content
+
+
 def check_invariants(out: Path) -> None:
     """Properties every output tree must have, whatever the input (BASE-007R1)."""
     for md in out.rglob("*.md"):
+        if md.relative_to(out).parts[0] in DIAGNOSTICS:
+            continue
         text = md.read_text(encoding="utf-8")
         head = text.split("\n---\n", 1)[0]
         assert head.startswith("---\n") and "provenance:" in head, md

@@ -43,7 +43,7 @@ many files, bundles or names it turns up under.
 | `cameo-ingest groups -o OUT [--csv FILE]` | Versions of the same model, found by the element ids they share, newest first (see "Versions and removal"). |
 | `cameo-ingest remove -o OUT TOKEN... [--dry-run]` / `restore` | Removes projects from the tree, and keeps them out of later runs while their inputs remain; `restore` undoes it. |
 | `cameo-ingest export -o OUT [--workbook FILE] [--search-page FILE]` | Writes the catalog of the tree's models for people to search without tools: a workbook, a self-contained search page, or both (see "Searching without tools"). Apart from `run`, since it is a distribution step. |
-| `cameo-ingest calibrate-vision -o OUT [--suite quick\|standard]` | Measures what the tree's vision model reads, with eye charts drawn as sketches are, and records the sketch settings it calls for; runs with that model use them (see "Calibrating sketches to the vision model"). |
+| `cameo-ingest calibrate-vision -o OUT [--suite quick\|standard]` | Calibrates the sketches to the tree's vision model on demand, as the first run with a model does on its own (see "Calibrating sketches to the vision model"). |
 
 - **Output directories.** A missing or empty directory starts a tree. A directory with
   `state.sqlite` is continued. Any other non-empty directory is refused.
@@ -141,17 +141,33 @@ of a large package (`docs/research/sandwiching-2026-09-30.md`).
 
 ### Calibrating sketches to the vision model
 
-Uncalibrated, sketches are drawn to the sizes measured for gemma-4 on DeepInfra
-(`docs/research/vision-calibration-gemma4-2026-10-03.md`):
-- 13 px text;
-- arrowheads with 10 px legs, and 1 px lines;
-- the pixel budget above;
-- modules of at most 25 shapes.
+Sketches are drawn for the vision model that will describe them. The first run with a vision
+model calibrates the sketches to it, before building:
+- **What happens:** the run draws eye charts with the sketches' own font, number tags, lines
+  and arrowheads, filled at random so that nothing can be guessed. It asks the model to read
+  them, and derives the sizes to draw with.
+- **Its cost:** about 90 requests, a few minutes on a hosted model.
+- **Once per model and endpoint:** the result is recorded in the tree, and the answers stored,
+  so later runs ask nothing. `--no-calibrate` skips it.
 
-Another model or host may need others. `cameo-ingest calibrate-vision -o OUT` measures them.
-It draws eye charts with the sketches' own font, number tags, lines and arrowheads, filled
-at random so that nothing can be guessed, and asks the tree's vision model to read them:
+A run draws with sizes from, in order:
+1. the tree's own settings: `--image-pixels`, `--diagram-modules`, `--sketch-*-px`,
+   `--image-first` or `--image-last`;
+2. the vision model's calibration;
+3. the uncalibrated defaults, gemma-4's figures at DeepInfra for now
+   (`docs/research/vision-calibration-gemma4-2026-10-03.md`):
+   - 13 px text;
+   - arrowheads with 10 px legs, and 1 px lines;
+   - the pixel budget above;
+   - modules of at most 25 shapes;
+   - the image before the text.
 
+A run without a vision model draws to the defaults: its sketches are for people.
+
+**What the eye charts measure:**
+- **The image's place:** six cards asked with the image both before and after the text. The
+  rest are asked in the order that reads better; after the text only when that is clearly
+  better.
 - **Reading:** lines of codes and numbers at 6 to 16 px, in images of half to four times the
   budget. A threshold that grows with the image means the host shrinks images to a budget of
   its own.
@@ -159,15 +175,10 @@ at random so that nothing can be guessed, and asks the tree's vision model to re
   2 px. The model lists each arrow from box to box, as a diagram's description must.
 - **Density:** 9 to 36 boxes in one image, for the size of a large diagram's modules.
 
-The reading comes first, and decides the budget and the font. The arrows and density cards
-are then drawn at that font and budget, so that nothing measured depends on the tree's
-current sizes. The standard suite is 80 requests; `--suite quick` (11) checks a model. The answers are kept
-in the tree's LLM store, so running it again costs nothing. It writes
-`OUT/calibration/<model>-<date>/`: the cards, `results.json` with every reply and score, and
-`report.md` with the measurements and the recommendations.
-
-Each recommendation comes from the measurements alone. The tree's current value is shown
-beside it but never preferred, and keeping cached answers is no reason to keep a value:
+The reading decides the budget and the font. The arrows and density cards are then drawn at
+that font and budget, so that nothing measured depends on the tree's current sizes. Each
+recommendation comes from the measurements alone; keeping cached answers is no reason to keep
+a value:
 
 | Setting | Recommended |
 |---|---|
@@ -175,17 +186,20 @@ beside it but never preferred, and keeping cached answers is no reason to keep a
 | `--sketch-font-px` | 1.3 times the size read 90% of the time, at that budget. |
 | `--sketch-arrow-px`, `--sketch-line-px` | The thinnest lines and smallest heads with 95% of arrows read the right way round. |
 | `--diagram-modules` | Modules of up to the most shapes among which 90% of connections are found, either way round. |
+| `--image-first`, `--image-last` | After the text only when that reads clearly better: by 5 points, and by twice the standard error. |
 
-Where the eye charts decide nothing (no arrow size passes, say), the recommendation is the
-default above, not the tree's current value.
+Where the eye charts decide nothing (no arrow size passes, say), the default serves.
 
-**The record.** The standard suite's calibration is recorded in the tree, per endpoint and
-model. Runs with that model use it, unless the tree sets a size itself (`--image-pixels`,
-`--diagram-modules`, `--sketch-*-px`): the tree's own settings win, then the calibration, then
-the defaults above. A run without a vision model draws to the defaults. When a calibration
-changes the sizes, the next run redraws every sketch and asks again for its description, about
-one request per sketch; the command gives the count. A calibration with unanswered or
-unreadable cards is not recorded.
+**Reports and recalibrating:**
+- **Reports:** each calibration writes `OUT/calibration/<model>-<date>/`: the cards,
+  `results.json` with every reply and score, and `report.md` with the measurements and the
+  recommendations. `status` lists the tree's calibrations.
+- **Recalibrating:** `cameo-ingest calibrate-vision -o OUT` calibrates on demand, after a host
+  changes its limits, say. `--suite quick` (11 cards) checks a model without recording.
+- **An incomplete calibration** (unanswered or mostly unreadable cards) is not recorded, and the
+  run draws to the defaults, with a warning.
+- **The cost of a change:** when a calibration changes the sizes, the next run draws every
+  sketch again and asks again for its description, about one request per sketch.
 
 A test that means to push a model past what it reads comfortably should say so, and set its
 sizes from the calibration (for example, the font at the 90% threshold itself).
@@ -208,6 +222,8 @@ out/
     text/<project>/      a .txt file per chunk, named <sha256 of its text>.txt
     meta/<project>/      each file's metadata, <sha256>.json, at the same path
   run.json               the latest run: times, command, options, LLM calls and outcomes
+  calibration/           the vision models' calibrations: eye charts, replies, reports
+  quality/               spot-check sets of LLM requests and answers (`quality sample`)
   .cache/llm.sqlite      LLM answers
   by-sha256/<sha256>/    one project, named by the sha256 of its own bytes:
     README.md            overview: exporter version, counts, packages, diagrams, stereotypes

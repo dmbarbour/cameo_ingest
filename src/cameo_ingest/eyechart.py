@@ -19,6 +19,7 @@ draws with PyMuPDF; this draws with Pillow, as the sketches are drawn.
 
 from __future__ import annotations
 
+import functools
 import io
 import json
 import math
@@ -100,6 +101,14 @@ def drawings(name: str, pixels: int, style: SketchStyle = sketch.STYLE) -> list[
     return [c for c in cards if fits(c)]
 
 
+def order_trial(pixels: int, style: SketchStyle = sketch.STYLE) -> list[Card]:
+    """Cards to ask with the image both before and after the text (plan VA): reading at the
+    budget, at sizes where models differ, and arrows at `style`'s sizes."""
+    w, h = sides(pixels)
+    return ([Card("read", w, h, font_px=f, seed=1) for f in (7, 8, 10, 12)]
+            + [Card("arrows", w, h, style.font_px, style.arrow_px, style.line_px, count=9, seed=s) for s in (1, 2)])
+
+
 def suite(name: str, pixels: int, style: SketchStyle = sketch.STYLE) -> list[Card]:
     """Every card of a suite. `standard`: 80 cards, to calibrate; `quick`: 11, to check a model.
     Calibration asks the reading cards first, and draws the rest at the font and budget they call
@@ -147,7 +156,7 @@ def unique(rng: random.Random, make, n: int) -> list[str]:
 
 
 # -- drawing ---------------------------------------------------------------------------------------
-@dataclass
+@dataclass(frozen=True)
 class Drawn:
     card: Card
     png: bytes
@@ -155,6 +164,7 @@ class Drawn:
     prompt: str
 
 
+@functools.lru_cache(maxsize=256)  # a calibration draws each card to fit, to ask and to save it
 def render(card: Card) -> Drawn:
     """The card's image, its truth and its prompt. Raises ValueError when its content doesn't
     fit the image (a suite that asks too much of a size)."""

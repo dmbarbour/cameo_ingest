@@ -17,7 +17,7 @@ def test_suites_draw_and_a_perfect_reader_scores_full():
         assert len(cards) == n and len({c.id for c in cards}) == n
         for card in cards:
             drawn = render(card)
-            assert drawn.png == render(card).png
+            assert drawn.png == render.__wrapped__(card).png  # drawn again, not from the cache
             with Image.open(io.BytesIO(drawn.png)) as img:
                 assert img.size == (card.w, card.h) and card.w % 48 == 0 and card.h % 48 == 0
             assert score(card, drawn.truth, perfect(drawn))["score"] == 1.0

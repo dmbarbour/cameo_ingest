@@ -16,6 +16,7 @@ import shutil
 import time
 import uuid
 from collections import defaultdict
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -38,10 +39,11 @@ WORK = ".work"
 
 class Runner:
     def __init__(self, state: State, out: Path, llm: EnrichmentSession, options: ProjectOptions, progress: Progress,
-                 concurrency: int = 1):
+                 concurrency: int = 1, prepare: Callable[[], ProjectOptions] | None = None):
         self.state, self.out, self.llm, self.progress = state, out, llm, progress
         self.options = options
         self.opt_hash = options.hash()
+        self.prepare = prepare  # after the scan, before building: the options, perhaps calibrated (plan VA)
         self.concurrency = concurrency
         self.projects_dir = out / exports.PROJECTS
         self.failed_inputs: list[str] = []
@@ -55,6 +57,9 @@ class Runner:
         try:
             self.check_inputs()
             self.scan()
+            if self.prepare is not None:
+                self.options = self.prepare()
+                self.opt_hash = self.options.hash()
             self.build()
             outcome = "finished"
         except KeyboardInterrupt:
@@ -297,6 +302,8 @@ def status(state: State) -> dict[str, Any]:
             "failed": [{"token": f"sha256:{r['sha256']}", "name": r["name"], "error": r["error"]}
                        for r in state.project_rows("failed")],
         },
+        "calibrations": [{"model": r["model"], "endpoint": r["endpoint"], "created": r["created"],
+                          "settings": json.loads(r["settings"]), "report": r["report"]} for r in state.calibrations()],
         "latest_run": None if run is None else {
             "id": run["id"], "started": run["started"], "finished": run["finished"], "outcome": run["outcome"],
             "llm_calls": json.loads(run["llm"])["calls"] if run["llm"] else None,

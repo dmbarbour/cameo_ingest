@@ -39,22 +39,24 @@ SUITE_VERSION = 1  # the cards and rules a calibration was made with: a new vers
 ARROWS_PASS = 0.95  # arrows the right way round, for an arrowhead size and line width to pass
 DENSITY_PASS = 0.9  # connections found (either way round), for a number of shapes to pass
 FONT_MARGIN = 1.3  # the font's size over the 90% threshold
+ORDER_GAIN = 0.05  # how much better the image after the text must read to be put there
 FLAT = 1.15  # thresholds within this of the smallest are "the same"
 PATCH_AREA = PATCH_PX * PATCH_PX
 
 
 def ask(llm: EnrichmentSession, cards: list[ec.Card], concurrency: int = 4, progress: Progress = QUIET,
-        label: str = "eye charts") -> list[dict[str, Any]]:
-    """Each card drawn, asked and scored."""
+        label: str = "eye charts", image_first: bool = True, trial: bool = False) -> list[dict[str, Any]]:
+    """Each card drawn, asked (the image before or after the text) and scored. `trial`: asked
+    to choose the image's place, and left out of the other measures."""
     def one(card: ec.Card) -> dict[str, Any]:
         drawn = ec.render(card)
         template = TEMPLATES["read" if card.family == "read" else "arrows"]
         res = llm.ask(template, {}, image=drawn.png, mime="image/png", project="calibration:vision",
-                      inputs=(card.id,))
+                      inputs=(card.id,), image_first=image_first)
         reply = res[0] if res else None
         answer = ec.parse(reply)
         return {**ec.card_record(drawn), "reply": reply, "answer": answer, "asked": res is not None,
-                **ec.score(card, drawn.truth, answer)}
+                "image_first": image_first, "trial": trial, **ec.score(card, drawn.truth, answer)}
 
     with progress.phase(label, len(cards), "card") as ph, ThreadPoolExecutor(max(1, concurrency)) as pool:
         futures = [pool.submit(one, card) for card in cards]
@@ -68,12 +70,36 @@ def _mean(xs: list[float]) -> float:
     return sum(xs) / len(xs) if xs else 0.0
 
 
+def order(results: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The trial of the image's place: mean scores each way, and the mean difference per card
+    (after the text, less before) with its standard error; None without a trial."""
+    first = {r["id"]: r["score"] for r in results if r.get("trial") and r["image_first"]}
+    later = {r["id"]: r["score"] for r in results if r.get("trial") and not r["image_first"]}
+    pairs = [(first[i], later[i]) for i in first if i in later]
+    if not pairs:
+        return None
+    diffs = [b - a for a, b in pairs]
+    mean = _mean(diffs)
+    sd = math.sqrt(sum((d - mean) ** 2 for d in diffs) / (len(diffs) - 1)) if len(diffs) > 1 else 0.0
+    return {"cards": len(pairs), "image_first": _mean([a for a, _ in pairs]), "text_first": _mean([b for _, b in pairs]),
+            "difference": mean, "se": sd / math.sqrt(len(diffs))}
+
+
+def image_first(trial: dict[str, Any] | None) -> bool:
+    """The image goes after the text only when that reads clearly better: by at least 5 points,
+    and by more than twice the standard error of the difference; otherwise first, as by default."""
+    return not (trial is not None and trial["difference"] >= ORDER_GAIN and trial["difference"] > 2 * trial["se"])
+
+
 def summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
-    """The reading thresholds per image area; arrows per arrowhead and line; connections per density."""
+    """The reading thresholds per image area; arrows per arrowhead and line; connections per
+    density (all but the trial of the image's place); and that trial."""
     read: dict[float, dict[int, list[float]]] = defaultdict(lambda: defaultdict(list))
     arrows: dict[tuple[float, int], list[dict]] = defaultdict(list)
     density: dict[int, list[dict]] = defaultdict(list)
     for r in results:
+        if r.get("trial"):
+            continue
         if r["family"] == "read":
             read[r["area"]][r["font_px"]].append(r["score"])
         elif r["family"] == "arrows":
@@ -93,6 +119,7 @@ def summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
     return {"read": areas,
             "arrows": [{"arrow_px": a, "line_px": ln, **arrow_stats(rs)} for (a, ln), rs in sorted(arrows.items())],
             "density": [{"shapes": n, **arrow_stats(rs)} for n, rs in sorted(density.items())],
+            "order": order(results),
             "unreadable": sum(1 for r in results if r["asked"] and r["answer"] is None),
             "unasked": sum(1 for r in results if not r["asked"]), "cards": len(results)}
 
@@ -116,16 +143,30 @@ def _patches(pixels: float) -> int:
 
 
 def measure(llm: EnrichmentSession, name: str, pixels: int, concurrency: int = 4, progress: Progress = QUIET,
-            ) -> tuple[list[ec.Card], list[dict[str, Any]]]:
-    """A suite's cards and their results, in two stages: the reading cards, then the arrow and
-    density cards at the font and budget the reading calls for, so that nothing measured depends
-    on the tree's current sizes."""
+            fixed_order: bool | None = None) -> tuple[list[ec.Card], list[dict[str, Any]]]:
+    """A suite's cards and their results, in stages, so that nothing measured depends on the
+    tree's current sizes:
+    - the standard suite first tries the image both before and after the text, unless the tree
+      fixes its place (`fixed_order`), and asks the rest in the order that reads better;
+    - the reading cards, which decide the budget and the font;
+    - the arrow and density cards, at that font and budget."""
+    results: list[dict[str, Any]] = []
+    trial: list[ec.Card] = []
+    first_order = True if fixed_order is None else fixed_order
+    if name == "standard" and fixed_order is None:
+        trial = ec.order_trial(pixels)
+        for before in (True, False):
+            results += ask(llm, trial, concurrency, progress, "eye charts: the image " + ("first" if before else
+                           "after the text"), image_first=before, trial=True)
+        first_order = image_first(order(results))
     first = ec.reading(name, pixels)
-    results = ask(llm, first, concurrency, progress, "eye charts: reading")
+    results += ask(llm, first, concurrency, progress, "eye charts: reading", first_order)
     chosen = {r.setting: r.recommended for r in _reading(summarize(results), pixels, SKETCH[0])}
     style = SketchStyle(chosen["sketch_font_px"], *SKETCH[1:])
     second = ec.drawings(name, chosen.get("image_pixels", pixels), style)
-    return first + second, results + ask(llm, second, concurrency, progress, "eye charts: arrows and density")
+    results += ask(llm, second, concurrency, progress, "eye charts: arrows and density", first_order)
+    shown = {c.id: c for c in trial + first + second}
+    return list(shown.values()), results
 
 
 def _reading(summary: dict[str, Any], pixels: int, font: int) -> list[Recommendation]:
@@ -161,7 +202,7 @@ def _reading(summary: dict[str, Any], pixels: int, font: int) -> list[Recommenda
 
 
 def recommend(summary: dict[str, Any], pixels: int, sketch: tuple[int, float, int] = SKETCH,
-              modules: tuple[int, int, int] = MODULES) -> list[Recommendation]:
+              modules: tuple[int, int, int] = MODULES, first: bool = True) -> list[Recommendation]:
     """The settings the measurements call for, derived from them alone: the tree's current values
     are shown beside them, never preferred. What the cards leave undecided falls back to the tool's
     uncalibrated defaults (`SKETCH`, `MODULES`), and the budget of a model that
@@ -176,11 +217,13 @@ def recommend(summary: dict[str, Any], pixels: int, sketch: tuple[int, float, in
         best_a = min(passing, key=lambda a: (a["line_px"], a["arrow_px"]))
         pick = (best_a["arrow_px"], best_a["line_px"])
         why = f"the thinnest lines and smallest heads read {ARROWS_PASS:.0%} the right way round"
-    else:
+    elif arrows:
         pick = SKETCH[1:]
-        top = max((a["right"] for a in arrows), default=0.0)
+        top = max(a["right"] for a in arrows)
         why = (f"none reaches {ARROWS_PASS:.0%} (the best, {top:.0%}): the default sizes; descriptions get "
                "every connection's direction as text")
+    else:
+        pick, why = SKETCH[1:], "not measured (no arrow card fits this font and budget): the default sizes"
     chosen = next((a for a in arrows if (a["arrow_px"], a["line_px"]) == pick), None)
     table = (f"{pick[0]:g} px heads, {pick[1]} px lines: {chosen['right']:.0%} the right way round, "
              f"{chosen['reversed']:.0%} reversed (see Arrows)" if chosen is not None else "see Arrows")
@@ -198,12 +241,21 @@ def recommend(summary: dict[str, Any], pixels: int, sketch: tuple[int, float, in
         top_n = max(ok)
         rec = (top_n, min(MODULES[1], top_n), top_n)
         why = (f"connections are found among up to {top_n} shapes"
-               + (" (the most tested)" if top_n == max(n for n, _ in fitted) else ", and missed among more"))
+               + (" (the most tested at this font and budget)" if top_n == max(n for n, _ in fitted)
+                  else ", and missed among more"))
     else:
         rec = MODULES
         why = ("connections are missed even among the fewest shapes: the default modules; look at why"
                if dens else "not measured: the default modules")
     recs.append(Recommendation("diagram_modules", ":".join(map(str, modules)), ":".join(map(str, rec)), table, why))
+    trial = summary.get("order")
+    if trial is not None:
+        later = not image_first(trial)
+        recs.append(Recommendation(
+            "image_first", first, not later,
+            f"{trial['image_first']:.0%} read with the image first, {trial['text_first']:.0%} after the text, over "
+            f"{trial['cards']} cards",
+            "clearly better after the text" if later else "no clearer after the text: the image first, as by default"))
     return recs
 
 
@@ -237,6 +289,13 @@ def render_report(model: str, endpoint: str | None, suite: str, summary: dict[st
     lines += ["", "## Density", "", "| Shapes | Connections found | Right way round | Reversed |", "|---|---|---|---|"]
     lines += [f"| {d['shapes']} | {d['found']:.0%} | {d['right']:.0%} | {d['reversed']:.0%} |"
               for d in summary["density"]]
+    trial = summary.get("order")
+    if trial is not None:
+        lines += ["", "## The image's place", "",
+                  f"{trial['cards']} cards asked both ways: {trial['image_first']:.0%} read with the image first, "
+                  f"{trial['text_first']:.0%} with it after the text (difference {trial['difference']:+.0%}, "
+                  f"standard error {trial['se']:.0%}). The other cards were asked with the image "
+                  + ("first." if image_first(trial) else "after the text.")]
     if cost_note:
         lines += ["", cost_note]
     return "\n".join(lines) + "\n"
@@ -269,16 +328,16 @@ class Outcome:
 
 
 def calibrate_model(out: Path, state: State, llm: EnrichmentSession, suite: str, pixels: int, using: TreeSettings,
-                    concurrency: int = 1, progress: Progress = QUIET) -> Outcome:
+                    concurrency: int = 1, progress: Progress = QUIET, fixed_order: bool | None = None) -> Outcome:
     """Measure the session's vision model with a suite of eye charts, starting at a budget of
     `pixels`, and report. The standard suite's calibration, when it can be trusted, is recorded in
     the tree for runs with that model. `using`: the settings runs use now, shown beside the
-    recommendations."""
+    recommendations; `fixed_order`: the image's place, when the tree sets it."""
     cfg = llm.cfg
     model = cfg.vision_model or ""
-    cards, results = measure(llm, suite, pixels, concurrency, progress)
+    cards, results = measure(llm, suite, pixels, concurrency, progress, fixed_order)
     summary = summarize(results)
-    recs = recommend(summary, pixels, using.sketch, using.modules)
+    recs = recommend(summary, pixels, using.sketch, using.modules, using.image_first is not False)
     for r in recs:
         if r.setting == "image_pixels":
             r.current = using.image_pixels or IMAGE_PIXELS

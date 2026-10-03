@@ -24,7 +24,7 @@ def test_llm_enrichment_is_labelled(tmp_path, fake_chat):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     out = tmp_path / "out"
-    assert main([str(src), "-o", str(out), "--vision-model", "gemma-4"]) == 0
+    assert main([str(src), "-o", str(out), "--vision-model", "gemma-4", "--no-calibrate"]) == 0
     check_invariants(out)  # includes unique chunk ids for the two image descriptions (BASE-002)
     client = fake_chat[0]
     assert len(client.requests) == 4  # preflight, then the diagram and two images: no budget (BASE-019)
@@ -177,7 +177,7 @@ def test_templates_and_request_log(tmp_path, fake_chat):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     out = tmp_path / "out"
-    assert main([str(src), "-o", str(out), "--text-model", "m", "--no-preflight"]) == 0
+    assert main([str(src), "-o", str(out), "--text-model", "m", "--no-calibrate", "--no-preflight"]) == 0
     token = f"sha256:{project_dir(out).name}"
     db = sqlite3.connect(out / ".cache/llm.sqlite")
     rows = db.execute("SELECT template, project, item, image_path, prompt, notes FROM requests ORDER BY template, "
@@ -236,7 +236,7 @@ def test_llm_call_budget(tmp_path, fake_chat):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     out = tmp_path / "out"
-    assert main([str(src), "-o", str(out), "--vision-model", "m", "--llm-max-calls", "1"]) == 0
+    assert main([str(src), "-o", str(out), "--vision-model", "m", "--no-calibrate", "--llm-max-calls", "1"]) == 0
     assert len(fake_chat[0].enrichment()) == 1
     report = json.loads((out / "run.json").read_text())["llm"]
     assert report["calls"] == 1 and report["outcomes"]["skipped_budget"] == 2
@@ -247,7 +247,7 @@ def test_llm_store_and_replay(tmp_path, fake_chat, monkeypatch):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     store = tmp_path / "store"
-    args = [str(src), "--vision-model", "m", "--cache-dir", str(store), "--meta", "program=test"]
+    args = [str(src), "--vision-model", "m", "--no-calibrate", "--cache-dir", str(store), "--meta", "program=test"]
     trees = []
     for i in range(2):  # the second run is answered from the store (BASE-005)
         out = tmp_path / f"out{i}"
@@ -258,14 +258,15 @@ def test_llm_store_and_replay(tmp_path, fake_chat, monkeypatch):
     # Replay never touches the network; it reproduces the recorded run exactly (BASE-022R5).
     monkeypatch.setattr(FakeChat, "fail", True)
     out = tmp_path / "replayed"
-    assert main([str(src), "--vision-model", "m", "--llm-replay", str(store / "llm.sqlite"),
+    assert main([str(src), "--vision-model", "m", "--no-calibrate", "--llm-replay", str(store / "llm.sqlite"),
                  "--meta", "program=test", "-o", str(out)]) == 0
     assert json.loads((out / "run.json").read_text())["llm"]["outcomes"] == {"replayed": 3}
     assert tree(out) == trees[1]
     assert len(fake_chat) == 2  # no client at all in replay mode
     # A request the store has no answer for fails the project, loudly.
     out = tmp_path / "missed"
-    assert main([str(src), "--vision-model", "other", "--llm-replay", str(store / "llm.sqlite"), "-o", str(out)]) == 4
+    assert main([str(src), "--vision-model", "other", "--no-calibrate", "--llm-replay", str(store / "llm.sqlite"),
+                 "-o", str(out)]) == 4
     assert "ReplayMiss: no recorded other response" in json.loads((out / "manifest.json").read_text())["failed"][0]["error"]
 
 
@@ -278,7 +279,8 @@ def test_llm_store_corrupt(tmp_path, fake_chat, caplog, monkeypatch):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     out = tmp_path / "out"
-    assert main([str(src), "-o", str(out), "--vision-model", "m", "--cache-dir", str(store)]) == 0  # BASE-005
+    assert main([str(src), "-o", str(out), "--vision-model", "m", "--no-calibrate",
+                 "--cache-dir", str(store)]) == 0  # BASE-005
     assert "is unreadable" in caplog.text and list(store.glob("llm.sqlite.corrupt-*"))
     assert sqlite3.connect(store / "llm.sqlite").execute("SELECT count(*) FROM responses").fetchone() == (3,)
     # A store that fails to keep a paid answer costs a re-ask later, not the project (AR-016).
@@ -289,7 +291,7 @@ def test_llm_store_corrupt(tmp_path, fake_chat, caplog, monkeypatch):
 
     monkeypatch.setattr(ResponseStore, "put", broken)
     out = tmp_path / "out2"
-    assert main([str(src), "-o", str(out), "--vision-model", "other", "--cache-dir", str(store)]) == 0
+    assert main([str(src), "-o", str(out), "--vision-model", "other", "--no-calibrate", "--cache-dir", str(store)]) == 0
     assert "cannot store LLM response" in caplog.text
     assert json.loads((out / "run.json").read_text())["llm"]["outcomes"] == {"answered": 3}
 
@@ -300,7 +302,7 @@ def test_llm_circuit_breaker(tmp_path, fake_chat, monkeypatch):
     src.write_bytes(make_mdzip())
     out = tmp_path / "out"
     # Four items (a diagram, two images, a package summary); the endpoint fails every request.
-    assert main([str(src), "-o", str(out), "--text-model", "m", "--no-preflight"]) == 0
+    assert main([str(src), "-o", str(out), "--text-model", "m", "--no-calibrate", "--no-preflight"]) == 0
     assert len(fake_chat[0].requests) == 3  # then enrichment is switched off (BASE-006)
     report = json.loads((out / "run.json").read_text())["llm"]
     assert report["disabled_after_failures"] and report["outcomes"] == {"failed": 3, "skipped_disabled": 1}

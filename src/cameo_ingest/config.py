@@ -17,8 +17,8 @@ from .provenance import sha256_text
 
 # The sketches' uncalibrated defaults: gemma-4's figures at DeepInfra, for now (the maintainer's
 # decision, 2026-10-03; docs/research/gemma4-images-2026-09-30.md and
-# vision-calibration-gemma4-2026-10-03.md). `calibrate-vision` measures them for the configured
-# vision model, and `--apply` sets them as the tree's settings (plan VC).
+# vision-calibration-gemma4-2026-10-03.md). A run calibrates them to the configured vision model
+# (plan VA); the tree's own settings win, then the calibration, then these.
 #
 # The pixel budget: gemma-4 fills 280 soft tokens of 48 x 48 px (645,120 px) at the image's own
 # aspect ratio, sides in multiples of 48. Diagram sketches are drawn to it, and larger images
@@ -30,7 +30,7 @@ MODULES = (25, 6, 25)
 # Sketches' font size, arrowhead legs and line width, in pixels.
 SKETCH = (13, 10.0, 1)
 # The tree settings a vision model's calibration sets, unless the tree sets them itself.
-CALIBRATED = ("image_pixels", "diagram_modules", "sketch_font_px", "sketch_arrow_px", "sketch_line_px")
+CALIBRATED = ("image_pixels", "diagram_modules", "sketch_font_px", "sketch_arrow_px", "sketch_line_px", "image_first")
 
 
 @dataclass(frozen=True)
@@ -50,6 +50,8 @@ class TreeSettings:
     sketch_font_px: int | None = None
     sketch_arrow_px: float | None = None
     sketch_line_px: int | None = None
+    image_first: bool | None = None  # the image before the text in vision requests; None: as calibrated
+    calibrate: bool = True  # calibrate the sketches to the vision model (plan VA)
     rag_files: bool = True
     rag_source: str = "trace"  # or "id"
     cross_index: bool = True
@@ -108,6 +110,7 @@ class ProjectOptions:
     modules: tuple[int, int, int] = MODULES
     templates: tuple[str, ...] = ()  # the prompt templates' versions, when the LLM is on
     sketch: tuple[int, float, int] = SKETCH  # font, arrowhead legs and line width, in pixels
+    image_first: bool = True  # the image before the text in vision requests (plan VA)
 
     @classmethod
     def of(cls, settings: TreeSettings, text_model: str | None, vision_model: str | None,
@@ -120,13 +123,13 @@ class ProjectOptions:
         enabled = bool(text_model or vision_model)
         return cls(settings.render, text_model, vision_model, max_calls, settings.image_pixels or IMAGE_PIXELS,
                    settings.modules, tuple(sorted(t.key for t in CURRENT.values())) if enabled else (),
-                   settings.sketch)
+                   settings.sketch, settings.image_first is not False)
 
     def as_dict(self) -> dict[str, Any]:
         """As run.json records them, and as they are hashed."""
         out = {"render": self.render, "text_model": self.text_model, "vision_model": self.vision_model,
                "max_calls": self.max_calls, "image_pixels": self.image_pixels, "modules": list(self.modules),
-               "templates": list(self.templates), "sketch": list(self.sketch)}
+               "templates": list(self.templates), "sketch": list(self.sketch), "image_first": self.image_first}
         return out
 
     def hash(self) -> str:

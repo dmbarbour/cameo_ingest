@@ -190,10 +190,10 @@ def test_interrupt_and_resume(tmp_path, fake_chat, monkeypatch, capsys):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     ref = tmp_path / "ref"
-    assert main([str(src), "-o", str(ref), "--vision-model", "m", "--no-preflight"]) == 0
+    assert main([str(src), "-o", str(ref), "--vision-model", "m", "--no-calibrate", "--no-preflight"]) == 0
     monkeypatch.setattr(FakeChat, "interrupt_at", 2)  # Ctrl-C during the second LLM request
     out = tmp_path / "out"
-    assert main([str(src), "-o", str(out), "--vision-model", "m", "--no-preflight"]) == 130
+    assert main([str(src), "-o", str(out), "--vision-model", "m", "--no-calibrate", "--no-preflight"]) == 130
     assert "Continue with: cameo-ingest run -o" in capsys.readouterr().err
     assert json.loads((out / "run.json").read_text())["outcome"] == "interrupted"
     assert json.loads((out / "manifest.json").read_text())["projects"] == []  # nothing half-published

@@ -172,7 +172,7 @@ def test_large_diagram_modules(tmp_path, fake_chat):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip(layout=large_layout()))
     out = tmp_path / "out"
-    assert main([str(src), "-o", str(out), "--vision-model", "v", "--no-preflight"]) == 0
+    assert main([str(src), "-o", str(out), "--vision-model", "v", "--no-calibrate", "--no-preflight"]) == 0
     check_invariants(out)
     pdir = project_dir(out)
     page = (pdir / "diagrams/Drone_BDD.md").read_text()

@@ -21,24 +21,28 @@ MODEL = "acme/eye-vl"
 
 @functools.cache
 def known_cards() -> dict[str, Drawn]:
-    """Both suites' cards, the drawn ones in the fonts the tests' readers call for: 8 px for a
-    reader that reads every size, 13 px (the default) for one that reads none."""
+    """Both suites' cards, the drawn ones at the fonts and budgets the tests' readers call for:
+    8 px for a reader that reads every size, 13 px (the default) for one that reads none, and
+    16 px in half the budget for a host with half the budget."""
     cards = {c.id: c for name in ("quick", "standard") for c in reading(name, IMAGE_PIXELS)}
     for name in ("quick", "standard"):
         for font in (8, 13):
             cards.update({c.id: c for c in drawings(name, IMAGE_PIXELS, SketchStyle(font))})
+    cards.update({c.id: c for c in drawings("standard", IMAGE_PIXELS // 2, SketchStyle(16))})
     return {hashlib.sha256(d.png).hexdigest(): d for d in map(render, cards.values())}
 
 
 class EyeReader:
     """A vision model that knows each card's truth and answers as `policy(card, drawn)` says: a
-    dict as JSON, or a string. Any other request (a sketch to describe) gets a fixed answer."""
+    dict as JSON, or a string. `text_first_only`: it reads nothing when the image comes first.
+    Any other request (a sketch to describe) gets a fixed answer, its order noted."""
 
     replays = False
 
-    def __init__(self, policy):
-        self.policy = policy
+    def __init__(self, policy, text_first_only=False):
+        self.policy, self.text_first_only = policy, text_first_only
         self.requests = 0
+        self.described: list[str] = []  # each description request's first part: "text" or "image_url"
 
     def complete(self, model, messages, temperature):
         self.requests += 1
@@ -47,7 +51,11 @@ class EyeReader:
         png = base64.b64decode(images[0]["image_url"]["url"].split(",", 1)[1]) if images else b""
         drawn = known_cards().get(hashlib.sha256(png).hexdigest())
         if drawn is None:
+            if images:
+                self.described.append(content[0]["type"])
             return "A block definition diagram showing Drone composed of Battery."
+        if self.text_first_only and content[0]["type"] == "image_url":
+            return "?"
         answer = self.policy(drawn.card, drawn)
         return answer if isinstance(answer, str) else json.dumps(answer)
 
@@ -55,11 +63,11 @@ class EyeReader:
         pass
 
 
-def reader(monkeypatch, policy) -> list[EyeReader]:
+def reader(monkeypatch, policy, text_first_only=False) -> list[EyeReader]:
     from cameo_ingest import llm
 
     made: list[EyeReader] = []
-    monkeypatch.setattr(llm, "OpenAIChat", lambda cfg: made.append(EyeReader(policy)) or made[-1])
+    monkeypatch.setattr(llm, "OpenAIChat", lambda cfg: made.append(EyeReader(policy, text_first_only)) or made[-1])
     return made
 
 
@@ -99,10 +107,11 @@ def test_a_calibration_is_recorded_and_runs_use_it(tmp_path, monkeypatch, capsys
     (dest,) = (out / "calibration").iterdir()
     assert dest.name.startswith("acme_eye-vl-")
     results = json.loads((dest / "results.json").read_text())
-    assert len(results["cards"]) == 80 and len(list((dest / "cards").glob("*.png"))) == 80
+    # 80 cards, and the trial of the image's place: 6 cards both ways, 2 of them drawn only for it.
+    assert len(results["cards"]) == 92 and len(list((dest / "cards").glob("*.png"))) == 82
     assert all(c["score"] == 1.0 for c in results["cards"])
     expected = {"image_pixels": IMAGE_PIXELS, "sketch_font_px": 8, "sketch_arrow_px": 6.0, "sketch_line_px": 1,
-                "diagram_modules": "36:6:36"}  # 8 px: 1.3 times the 6 px read
+                "diagram_modules": "36:6:36", "image_first": True}  # 8 px: 1.3 times the 6 px read
     assert {r["setting"]: r["recommended"] for r in results["recommendations"]} == expected
     assert "| `sketch_font_px` | 13 | 8 **(change)** |" in (dest / "report.md").read_text()
     printed = capsys.readouterr().out
@@ -112,7 +121,7 @@ def test_a_calibration_is_recorded_and_runs_use_it(tmp_path, monkeypatch, capsys
     assert json.loads(row["settings"]) == expected and row["report"] == f"calibration/{dest.name}"
     # Calibrating again asks nothing: the answers are stored.
     sent = sum(r.requests for r in readers)
-    assert sent == 80
+    assert sent == 88  # 4 of the trial's cards are reading cards too
     assert calibrate(out, suite="standard") == 0
     assert sum(r.requests for r in readers) == sent
     assert run_with_model(out) == 0
@@ -168,7 +177,7 @@ def test_a_reader_that_reverses_every_arrow(tmp_path, monkeypatch, capsys):
     assert calibrate(out) == 0
     printed = capsys.readouterr().out
     assert "sketch_arrow_px: 10.0: none reaches 95% (the best, 0%): the default sizes" in printed
-    assert "diagram_modules: 36:6:36 (was 25:6:25): connections are found among up to 36 shapes (the most tested)" \
+    assert "diagram_modules: 36:6:36 (was 25:6:25): connections are found among up to 36 shapes (the most tested" \
         in printed
     assert "the quick suite checks a model and is not recorded" in printed and record(out) is None
     report = (next((out / "calibration").iterdir()) / "report.md").read_text()
@@ -180,8 +189,72 @@ def test_unreadable_replies_are_not_recorded(tmp_path, monkeypatch, capsys):
     reader(monkeypatch, lambda card, drawn: "I cannot read this image.")
     assert calibrate(out, suite="standard") == 2
     err = capsys.readouterr().err
-    assert "80 of 80 replies could not be read" in err and "Not recorded" in err
+    assert "92 of 92 replies could not be read" in err and "Not recorded" in err
     assert record(out) is None
+
+
+def half_budget_host(card, drawn):
+    """A host that shrinks images to half our budget, and a model that reads text of 11 px or more,
+    once shrunk; arrows it reads perfectly."""
+    if card.family == "read" and card.font_px * min(1.0, (0.5 / card.area) ** 0.5) < 11:
+        return {"lines": ["?" for _ in drawn.truth["lines"]]}
+    return perfect(drawn)
+
+
+def test_run_calibrates_the_model_first(tmp_path, monkeypatch, capsys):
+    """A run with a vision model the tree has no calibration for calibrates it before building:
+    half the budget and a larger font, with no setting given by hand. The record stays, and
+    `status` shows it."""
+    out = ingest(tmp_path, ("m.mdzip", make_mdzip()))
+    reader(monkeypatch, half_budget_host)
+    assert run_with_model(out) == 0
+    err = capsys.readouterr().err
+    assert f"calibrating the sketches to {MODEL}" in err and f"calibrated to {MODEL}: image_pixels 322560" in err
+    settings = json.loads(record(out)["settings"])
+    assert (settings["image_pixels"], settings["sketch_font_px"]) == (IMAGE_PIXELS // 2, 16)  # 1.3 x 11.8 px
+    assert settings["diagram_modules"] == "9:6:9"  # no more boxes fit at 16 px in half the budget
+    assert options(out)["image_pixels"] == IMAGE_PIXELS // 2 and options(out)["sketch"][0] == 16
+    assert main(["status", "-o", str(out)]) == 0
+    assert f"calibrated: {MODEL} on " in capsys.readouterr().out
+
+
+def test_each_model_has_its_own_calibration(tmp_path, monkeypatch, capsys):
+    out = ingest(tmp_path, ("m.mdzip", make_mdzip()))
+    readers = reader(monkeypatch, lambda card, drawn: perfect(drawn))
+    assert run_with_model(out) == 0
+    first = options(out)
+    assert main(["run", "-o", str(out), "--vision-model", "acme/other-vl", "--no-preflight"]) == 0
+    state = State(out)
+    assert {r["model"] for r in state.calibrations()} == {MODEL, "acme/other-vl"}
+    state.close()
+    assert options(out)["vision_model"] == "acme/other-vl" and options(out) != first
+    # A rerun asks nothing: the calibration is recorded, and the answers stored.
+    sent = sum(r.requests for r in readers)
+    assert main(["run", "-o", str(out), "--no-preflight"]) == 0
+    assert sum(r.requests for r in readers) == sent
+    assert json.loads((out / "run.json").read_text())["llm"]["calls"] == 0
+
+
+def test_no_calibrate_draws_to_the_defaults(tmp_path, monkeypatch, capsys):
+    out = ingest(tmp_path, ("m.mdzip", make_mdzip()))
+    readers = reader(monkeypatch, lambda card, drawn: perfect(drawn))
+    assert run_with_model(out, "--no-calibrate") == 0
+    assert record(out) is None and options(out)["sketch"] == [13, 10.0, 1]
+    assert sum(r.requests for r in readers) == 3  # the fixture's descriptions, as without calibration
+    assert "calibrating" not in capsys.readouterr().err
+
+
+def test_a_model_that_reads_only_after_the_text(tmp_path, monkeypatch, capsys):
+    """The trial puts the image after the text, every card is asked that way, and the model's
+    descriptions are asked that way too. A model that reads either way keeps the image first."""
+    out = ingest(tmp_path, ("m.mdzip", make_mdzip()))
+    readers = reader(monkeypatch, lambda card, drawn: perfect(drawn), text_first_only=True)
+    assert run_with_model(out) == 0
+    settings = json.loads(record(out)["settings"])
+    assert settings["image_first"] is False and settings["sketch_font_px"] == 8  # read as well as the perfect reader
+    assert options(out)["image_first"] is False and readers[-1].described == ["text"] * 3
+    report = (next((out / "calibration").iterdir()) / "report.md").read_text()
+    assert "with it after the text (difference +100%" in report and "asked with the image after the text" in report
 
 
 def test_a_schema_2_tree_migrates(tmp_path):

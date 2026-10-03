@@ -31,8 +31,8 @@ MARGIN = 8
 
 @dataclass(frozen=True)
 class SketchStyle:
-    """Sizes a sketch is drawn with, in the image's pixels: the uncalibrated defaults (`config.SKETCH`),
-    or a tree's settings, which `calibrate-vision --apply` sets for its vision model (plan VC)."""
+    """Sizes a sketch is drawn with, in the image's pixels: the tree's own settings, else the vision
+    model's calibration (plan VA), else the uncalibrated defaults (`config.SKETCH`)."""
 
     font_px: int = SKETCH[0]  # names, number tags and the title
     arrow_px: float = SKETCH[1]  # an arrowhead's legs

@@ -147,20 +147,27 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--no-llm", action="store_true", help="no LLM enrichment (required when no model is configured)")
     flag_pair(g, "render", "render diagram sketches", "do not render sketches", default=True)
     g.add_argument("--image-pixels", type=int, metavar="N",
-                   help=f"pixel budget of diagram sketches and of images sent to the vision model (default "
-                        f"{IMAGE_PIXELS}, uncalibrated: gemma-4's 280 soft tokens of 48 x 48 px at DeepInfra; "
-                        "`calibrate-vision` measures the vision model's)")
+                   help="pixel budget of diagram sketches and of images sent to the vision model (default: the "
+                        f"vision model's calibration; uncalibrated, {IMAGE_PIXELS}, gemma-4's 280 soft tokens of "
+                        "48 x 48 px at DeepInfra)")
     g.add_argument("--diagram-modules", metavar="N:MIN:MAX",
                    help="split diagrams of more than N shapes into modules of MIN to MAX shapes, each drawn and "
-                        f"described on its own (default {':'.join(map(str, MODULES))}, uncalibrated; N = 0 never "
-                        "splits)")
+                        "described on its own (default: the vision model's calibration; uncalibrated, "
+                        f"{':'.join(map(str, MODULES))}; N = 0 never splits)")
     g.add_argument("--sketch-font-px", type=int, metavar="PX",
-                   help=f"sketches' font size (default {SKETCH[0]}, uncalibrated: gemma-4's; `calibrate-vision` "
-                        "measures it for the vision model)")
+                   help=f"sketches' font size (default: the vision model's calibration; uncalibrated, {SKETCH[0]})")
     g.add_argument("--sketch-arrow-px", type=float, metavar="PX",
-                   help=f"sketches' arrowhead legs (default {SKETCH[1]:g}, uncalibrated)")
+                   help=f"sketches' arrowhead legs (default: as calibrated; uncalibrated, {SKETCH[1]:g})")
     g.add_argument("--sketch-line-px", type=int, metavar="PX",
-                   help=f"sketches' connection lines (default {SKETCH[2]}, uncalibrated)")
+                   help=f"sketches' connection lines (default: as calibrated; uncalibrated, {SKETCH[2]})")
+    g.add_argument("--image-first", dest="image_first", action="store_const", const=True, default=None,
+                   help="put the image before the text in requests to the vision model (default: as calibrated; "
+                        "uncalibrated, first, as Google advises for gemma)")
+    g.add_argument("--image-last", dest="image_first", action="store_const", const=False,
+                   help="put the image after the text in requests to the vision model")
+    flag_pair(g, "calibrate", "calibrate the sketches to the vision model before building, when the tree has no "
+              "calibration for it: about 80 requests, once per model (see README, Calibrating sketches to the vision "
+              "model)", "draw sketches to the uncalibrated defaults", default=True)
     flag_pair(g, "rag-files", "write rag/: every chunk as a .txt file, ending with its source and trace, for RAG "
               "tools that read files but not JSONL", "do not write rag/ (chunks.jsonl has the same chunks)",
               default=True)
@@ -231,14 +238,16 @@ def build_parser() -> argparse.ArgumentParser:
     rm.add_argument("--dry-run", action="store_true", help="only list what would be removed")
     rs = sub.add_parser("restore", parents=[common], help="undo `remove`: the next run builds the projects again")
     rs.add_argument("tokens", nargs="+", metavar="TOKEN", help="as for remove")
-    about = ("measure what the tree's vision model reads, with eye charts drawn as sketches are, and recommend the "
-             "sketch settings (see README, Calibrating sketches to the vision model). Run settings given here serve "
-             "this calibration only. The standard suite's calibration is recorded in the tree, and runs with "
-             "that model use it, unless the tree sets the sizes itself")
+    about = ("calibrate the sketches to the tree's vision model, as the first run with a model does on its own: "
+             "eye charts drawn as sketches are, read by the model, and the sizes they call for (see README, "
+             "Calibrating sketches to the vision model). Run settings given here serve this calibration only. The "
+             "standard suite's calibration is recorded in the tree, and runs with that model use it, unless the "
+             "tree sets the sizes itself")
     cv = sub.add_parser("calibrate-vision", parents=[common, running], help=about, description=about)
     c = cv.add_argument_group("calibration")
     c.add_argument("--suite", choices=("quick", "standard"), default="standard",
-                   help="quick: 11 eye charts, to check a model; standard: 80, to calibrate it (the default)")
+                   help="quick: 11 eye charts, to check a model; standard: 80, and a trial of the image's place, to "
+                        "calibrate it (the default)")
     q = sub.add_parser("quality", help="measure the quality of LLM enrichment (see docs/plans/llm-quality-*.md)")
     qs = q.add_subparsers(dest="action", required=True, metavar="ACTION")
     qsample = qs.add_parser("sample", parents=[common], help="draw a spot-check set of requests and answers")
@@ -543,11 +552,16 @@ def run_tree(args: argparse.Namespace, argv: list[str]) -> int:
         if args.command == "ingest":
             add_inputs(state, args)
         state.save_settings(settings.stored())
-        from .calibrate import recorded
+        progress = Progress(heartbeat=args.heartbeat)
 
-        options = ProjectOptions.of(settings, cfg.text_model, cfg.vision_model, cfg.max_calls, recorded(state, cfg))
-        runner = Runner(state, out, llm, options, Progress(heartbeat=args.heartbeat),
-                        concurrency=settings.llm_concurrency or 1)
+        def prepare() -> ProjectOptions:  # after the scan: the vision model calibrated, if it isn't yet
+            options = ProjectOptions.of(settings, cfg.text_model, cfg.vision_model, cfg.max_calls,
+                                        calibration_for_run(out, state, llm, settings, progress))
+            llm.image_first = options.image_first
+            return options
+
+        runner = Runner(state, out, llm, ProjectOptions.of(settings, cfg.text_model, cfg.vision_model, cfg.max_calls),
+                        progress, concurrency=settings.llm_concurrency or 1, prepare=prepare)
         previous = signal.signal(signal.SIGTERM, _interrupt)
         try:
             code = runner.run(argv)
@@ -565,6 +579,33 @@ def run_tree(args: argparse.Namespace, argv: list[str]) -> int:
         return 2
     finally:
         state.close()
+
+
+def calibration_for_run(out: Path, state: State, llm: EnrichmentSession, settings: TreeSettings,
+                        progress: Progress) -> dict[str, Any] | None:
+    """The vision model's calibration for a run (plan VA): the tree's record, made first when it
+    has none and sketches are drawn. None: the uncalibrated defaults."""
+    from . import calibrate
+
+    cfg = llm.cfg
+    if not settings.calibrate or not cfg.vision_model:
+        return None
+    found = calibrate.recorded(state, cfg)
+    if found is not None or not settings.render:
+        return found
+    print(f"calibrating the sketches to {cfg.vision_model}, which this tree has no calibration for: about 90 eye "
+          "charts, a few minutes on a hosted model; the answers are stored, so this happens once per model "
+          "(--no-calibrate skips it)", file=sys.stderr)
+    result = calibrate.calibrate_model(out, state, llm, "standard", settings.image_pixels or IMAGE_PIXELS, settings,
+                                       settings.llm_concurrency or 1, progress, settings.image_first)
+    report = result.dest / "report.md"
+    if result.problem or result.settings is None:
+        log.warning("the calibration of %s is incomplete (%s): this run draws to the uncalibrated defaults; see %s",
+                    cfg.vision_model, result.problem, report)
+        return None
+    print(f"calibrated to {cfg.vision_model}: " + ", ".join(f"{k} {v}" for k, v in result.settings.items())
+          + f" (the tree's own settings win; see {report})", file=sys.stderr)
+    return result.settings
 
 
 def _sizes(t: TreeSettings) -> tuple[Any, ...]:
@@ -597,7 +638,8 @@ def calibrate_vision(out: Path, args: argparse.Namespace) -> int:
         using = own.calibrated(calibrate.recorded(state, cfg))
         try:
             result = calibrate.calibrate_model(out, state, llm, args.suite, settings.image_pixels or IMAGE_PIXELS,
-                                               using, settings.llm_concurrency or 1, Progress(heartbeat=args.heartbeat))
+                                               using, settings.llm_concurrency or 1, Progress(heartbeat=args.heartbeat),
+                                               settings.image_first)
         except KeyboardInterrupt:
             print("interrupted; the answers so far are stored, so running again asks only for the rest",
                   file=sys.stderr)
@@ -642,6 +684,9 @@ def print_status(state: State, as_json: bool) -> None:
     for p in s["inputs"]["problems"]:
         print(f"  {p['status']}: {p['path']}" + (f" ({p['error']})" if p["error"] else ""))
     print(f"projects: {counts(s['projects']['counts'])}")
+    for c in s["calibrations"]:
+        sizes = ", ".join(f"{k} {v}" for k, v in c["settings"].items())
+        print(f"calibrated: {c['model']} on {c['created'][:10]}: {sizes} ({c['report']}/report.md)")
     for p in s["projects"]["failed"]:
         print(f"  failed: {p['name']} {p['token'][:23]} ({p['error']})")
     run = s["latest_run"]
