@@ -140,6 +140,8 @@ pane:
 | KX-07 | **Measure on the samples** (memory-capped):<br>- the workbook's size, rows and build time;<br>- the page's size per sketch option, and its time per phase under Node, on its own data and engine.<br>The maintainer then takes one look at the page in their own browser, to compare its timings with Node's. Adjust the cut lengths, the scope or the slices from what that shows. | |
 | KX-08 | **The maintainer's trial**, on the fiction first, then the samples, with tasks that matter:<br>- find a requirement by its id, and by a few words;<br>- find what satisfies it, and the source file of each;<br>- find which models mention an id;<br>- find what a model is about (summaries);<br>- look at a diagram.<br>Also tried: sharing each export through SharePoint. The maintainer decides what to keep. | |
 | KX-09 | **Polish what is kept**, from the trial's notes; drop what isn't. | |
+| KX-10 | **How large a corpus the exports hold** (the maintainer, 2026-10-02: all their models may not fit one export). Measured at 1 to 16 times the samples (`docs/research/export-scale-2026-10-02.md`). It grows linearly.<br>**The page:** comfortable to about 300,000 items (15 s, 2 GB in the browser), workable to about 600,000 (30 s, 3 GB).<br>**The workbook:** opens on the web to about 780,000 items.<br>Before measuring, the page got faster: base64 decoded natively, and text indexed once. | Done |
+| KX-11 | **Exports by group,** proposed: `export --group-by meta:KEY\|folder` writes one page and workbook per group (a vendor, say, or a folder), with a corpus-wide identifier index. To be decided after the maintainer counts their corpus's items. | Proposed |
 
 ## Checkpoints
 
