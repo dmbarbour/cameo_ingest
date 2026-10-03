@@ -1,6 +1,6 @@
 # Plan: finding versions of a model, and removing projects from a tree, 2026-10-03
 
-- **Status:** Proposed on 2026-10-03.
+- **Status:** Done on 2026-10-03 (0.10.0, b542148). Approved that day ("Plan is go").
 - **Step prefix:** `PV`, so steps are `PV-01`, `PV-02` and so on
 - **Addresses:** the maintainer's request of 2026-10-02.
   - The sources are "a complete mess of great volume": 282 Cameo files, 125 or more of them
@@ -65,11 +65,11 @@ Nothing is decided for the maintainer. The tool reports, and the maintainer remo
 
 | Step | What | Status |
 |---|---|---|
-| PV-01 | **The facts per project** (`fingerprint.py`):<br>- the save time from `Records.properties`, parsed with its time zone (the common abbreviations; otherwise kept as written, and ordered by date only);<br>- the project id and the Cameo version;<br>- the element ids, read with `iterparse` (about a second for the largest model).<br>They are kept in a new table, `fingerprints`, with the ids as sorted 64-bit hashes, compressed, so that `groups` re-reads nothing. They are filled by `scan` (and by `run`'s scan). | |
-| PV-02 | **`scan` and `projects`.** `Runner.scan` as a command of its own, then fingerprints for contents without one. `projects` from the state alone. | |
-| PV-03 | **`groups`:** the links, groups (connected by "likely version" links), warnings and the report, in Markdown on screen and in CSV. | |
-| PV-04 | **`remove` and `restore`:** the `removed` table (schema version 2, added in place), skipped by `run`'s list of work, by `rebuild` and by `export`; output deleted; root files rebuilt. | |
-| PV-05 | **Tests and docs.**<br>- **Tests:** the samples' TMT pair grouped as likely versions, newest first; a template and the model made from it reported as related; a fork warned of, with two fictional projects that each change a shared base; `remove` survives a re-scan and `restore` undoes it; a tree from before this plan opens and works.<br>- **Docs:** the README gets a section, "Versions and removal", with the steps for a messy folder (`add`, `scan`, `groups`, `remove`, `run`). | |
+| PV-01 | **The facts per project** (`fingerprint.py`):<br>- the save time from `Records.properties`, parsed with its time zone (the common abbreviations; otherwise kept as written, and ordered by date only);<br>- the project id and the Cameo version;<br>- the element ids, read with `iterparse` (about a second for the largest model).<br>They are kept in a new table, `fingerprints`, with the ids as sorted 64-bit hashes, compressed, so that `groups` re-reads nothing. They are filled by `scan` (and by `run`'s scan). | Done |
+| PV-02 | **`scan` and `projects`.** `Runner.scan` as a command of its own, then fingerprints for contents without one. `projects` from the state alone. | Done |
+| PV-03 | **`groups`:** the links, groups (connected by "likely version" links), warnings and the report, in Markdown on screen and in CSV. | Done |
+| PV-04 | **`remove` and `restore`:** the `removed` table (schema version 2, added in place), skipped by `run`'s list of work, by `rebuild` and by `export`; output deleted; root files rebuilt. | Done |
+| PV-05 | **Tests and docs.**<br>- **Tests:** the samples' TMT pair grouped as likely versions, newest first; a template and the model made from it reported as related; a fork warned of, with two fictional projects that each change a shared base; `remove` survives a re-scan and `restore` undoes it; a tree from before this plan opens and works.<br>- **Docs:** the README gets a section, "Versions and removal", with the steps for a messy folder (`add`, `scan`, `groups`, `remove`, `run`). | Done |
 
 **Checks:**
 - **The samples:** `groups` reports the TMT pair as likely versions and nothing else, and its
@@ -77,6 +77,27 @@ Nothing is decided for the maintainer. The tool reports, and the maintainer remo
 - **The rest of the tree:** a `--no-llm` tree is otherwise unchanged (`treediff`).
 
 **Version:** 0.10.0 (a new state table).
+
+## Results (2026-10-03)
+
+- **The samples and the fiction:** 23 inputs, 27 projects. Scanned and fingerprinted in 11 s, at
+  about 300 MB.
+- **`groups` on them:** one group, TMT-2024x (saved 2026-02-18) and TMT (2023-11-02), 98% of
+  TMT's elements shared, despite different project ids. No other links, related or not.
+- **`remove` and `restore`,** by hand on that tree and in tests:
+  - a removed project stays out of runs while its input remains, and out of the manifest, the
+    tree's chunks and `rag/`;
+  - `INDEX.md` and `status` list it as removed;
+  - `restore` and a run give back the tree as it was.
+- **Tests:**
+  - a version group with its `remove` line;
+  - a fork warned of and left out of that line;
+  - a template only related;
+  - zip dates standing in for a missing save time;
+  - a schema 1 state file migrated in place;
+  - in the slow sample tests, the TMT pair.
+- **The rest of the tree:** a `--no-llm` tree of the samples and the fiction is the same as
+  0.9.0's (`treediff`: "The trees are the same").
 
 ## When to stop and ask
 
