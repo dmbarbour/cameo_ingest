@@ -26,9 +26,29 @@ from .text import one_line
 from .vision import patch_sides
 
 MAX_ZOOM = 2.0  # small diagrams are not blown up further than this
-FONT_PX = 12
 MARGIN = 8
-TITLE_PX = 18
+
+
+@dataclass(frozen=True)
+class SketchStyle:
+    """Sizes a sketch is drawn with, in the image's pixels: found by hand for gemma-4 on
+    DeepInfra (FU-012, FU-015), and calibrated for another model by `calibrate-vision` (plan VC)."""
+
+    font_px: int = 12  # names, number tags and the title
+    arrow_px: float = 10  # an arrowhead's legs
+    line_px: int = 1  # connections
+
+    @property
+    def title_px(self) -> int:
+        return self.font_px + 6
+
+    @property
+    def head_stroke(self) -> int:
+        return self.line_px + 1
+
+
+STYLE = SketchStyle()
+FONT_PX, TITLE_PX = STYLE.font_px, STYLE.title_px
 DASHED = {"Dependency", "Abstraction", "Realization", "Usage", "Include", "Extend", "InterfaceRealization"}
 HOLLOW = {"Generalization", "Realization", "InterfaceRealization"}
 ROUND = {"UseCase", "InitialNode", "ActivityFinalNode", "FlowFinalNode", "PseudoNode"}
@@ -49,11 +69,11 @@ INK, FADED = "#1f4e79", "#b4b4b4"
 FADED_LINE, FADED_TEXT, FADED_TAG = "#c8c8c8", "#8c8c8c", "#f0f0f0"
 
 
-def canvas(w: float, h: float, pixels: int = IMAGE_PIXELS) -> tuple[int, int, float]:
+def canvas(w: float, h: float, pixels: int = IMAGE_PIXELS, title_px: int = TITLE_PX) -> tuple[int, int, float]:
     """(width, height, scale) for drawing w x h diagram units, with margins and a title
     line, within `pixels` at the diagram's own aspect ratio, sides in whole patches."""
     # Solve (w s + 2m)(h s + 2m + t) = pixels for the scale s.
-    m, t = MARGIN, TITLE_PX
+    m, t = MARGIN, title_px
     a, b, c = w * h, w * (2 * m + t) + h * 2 * m, 2 * m * (2 * m + t) - pixels
     s = min((-b + math.sqrt(b * b - 4 * a * c)) / (2 * a), MAX_ZOOM)
     W, H = patch_sides(w * s + 2 * m, h * s + 2 * m + t)
@@ -61,13 +81,14 @@ def canvas(w: float, h: float, pixels: int = IMAGE_PIXELS) -> tuple[int, int, fl
 
 
 def render_png(ix: ModelIndex, g: DiagramGraph, title: str, pixels: int = IMAGE_PIXELS,
-               frame: Frame | None = None) -> bytes | None:
+               frame: Frame | None = None, style: SketchStyle = STYLE) -> bytes | None:
     """A sketch that fills the model's pixel budget (FU-015): shapes tagged with their legend
     numbers, connections with arrowheads at the target, pins as dots (FU-007, FU-008).
 
     With a `frame`, only its region is drawn, around the shapes in focus: other shapes are
     faded, and a connection leaving the picture ends in its far shape's number."""
     f = frame or Frame()
+    FONT_PX, TITLE_PX = style.font_px, style.title_px  # noqa: N806 (the module's names, for this style)
     focus = f.focus
     xs: list[float] = []
     ys: list[float] = []
@@ -88,11 +109,11 @@ def render_png(ix: ModelIndex, g: DiagramGraph, title: str, pixels: int = IMAGE_
         return None
     x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
     w, h = max(1.0, x1 - x0), max(1.0, y1 - y0)
-    W, H, scale = canvas(w, h, pixels)
+    W, H, scale = canvas(w, h, pixels, TITLE_PX)
     if f.outlines:  # room above the drawing for module labels
         pad = (FONT_PX + 16) / scale
         y0, h = y0 - pad, h + pad
-        W, H, scale = canvas(w, h, pixels)
+        W, H, scale = canvas(w, h, pixels, TITLE_PX)
     img = Image.new("RGB" if f.fills or f.outlines else "L", (W, H), "white")
     d = ImageDraw.Draw(img)
     font = ImageFont.load_default(size=FONT_PX)
@@ -127,18 +148,20 @@ def render_png(ix: ModelIndex, g: DiagramGraph, title: str, pixels: int = IMAGE_
         pts = [P(*p) for p in lk.view.points]
         s, t = end_node(lk.source), end_node(lk.target)
         shown = lit(s) or lit(t)
-        _polyline(d, pts, dashed=lk.view.cls in DASHED, fill=None if shown else FADED_LINE)
+        _polyline(d, pts, dashed=lk.view.cls in DASHED, fill=None if shown else FADED_LINE, width=style.line_px)
         for seg in lk.more:
             if len(seg.points) >= 2:
-                _polyline(d, [P(*p) for p in seg.points], dashed=lk.view.cls in DASHED, fill=None if shown else FADED_LINE)
+                _polyline(d, [P(*p) for p in seg.points], dashed=lk.view.cls in DASHED,
+                          fill=None if shown else FADED_LINE, width=style.line_px)
         if lk.directed:
             tip, prev = (pts[0], pts[1]) if lk.target_at_first_point else (pts[-1], pts[-2])
-            _arrowhead(d, prev, tip, hollow=lk.view.cls in HOLLOW, fill="black" if shown else FADED_LINE)
+            _arrowhead(d, prev, tip, hollow=lk.view.cls in HOLLOW, fill="black" if shown else FADED_LINE,
+                       size=style.arrow_px, stroke=style.head_stroke)
         dirs = {i[-1:] for i in lk.items}  # "→" source to target, "←" target to source
         if dirs in ({"→"}, {"←"}):  # all items flow one way: show it halfway along
             # The points run from the path's first end to its second.
             _mid_arrow(d, pts, along=(dirs == {"→"}) != lk.target_at_first_point,
-                       fill="black" if shown else FADED_LINE)
+                       fill="black" if shown else FADED_LINE, scale=style.arrow_px / 10)
         if f.region is not None and shown and not (lit(s) and lit(t)):
             far = t if lit(s) else s
             far_first = (far is t) == lk.target_at_first_point  # the far end is at the first point
@@ -244,9 +267,10 @@ def _fit(d: ImageDraw.ImageDraw, text: str, font, width: float) -> str:
     return text[:lo] + "…" if lo else ""
 
 
-def _polyline(d: ImageDraw.ImageDraw, pts: list[tuple[float, float]], dashed: bool, fill: str | None = None) -> None:
+def _polyline(d: ImageDraw.ImageDraw, pts: list[tuple[float, float]], dashed: bool, fill: str | None = None,
+              width: int = 1) -> None:
     if not dashed:
-        d.line(pts, fill=fill or "black", width=1)
+        d.line(pts, fill=fill or "black", width=width)
         return
     for p, q in itertools.pairwise(pts):
         length = math.dist(p, q)
@@ -254,24 +278,24 @@ def _polyline(d: ImageDraw.ImageDraw, pts: list[tuple[float, float]], dashed: bo
         for i in range(0, steps, 2):  # 5 px dashes, 5 px gaps
             t0, t1 = i / steps, min(1.0, (i + 1) / steps)
             d.line([(p[0] + (q[0] - p[0]) * t0, p[1] + (q[1] - p[1]) * t0),
-                    (p[0] + (q[0] - p[0]) * t1, p[1] + (q[1] - p[1]) * t1)], fill=fill or "#333333", width=1)
+                    (p[0] + (q[0] - p[0]) * t1, p[1] + (q[1] - p[1]) * t1)], fill=fill or "#333333", width=width)
 
 
 def _arrowhead(d: ImageDraw.ImageDraw, p: tuple[float, float], q: tuple[float, float], hollow: bool,
-               fill: str = "black") -> None:
+               fill: str = "black", size: float = 10, stroke: int = 2) -> None:
     """An arrowhead at `q`, pointing away from `p`: a hollow triangle for generalization and
     realization, an open arrow otherwise."""
     ang = math.atan2(q[1] - p[1], q[0] - p[0])
-    size = 10
     left = (q[0] - size * math.cos(ang - 0.45), q[1] - size * math.sin(ang - 0.45))
     right = (q[0] - size * math.cos(ang + 0.45), q[1] - size * math.sin(ang + 0.45))
     if hollow:
         d.polygon([q, left, right], outline=fill, fill="white")
     else:
-        d.line([left, q, right], fill=fill, width=2)
+        d.line([left, q, right], fill=fill, width=stroke)
 
 
-def _mid_arrow(d: ImageDraw.ImageDraw, pts: list[tuple[float, float]], along: bool, fill: str = "black") -> None:
+def _mid_arrow(d: ImageDraw.ImageDraw, pts: list[tuple[float, float]], along: bool, fill: str = "black",
+               scale: float = 1.0) -> None:
     """A small filled triangle halfway along a connector, pointing the way its items flow:
     along the points' order, or against it."""
     lengths = [math.dist(p, q) for p, q in itertools.pairwise(pts)]
@@ -283,9 +307,9 @@ def _mid_arrow(d: ImageDraw.ImageDraw, pts: list[tuple[float, float]], along: bo
     t = half / lengths[i] if lengths[i] else 0.5
     m = (p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t)
     ang = math.atan2(q[1] - p[1], q[0] - p[0]) + (0 if along else math.pi)
-    tip = (m[0] + 6 * math.cos(ang), m[1] + 6 * math.sin(ang))
-    left = (m[0] - 4 * math.cos(ang - 1.2), m[1] - 4 * math.sin(ang - 1.2))
-    right = (m[0] - 4 * math.cos(ang + 1.2), m[1] - 4 * math.sin(ang + 1.2))
+    tip = (m[0] + 6 * scale * math.cos(ang), m[1] + 6 * scale * math.sin(ang))
+    left = (m[0] - 4 * scale * math.cos(ang - 1.2), m[1] - 4 * scale * math.sin(ang - 1.2))
+    right = (m[0] - 4 * scale * math.cos(ang + 1.2), m[1] - 4 * scale * math.sin(ang + 1.2))
     d.polygon([tip, left, right], fill=fill)
 
 
@@ -297,14 +321,16 @@ def colour(num: int, light: bool) -> str:
     return f"#{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}"
 
 
-def overview_png(ix: ModelIndex, part: Partition, title: str, pixels: int = IMAGE_PIXELS) -> bytes | None:
+def overview_png(ix: ModelIndex, part: Partition, title: str, pixels: int = IMAGE_PIXELS,
+                 style: SketchStyle = STYLE) -> bytes | None:
     """The whole diagram, each module's shapes tinted and outlined with its number (M1...)."""
     frame = Frame(fills={k: colour(m, True) for k, m in part.module_of.items()},
                   outlines=[(f"M{m.num}", m.box, colour(m.num, False)) for m in part.modules])
-    return render_png(ix, part.graph, f"{title}: {len(part.modules)} modules", pixels, frame)
+    return render_png(ix, part.graph, f"{title}: {len(part.modules)} modules", pixels, frame, style)
 
 
-def module_png(ix: ModelIndex, part: Partition, num: int, title: str, pixels: int = IMAGE_PIXELS) -> bytes | None:
+def module_png(ix: ModelIndex, part: Partition, num: int, title: str, pixels: int = IMAGE_PIXELS,
+               style: SketchStyle = STYLE) -> bytes | None:
     """Module `num` drawn on its own: its shapes numbered as in the diagram's legend, the
     rest of the diagram faded, and shapes of other modules it connects to keeping their
     numbers (at the picture's edge when they lie outside it)."""
@@ -312,5 +338,5 @@ def module_png(ix: ModelIndex, part: Partition, num: int, title: str, pixels: in
     x0, y0, x1, y1 = m.box
     pad = max(20.0, 0.04 * max(x1 - x0, y1 - y0))
     frame = Frame(region=(x0 - pad, y0 - pad, x1 + pad, y1 + pad), focus=set(m.shapes), tagged=set(m.boundary))
-    return render_png(ix, part.graph, f"{title}: module M{num} of {len(part.modules)}", pixels, frame)
+    return render_png(ix, part.graph, f"{title}: module M{num} of {len(part.modules)}", pixels, frame, style)
 

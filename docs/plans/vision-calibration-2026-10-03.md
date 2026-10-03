@@ -32,7 +32,7 @@ time. Three families:
 | **Arrows** | Boxes named by random codes and tagged with numbers, as shapes are, joined by arrows drawn as sketches draw them. Arrowhead legs of 6, 10 and 14 px, lines of 1 and 2 px. The model lists every arrow, from number to number, as its descriptions must. Reversed arrows are counted apart. | 3 heads × 2 lines × 2 seeds = 12 |
 | **Density** | The same, at 9, 16, 25 and 36 shapes per image at the budget: how many shapes an image can hold before connections are misread. That sets the size of a large diagram's modules. | 4 sizes × 2 seeds = 8 |
 
-A quick suite (about 16 cards) checks a model in a few cents; the standard suite (68 cards)
+A quick suite (11 cards) checks a model in a cent or so; the standard suite (68 cards)
 calibrates it.
 
 **Asking.**
