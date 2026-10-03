@@ -84,14 +84,16 @@ class Link:
 
 @dataclass
 class Tree:
-    """Generalizations drawn as one tree (plan SK): a vertical bar from the parent shape down (or
-    up) to a horizontal bar, which each member's stub reaches from its child."""
+    """Connections drawn as one tree (plan SK): a vertical bar from the base shape down (or up) to
+    a horizontal bar, which each member's stub reaches from its other end. Mostly generalizations,
+    the base their parent; also containment (the base the container) and dependencies."""
 
     view: View
-    parent: Node | None
-    vertical: tuple[tuple[float, float], tuple[float, float]]  # from the parent's edge to the bar
+    parent: Node | None  # the base shape
+    vertical: tuple[tuple[float, float], tuple[float, float]]  # from the base's edge to the bar
     horizontal: tuple[tuple[float, float], tuple[float, float]]
     members: list[Link]
+    to_parent: bool = False  # every member directed at the base: the tree carries their one head
 
 
 @dataclass
@@ -229,5 +231,8 @@ def build(ix: ModelIndex, layout: Layout, rels: dict[str, Relationship],
             continue
         vx, vy, left, right, hy = v.bars
         x = base.rect[0] + vx
-        g.trees.append(Tree(v, g.node_of.get(v.base or ""), ((x, vy), (x, hy)), ((left, hy), (right, hy)), members))
+        parent = g.node_of.get(v.base or "")
+        to_parent = parent is not None and all(
+            m.directed and m.target is not None and g.node_of.get(m.target.view_id or "") is parent for m in members)
+        g.trees.append(Tree(v, parent, ((x, vy), (x, hy)), ((left, hy), (right, hy)), members, to_parent))
     return g

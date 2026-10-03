@@ -149,13 +149,16 @@ def render_png(ix: ModelIndex, g: DiagramGraph, title: str, pixels: int = IMAGE_
             d.rectangle([a, c], outline=ink, fill=fill, width=1)
         boxes.append((n, a, c))
     stubs: list[tuple[int, tuple[float, float]]] = []  # far shapes of connections leaving the picture
-    in_trees = {t.view.view_id for t in g.trees}
-    for t in g.trees:  # the bars, and one hollow head at the parent (plan SK)
-        shown = lit(t.parent) or any(lit(end_node(m.source)) for m in t.members)
+    in_trees = {t.view.view_id for t in g.trees if t.to_parent}  # trees that carry their members' head
+    for t in g.trees:  # the bars, and the members' one head at the base when they all point there (plan SK)
+        shown = lit(t.parent) or any(lit(end_node(m.source)) or lit(end_node(m.target)) for m in t.members)
+        kinds = {m.view.cls for m in t.members}
         for a, b in (t.vertical, t.horizontal):
-            _polyline(d, [P(*a), P(*b)], dashed=False, fill=None if shown else FADED_LINE, width=style.line_px)
-        _arrowhead(d, P(*t.vertical[1]), P(*t.vertical[0]), hollow=True, fill="black" if shown else FADED_LINE,
-                   size=style.arrow_px, stroke=style.head_stroke)
+            _polyline(d, [P(*a), P(*b)], dashed=bool(kinds & DASHED), fill=None if shown else FADED_LINE,
+                      width=style.line_px)
+        if t.to_parent:
+            _arrowhead(d, P(*t.vertical[1]), P(*t.vertical[0]), hollow=bool(kinds & HOLLOW),
+                       fill="black" if shown else FADED_LINE, size=style.arrow_px, stroke=style.head_stroke)
     for lk in g.links:
         if len(lk.view.points) < 2:
             continue

@@ -1,6 +1,7 @@
 """Diagram text, directions, labels and large diagrams' modules, through the pipeline."""
 
 import json
+import re
 
 from fixture_model import LAYOUT, MODEL, make_mdzip
 from helpers import (
@@ -272,7 +273,18 @@ def test_trees_frames_labels_and_association_classes(monkeypatch):
     assert q[1] < p[1]  # pointing up, at Battery's lower edge
     assert lines.count(True) == 1  # the association-class line, and nothing else, dashed
     svg = sketch_svg.render_svg(ix, g, "BDD")
-    assert "generalizations of [2]" in svg and svg.count('stroke-dasharray') == 1
+    assert "Generalization of [2]" in svg and svg.count('stroke-dasharray') == 1
+    # A containment tree (Cameo draws a package's contents so too): bars, and no head at all.
+    contained = re.sub(r"<elementID xmi:idref='g\d'/>", "",
+                       LAYOUT_SK.replace("elementClass='Generalization'", "elementClass='ContainmentLink'"))
+    project = next(discover(make_mdzip(MODEL_SK, contained), "drone.mdzip"))
+    ix = parse_project(project)
+    view = ProjectView(ContentInfo(project.sha256, "drone.mdzip"), project, ix, layouts=load_layouts(project, ix))
+    (tree,) = view.graph("d1").trees
+    assert not tree.to_parent
+    heads.clear()
+    sketch.render_png(ix, view.graph("d1"), "BDD")
+    assert not [h for h in heads if h[2]]
 
 
 def test_a_tree_below_its_parent():

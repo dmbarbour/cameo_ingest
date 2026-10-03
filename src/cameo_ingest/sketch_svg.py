@@ -122,12 +122,16 @@ def render_svg(ix: ModelIndex, g: DiagramGraph, title: str) -> str | None:
             out.append(f'<rect x="{_n(x)}" y="{_n(y)}" width="{_n(rw)}" height="{_n(rh)}" fill="white" '
                        f'fill-opacity="0.9" stroke="{INK}"/>')
         out.append("</g>")
-    in_trees = {t.view.view_id for t in g.trees}
-    for t in g.trees:  # the bars, and one hollow head at the parent (plan SK)
+    in_trees = {t.view.view_id for t in g.trees if t.to_parent}  # trees that carry their members' head
+    for t in g.trees:  # the bars, and the members' one head at the base when they all point there (plan SK)
         (a, b), (c, e) = t.vertical, t.horizontal
-        out.append(f'<g><title>{escape(f"generalizations of [{t.parent.num if t.parent else chr(63)}]")}</title>'
-                   f'<polyline points="{_pts([a, b])}" fill="none" stroke="{LINE}"/>'
-                   f'<polyline points="{_pts([c, e])}" fill="none" stroke="{LINE}"/>{_arrowhead(b, a, True)}</g>')
+        kinds = {m.view.cls for m in t.members}
+        dash = ' stroke-dasharray="5 4"' if kinds & DASHED else ""
+        what = "/".join(sorted(kinds))
+        out.append(f'<g><title>{escape(f"{what} of [{t.parent.num if t.parent else chr(63)}]")}</title>'
+                   f'<polyline points="{_pts([a, b])}" fill="none" stroke="{LINE}"{dash}/>'
+                   f'<polyline points="{_pts([c, e])}" fill="none" stroke="{LINE}"{dash}/>'
+                   f'{_arrowhead(b, a, bool(kinds & HOLLOW)) if t.to_parent else ""}</g>')
     for lk in g.links:
         if len(lk.view.points) < 2:
             continue
