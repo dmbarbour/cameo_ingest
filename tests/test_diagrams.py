@@ -230,11 +230,11 @@ LAYOUT_SK = LAYOUT.replace("</mdOwnedViews>", "".join(
   <verticalBarX xmi:value='50'/><verticalBarY xmi:value='70'/><horizontalBarLeft xmi:value='190'/>
   <horizontalBarRight xmi:value='390'/><horizontalBarY xmi:value='150'/></mdElement>
  <mdElement elementClass='RectangularShape' xmi:id='fr'><text>Frame</text><geometry>0, 0, 150, 100</geometry></mdElement>
- <mdElement elementClass='AssociationTextBox' xmi:id='atb'><text>powers</text><geometry>140, 30, 40, 12</geometry>
- </mdElement>
  <mdElement elementClass='LinkAttribute' xmi:id='la'><linkFirstEndID xmi:idref='v3'/><linkSecondEndID xmi:idref='k1v'/>
   <geometry>155, 40; 155, 200; </geometry></mdElement>
-</mdOwnedViews>""")
+</mdOwnedViews>""").replace("<geometry>110, 40; 200, 40; </geometry></mdElement>", """<geometry>110, 40; 200, 40; </geometry>
+  <mdOwnedViews><mdElement elementClass='AssociationTextBox' xmi:id='atb'><text>powers</text>
+   <geometry>140, 30, 40, 12</geometry></mdElement></mdOwnedViews></mdElement>""")  # nested in its connection's view
 
 
 def test_trees_frames_labels_and_association_classes(monkeypatch):
@@ -259,6 +259,7 @@ def test_trees_frames_labels_and_association_classes(monkeypatch):
     assert [n.label for n in g.nodes if n.view.cls in ("AssociationTextBox", "RectangularShape")] == ['"Frame"']
     _, connections = describe(ix, g)
     assert sum("Generalization" in c and "Battery" in c for c in connections) == 3, connections
+    assert any("Association: powers" in c for c in connections), connections  # the name box's text, not a shape
     order = [n.view.view_id for n in drawing_order(g)]
     assert order.index("fr") < order.index("v1")  # the frame first: under the Drone it encloses
 

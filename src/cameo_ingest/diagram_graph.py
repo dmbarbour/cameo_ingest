@@ -19,6 +19,7 @@ from .text import one_line
 
 # Views that only decorate another view (labels, connector ends, roles): never shapes (FU-007).
 # An association's and a sequence message's name boxes are their connections' text (plan SK).
+LABELS = {"AssociationTextBox", "MessageSignature"}
 DECORATION = {"TextBox", "TextBoxWithIcon", "ConnectorEnd", "Role", "NoteAnchor", "DiagramShape", "FlowConnector",
               "AssociationTextBox", "MessageSignature"}
 # Drawn on the border of the shape that owns them, and named as "Owner.pin" in text.
@@ -154,6 +155,14 @@ def build(ix: ModelIndex, layout: Layout, rels: dict[str, Relationship],
         ids = {e for e in (view.element, node.view.element if node else None) if e}
         return ids | {t for e in ids if e in ix.elements for r, t in ix.elements[e].refs if r == "type"}
 
+    # What a connection's label box shows (a message's signature with its arguments, say), by the
+    # connection's view: added to its text where the model's names don't say it (plan SK).
+    shown: dict[str, str] = {}
+    for v in layout.views:
+        path = by_id.get(v.parent or "")
+        if v.cls in LABELS and v.text and path is not None and path.is_path and path.view_id:
+            shown[path.view_id] = one_line(v.text)
+
     def connector(view_id: str | None) -> bool:
         v = by_id.get(view_id or "")
         return v is not None and v.cls == "FlowConnector"
@@ -209,6 +218,10 @@ def build(ix: ModelIndex, layout: Layout, rels: dict[str, Relationship],
         flow = sem.flow_label(ix, el) if el is not None and el.kind in ("Transition", "ControlFlow", "ObjectFlow") else ""
         label = " ".join([f"«{s}»" for s in stereotypes] + ([el.name] if el and el.name else [])
                          + ([flow] if flow and flow != (el.name if el else None) else []))
+        drawn = shown.get(v.view_id or "")
+        if drawn and drawn not in label:
+            name = el.name if el is not None and el.name else ""
+            label = label.replace(name, drawn) if name and name in drawn else f"{label} ({drawn})" if label else drawn
         w = sem.wording(*stereotypes, rel.metaclass if rel else "", v.cls) if directed else None
         verb = w.forward if w else ""
         items = []
