@@ -1,7 +1,9 @@
 # Plan: sketches that read as drawn, and a release check with the LLM, 2026-10-03
 
 - **Status:** Approved on 2026-10-03 ("Go with 1 then 2"; on the cost of the release check,
-  "NP"). Type hierarchies as text, for search, are a tentative plan of their own (plan index).
+  "NP"). CP1 done; CP2 measured and halted at its stop rule, for the maintainer to decide how
+  trees are drawn (see SK-05). Type hierarchies as text, for search, are a tentative plan of
+  their own (plan index).
 - **Step prefix:** `SK`, so steps are `SK-01`, `SK-02` and so on
 - **Addresses:**
   - The follow-ups of plan VA's live check
@@ -79,8 +81,8 @@ module boundaries", not here.
 | SK-01 | **Trees:** `Tree` views and `treeID` in `layout.py`; `DiagramGraph.trees`; the bars and one head in `sketch.py` and `sketch_svg.py`; no head on members' stubs.<br>**Tests:** a fixture diagram with a tree, parent above and below the bar: one head, at the parent's edge, and none on the stubs; the legend unchanged. | Done: EOSS's "Instruments" now draws one bar and one head at the parent |
 | SK-02 | **Drawing order:** larger shapes first within a depth.<br>**Tests:** a frame around a shape, listed after it: the shape's box is drawn over the frame. | Done: `diagram_graph.drawing_order`, shared by the PNG and SVG sketches |
 | SK-03 | **Labels and association classes:** `AssociationTextBox` and `MessageSignature` as decorations; `LinkAttribute` dashed.<br>**Tests:** neither label is in the legend or drawn; the association class's line is dashed. | Done |
-| SK-04 | **Validation:** connections invented, in the scores, the report and the one-line summary; `validate.sample` with the sample's size as parameters; `scripts/validate_sketches.py` (the sample by key, from a file or chosen; a targeted stratum; results as JSON and Markdown).<br>**Tests:** a reader that adds a connection per sketch is scored for it; the script on the fiction. | |
-| SK-05 | **Before and after,** on the samples and the fiction:<br>- 12 sketches per stratum, and 12 targeted, with 0.13.0 (a worktree at b2037c4) and with the fixes;<br>- for gemma-4, and Qwen3-VL;<br>- in a research note, with the sketches of the six diagrams named above.<br>**Also:** 0.14.0; README; a `--no-llm` tree compared with 0.13.0's, every difference explained (sketches, SVGs, legends without the labels). A few cents. | |
+| SK-04 | **Validation:** connections invented, in the scores, the report and the one-line summary; `validate.sample` with the sample's size as parameters; `scripts/validate_sketches.py` (the sample by key, from a file or chosen; a targeted stratum; results as JSON and Markdown).<br>**Tests:** a reader that adds a connection per sketch is scored for it; the script on the fiction. | Done (fbb5235) |
+| SK-05 | **Before and after,** on the samples and the fiction:<br>- 12 sketches per stratum, and 12 targeted, with 0.13.0 (a worktree at b2037c4) and with the fixes;<br>- for gemma-4, and Qwen3-VL;<br>- in a research note, with the sketches of the six diagrams named above.<br>**Also:** 0.14.0; README; a `--no-llm` tree compared with 0.13.0's, every difference explained (sketches, SVGs, legends without the labels). A few cents. | Measured, then halted for the maintainer (`docs/research/sketch-ambiguities-2026-10-03.md`): containment trees fixed on the way (a508528); members keep their heads, which reads better than one head (94de089); Qwen3-VL reads clean trees top-down. 0.14.0, README and the `--no-llm` comparison wait on the decision |
 | SK-06 | **The release check's run,** as in the design. | |
 | SK-07 | **The release check's findings:** outcomes, invariants, the reading of twelve descriptions, retrieval against `out/ra/final-llm`; in the research note and here. | |
 
