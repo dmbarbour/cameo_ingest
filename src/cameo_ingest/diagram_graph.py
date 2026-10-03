@@ -93,7 +93,7 @@ class Tree:
     vertical: tuple[tuple[float, float], tuple[float, float]]  # from the base's edge to the bar
     horizontal: tuple[tuple[float, float], tuple[float, float]]
     members: list[Link]
-    to_parent: bool = False  # every member directed at the base: the tree carries their one head
+    to_parent: bool = False  # every member directed at the base: a head there too
 
 
 @dataclass

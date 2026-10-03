@@ -238,9 +238,9 @@ LAYOUT_SK = LAYOUT.replace("</mdOwnedViews>", "".join(
 
 
 def test_trees_frames_labels_and_association_classes(monkeypatch):
-    """Plan SK: a tree's bars are drawn, with one hollow head at the parent and none on the
-    members' stubs; a frame lies under the shapes inside it; an association's name box is no
-    shape; an association-class line is dashed. The legend still lists each generalization."""
+    """Plan SK: a tree's bars are drawn, with a hollow head at the parent and the members' own on
+    their stubs; a frame lies under the shapes inside it; an association's name box is no shape;
+    an association-class line is dashed. The legend still lists each generalization."""
     from cameo_ingest import sketch, sketch_svg
     from cameo_ingest.archive import discover
     from cameo_ingest.diagram_graph import drawing_order
@@ -269,8 +269,10 @@ def test_trees_frames_labels_and_association_classes(monkeypatch):
     monkeypatch.setattr(sketch, "_polyline", lambda d, pts, dashed, **kw: lines.append(dashed)
                         or polyline(d, pts, dashed, **kw))
     assert sketch.render_png(ix, g, "BDD") is not None
-    ((p, q, _),) = [h for h in heads if h[2]]  # one hollow head: the tree's, at the parent
-    assert q[1] < p[1]  # pointing up, at Battery's lower edge
+    hollow = sorted([h for h in heads if h[2]], key=lambda h: h[1][1])
+    assert len(hollow) == 4 and all(q[1] < p[1] for p, q, _ in hollow)  # all pointing up
+    tips = [q[1] for _, q, _ in hollow]
+    assert tips[0] < tips[1] == tips[2] == tips[3]  # the tree's at Battery's lower edge, the stubs' at the bar
     assert lines.count(True) == 1  # the association-class line, and nothing else, dashed
     svg = sketch_svg.render_svg(ix, g, "BDD")
     assert "Generalization of [2]" in svg and svg.count('stroke-dasharray') == 1
@@ -284,7 +286,7 @@ def test_trees_frames_labels_and_association_classes(monkeypatch):
     assert not tree.to_parent
     heads.clear()
     sketch.render_png(ix, view.graph("d1"), "BDD")
-    assert not [h for h in heads if h[2]]
+    assert not [h for h in heads if h[2]] and not heads  # containment: no head at all
 
 
 def test_a_tree_below_its_parent():
@@ -309,5 +311,5 @@ def test_a_tree_below_its_parent():
         sketch.render_png(ix, view.graph("d1"), "BDD")
     finally:
         sketch._arrowhead = arrowhead
-    ((p, q, _),) = [h for h in heads if h[2]]
-    assert q[1] > p[1]  # pointing down
+    hollow = [h for h in heads if h[2]]
+    assert len(hollow) == 4 and sum(q[1] > p[1] for p, q, _ in hollow) == 1  # the tree's head points down

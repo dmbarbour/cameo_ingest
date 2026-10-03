@@ -122,8 +122,9 @@ def render_svg(ix: ModelIndex, g: DiagramGraph, title: str) -> str | None:
             out.append(f'<rect x="{_n(x)}" y="{_n(y)}" width="{_n(rw)}" height="{_n(rh)}" fill="white" '
                        f'fill-opacity="0.9" stroke="{INK}"/>')
         out.append("</g>")
-    in_trees = {t.view.view_id for t in g.trees if t.to_parent}  # trees that carry their members' head
-    for t in g.trees:  # the bars, and the members' one head at the base when they all point there (plan SK)
+    # A tree's bars, and a head at the base when every member points there; the members keep their
+    # own heads too, at the bar: the model reads directions better so than from one head (plan SK).
+    for t in g.trees:
         (a, b), (c, e) = t.vertical, t.horizontal
         kinds = {m.view.cls for m in t.members}
         dash = ' stroke-dasharray="5 4"' if kinds & DASHED else ""
@@ -139,7 +140,7 @@ def render_svg(ix: ModelIndex, g: DiagramGraph, title: str) -> str | None:
         parts = [f'<polyline points="{_pts(seg.points)}" fill="none" stroke="{LINE}"{dash}/>'
                  for seg in [lk.view, *lk.more] if len(seg.points) >= 2]
         pts = lk.view.points
-        if lk.directed and lk.view.tree not in in_trees:  # a tree's member: the tree has the head
+        if lk.directed:
             tip, prev = (pts[0], pts[1]) if lk.target_at_first_point else (pts[-1], pts[-2])
             parts.append(_arrowhead(prev, tip, lk.view.cls in HOLLOW))
         dirs = {i[-1:] for i in lk.items}
