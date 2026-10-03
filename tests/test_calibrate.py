@@ -120,6 +120,26 @@ def test_misread_arrowheads_are_enlarged_and_applied(tmp_path, monkeypatch, caps
     assert redrawn.keys() == sketches.keys() and redrawn != sketches
 
 
+def test_a_reader_that_reverses_every_arrow(tmp_path, monkeypatch, capsys):
+    """Every connection found, none the right way round: no arrowhead size helps, so the sizes
+    are kept and flagged; the modules stand, since their measure is connections found."""
+    out = ingest(tmp_path, ("m.mdzip", make_mdzip()), args=("--no-llm", "--no-render"))
+
+    def policy(card, drawn):
+        answer = perfect(drawn)
+        if card.family != "read":
+            answer["arrows"] = [{"from": a["to"], "to": a["from"]} for a in answer["arrows"]]
+        return answer
+
+    reader(monkeypatch, policy)
+    assert calibrate(out) == 0
+    printed = capsys.readouterr().out
+    assert "sketch_arrow_px: 10.0 (kept): none reaches 95% (the best, 0%)" in printed
+    assert "diagram_modules: 25:6:25 (kept): connections are found" in printed
+    report = (next((out / "calibration").iterdir()) / "report.md").read_text()
+    assert "| 36 | 100% | 0% | 100% |" in report
+
+
 def test_unreadable_replies_are_not_applied(tmp_path, monkeypatch, capsys):
     out = ingest(tmp_path, ("m.mdzip", make_mdzip()), args=("--no-llm", "--no-render"))
     reader(monkeypatch, lambda card, drawn: "I cannot read this image.")
@@ -132,7 +152,8 @@ def summary(read, arrows=None, density=None):
     return {"read": [{"area": a, "points": [], "threshold": t} for a, t in read.items()],
             "arrows": [{"arrow_px": a, "line_px": ln, "right": r, "reversed": 1 - r, "cards": 2}
                        for (a, ln), r in (arrows or {}).items()],
-            "density": [{"shapes": n, "right": r, "reversed": 0.0, "cards": 2} for n, r in (density or {}).items()],
+            "density": [{"shapes": n, "right": r - 0.05, "reversed": 0.05, "found": r, "cards": 2}
+                        for n, r in (density or {}).items()],
             "unreadable": 0, "unasked": 0, "cards": 0}
 
 

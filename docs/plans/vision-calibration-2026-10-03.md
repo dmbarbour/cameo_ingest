@@ -1,7 +1,8 @@
 # Plan: calibrating sketches to the vision model, by eye chart, 2026-10-03
 
 - **Status:** Approved on 2026-10-03 ("Looks good… Go", with a few dollars of DeepInfra allowed).
-  CP1 and CP2 done (0.11.0); CP3 in progress.
+  CP1, CP2 (0.11.0) and CP3 done. Halted for the maintainer: the font recommendation for gemma-4
+  (12 → 13 px) is not applied to any tree.
 - **Step prefix:** `VC`, so steps are `VC-01`, `VC-02` and so on
 - **Addresses:** the tentative plan "Vision calibration by eye chart" (plan index). Sketches are
   drawn to constants found by hand for gemma-4 on DeepInfra (FU-012, FU-015):
@@ -57,7 +58,7 @@ beside each, and the scores behind it:
 | `image_pixels` | The largest area at which the reading threshold still holds, at a whole number of 48 px patches; for a model reading at native resolution, the current budget is kept, as more pixels then cost more tokens |
 | Sketch font size | The smallest size read by 90% at the chosen budget, times 1.3 |
 | Arrowhead legs, line width | The smallest with 95% of arrows the right way round |
-| `diagram_modules` maximum | The most shapes with 90% of connections right |
+| `diagram_modules` maximum | The most shapes with 90% of connections found, either way round. Direction is the arrows' measure (changed after the live run: see Results) |
 
 **Applying.**
 - **`--apply`:** writes the recommendations to the tree's settings, applied on every run like the
@@ -79,7 +80,7 @@ beside each, and the scores behind it:
 | VC-03 | **`cameo-ingest calibrate-vision -o OUT [--suite quick\|standard] [--apply]`** (with the run settings, `--llm-max-calls` among them, for this calibration only): the cards asked through the session, answers stored. It writes `calibration/<model>-<date>/` with the cards (PNG), the answers, `results.json` and `report.md`.<br>**Tests:** a fake model that reads perfectly, and one that reverses every arrow. | Done |
 | VC-04 | **The recommendations** from the results, as in the design. The report shows the current value beside each, and the scores behind it.<br>**Tests:** results that imply a fixed budget, native resolution, and too-small arrowheads give the expected recommendations. | Done |
 | VC-05 | **A sketch style as settings:** `SketchStyle(font_px, arrow_px, line_px)`, through `render_png`, the presets and the SVG; in `TreeSettings` and `ProjectOptions`, in the hash only when not the default. `--apply` writes them, and `image_pixels` and `diagram_modules`, after showing what will be drawn and asked again.<br>**Tests:** a `--no-llm` tree at the defaults is the same as before (`treediff`); a changed style changes the sketches and the projects' hashes. | Done |
-| VC-06 | **The live calibration:** the standard suite on gemma-4 at DeepInfra, a few cents. Its results go in a research note, comparing the recommendations with today's constants and with the eye chart's findings. | |
+| VC-06 | **The live calibration:** the standard suite on gemma-4 at DeepInfra, a few cents. Its results go in a research note, comparing the recommendations with today's constants and with the eye chart's findings. | Done |
 
 ## Checkpoints
 
@@ -88,6 +89,29 @@ beside each, and the scores behind it:
 | CP1: cards and scores | VC-01, VC-02, and VC-05's style object (defaults only) | `eyechart.py`; sketches unchanged |
 | CP2: the command | VC-03, VC-04, VC-05 | `calibrate-vision`, settings; 0.11.0 |
 | CP3: gemma-4 | VC-06 | The research note |
+
+## Results (2026-10-03)
+
+The standard suite on gemma-4 at DeepInfra: 68 requests in 3 min 45 s, about 2 cents
+(`docs/research/vision-calibration-gemma4-2026-10-03.md`).
+
+| Setting | Today | Measured | Recommended |
+|---|---|---|---|
+| `image_pixels` | 645,120 | 90% read at 9.5 px at the budget, 11.8 px at twice it: a fixed budget | Kept |
+| Font | 12 px | 12 px read 80 of 80 at the budget; 1.27 times the 9.5 px threshold | 13 px (the 1.3× rule) |
+| Arrowheads, lines | 10 px, 1 px | 95% the right way round; 14 px no better, 6 px 73%; line width no matter | Kept |
+| `diagram_modules` | 25:6:25 | Connections found among 25 shapes 92%, among 36 83% | Kept |
+
+- **Upward arrows:** reversed 28% of the time, against 10–12% for the other directions.
+  Descriptions get every connection's direction as text, so this matters less there than on
+  the cards.
+- **Changed in the tool after the run:**
+  - density judged on connections found;
+  - progress counted as cards are answered;
+  - the report's wording;
+  - box centres in the cards' truth.
+- **For the maintainer:** whether to adopt 13 px. The note recommends keeping 12 px, as above.
+  If 13 px were adopted, every sketch would be redrawn and every description asked again.
 
 ## When to stop and ask
 

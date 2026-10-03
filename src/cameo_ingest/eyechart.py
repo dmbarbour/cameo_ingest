@@ -227,7 +227,8 @@ def _boxes(card: Card, rng: random.Random, d: ImageDraw.ImageDraw, font) -> tupl
         d.rectangle([box[0] + 1, box[1] + 1, box[0] + tw + 5, box[1] + card.font_px + 3], fill="#e4e4e4")
         d.text((box[0] + 3, box[1] + 1), str(nums[k]), fill="black", font=font)
         d.text((box[0] + tw + 8, box[1] + 1), names[k], fill="black", font=font)
-    return {"arrows": [[nums[a], nums[b]] for a, b, _, _ in edges], "boxes": n}, ARROWS_PROMPT
+    centers = {nums[k]: [round((b[0] + b[2]) / 2), round((b[1] + b[3]) / 2)] for k, b in enumerate(boxes)}
+    return {"arrows": [[nums[a], nums[b]] for a, b, _, _ in edges], "boxes": n, "centers": centers}, ARROWS_PROMPT
 
 
 # -- answers and scores ----------------------------------------------------------------------------

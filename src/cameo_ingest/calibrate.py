@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import math
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -32,7 +32,7 @@ TEMPLATES = {  # outside prompts.CURRENT: calibration changes no project's optio
     for family, prompt in (("read", ec.READ_PROMPT), ("arrows", ec.ARROWS_PROMPT))
 }
 ARROWS_PASS = 0.95  # arrows the right way round, for an arrowhead size and line width to pass
-DENSITY_PASS = 0.9  # connections right, for a number of shapes to pass
+DENSITY_PASS = 0.9  # connections found (either way round), for a number of shapes to pass
 FONT_MARGIN = 1.3  # the font's size over the 90% threshold
 FLAT = 1.15  # thresholds within this of the smallest are "the same"
 PATCH_AREA = PATCH_PX * PATCH_PX
@@ -52,11 +52,11 @@ def ask(llm: EnrichmentSession, cards: list[ec.Card], concurrency: int = 4, prog
                 **ec.score(card, drawn.truth, answer)}
 
     with progress.phase("eye charts", len(cards), "card") as ph, ThreadPoolExecutor(max(1, concurrency)) as pool:
-        out = []
-        for result in pool.map(one, cards):
-            out.append(result)
+        futures = [pool.submit(one, card) for card in cards]
+        for done in as_completed(futures):  # counted as answered, not in order: a slow card holds nothing up
+            done.result()
             ph.advance()
-    return out
+    return [f.result() for f in futures]
 
 
 def _mean(xs: list[float]) -> float:
@@ -82,8 +82,8 @@ def summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
 
     def arrow_stats(rs: list[dict]) -> dict[str, float]:
         items = sum(r["items"] for r in rs) or 1
-        return {"right": sum(r["right"] for r in rs) / items, "reversed": sum(r["reversed"] for r in rs) / items,
-                "cards": len(rs)}
+        right, rev = sum(r["right"] for r in rs) / items, sum(r["reversed"] for r in rs) / items
+        return {"right": right, "reversed": rev, "found": right + rev, "cards": len(rs)}
 
     return {"read": areas,
             "arrows": [{"arrow_px": a, "line_px": ln, **arrow_stats(rs)} for (a, ln), rs in sorted(arrows.items())],
@@ -142,12 +142,13 @@ def recommend(summary: dict[str, Any], pixels: int, sketch: tuple[int, float, in
     recs.append(Recommendation(
         "sketch_font_px", font, max(font, needed),
         f"90% read at {threshold_px:g} px: {needed} px with a {FONT_MARGIN:g}x margin",
-        "the current size has the margin" if font >= needed else "the current size is too small to read reliably"))
+        f"{font} px is {font / threshold_px:.2f}x the threshold: "
+        + ("the margin holds" if font >= needed else f"short of the {FONT_MARGIN:g}x margin")))
     arrows = summary["arrows"]
     passing = [a for a in arrows if a["right"] >= ARROWS_PASS]
-    table = "; ".join(f"{a['arrow_px']:g} px heads, {a['line_px']} px lines: {a['right']:.0%} right, "
-                      f"{a['reversed']:.0%} reversed" for a in arrows)
     current = next((a for a in arrows if (a["arrow_px"], a["line_px"]) == (arrow, line)), None)
+    table = (f"{arrow:g} px heads, {line} px lines: {current['right']:.0%} the right way round, "
+             f"{current['reversed']:.0%} reversed (see Arrows)" if current is not None else "see Arrows")
     # Untested values pass when smaller ones do: larger heads and lines only read more easily.
     holds = (current["right"] >= ARROWS_PASS if current is not None
              else any(a["arrow_px"] <= arrow and a["line_px"] <= line for a in passing))
@@ -162,20 +163,22 @@ def recommend(summary: dict[str, Any], pixels: int, sketch: tuple[int, float, in
                                     "diagrams' descriptions may misread arrows whatever their size")
     recs.append(Recommendation("sketch_arrow_px", arrow, pick[0], table, why))
     recs.append(Recommendation("sketch_line_px", line, pick[1], table, why))
+    # The modules' size is judged on connections found, either way round: a direction misread is the
+    # arrows' measure, and happens among few shapes as among many (plan VC, results).
     large, lo, hi = modules
     dens = summary["density"]
-    # Connections can only be harder to read among more shapes: a dip at one size is averaged out.
-    fitted = list(zip([d["shapes"] for d in dens], reversed(ec.monotone([d["right"] for d in reversed(dens)])),
+    # Connections can only be harder to find among more shapes: a dip at one size is averaged out.
+    fitted = list(zip([d["shapes"] for d in dens], reversed(ec.monotone([d["found"] for d in reversed(dens)])),
                       strict=True))
-    table = "; ".join(f"{d['shapes']} shapes: {d['right']:.0%} of connections right" for d in dens)
-    ok = [n for n, right in fitted if right >= DENSITY_PASS]
-    if not dens or all(right >= DENSITY_PASS for n, right in fitted if n <= hi):
-        rec, why = modules, f"connections are read in images of up to {hi} shapes"
+    table = "connections found among " + ", ".join(f"{d['shapes']} shapes: {d['found']:.0%}" for d in dens)
+    ok = [n for n, found in fitted if found >= DENSITY_PASS]
+    if not dens or all(found >= DENSITY_PASS for n, found in fitted if n <= hi):
+        rec, why = modules, f"connections are found in images of up to {hi} shapes"
     elif ok:
         top = max(ok)
-        rec, why = (min(large, top), min(lo, top), top), f"connections are misread among more than {top} shapes"
+        rec, why = (min(large, top), min(lo, top), top), f"connections are missed among more than {top} shapes"
     else:
-        rec, why = modules, "connections are misread even among the fewest shapes: the modules are kept; look at why"
+        rec, why = modules, "connections are missed even among the fewest shapes: the modules are kept; look at why"
     recs.append(Recommendation("diagram_modules", ":".join(map(str, modules)), ":".join(map(str, rec)), table, why))
     return recs
 
@@ -204,8 +207,9 @@ def render_report(model: str, endpoint: str | None, suite: str, summary: dict[st
     lines += ["", "## Arrows", "", "| Arrowhead | Line | Right | Reversed |", "|---|---|---|---|"]
     lines += [f"| {a['arrow_px']:g} px | {a['line_px']} px | {a['right']:.0%} | {a['reversed']:.0%} |"
               for a in summary["arrows"]]
-    lines += ["", "## Density", "", "| Shapes | Connections right | Reversed |", "|---|---|---|"]
-    lines += [f"| {d['shapes']} | {d['right']:.0%} | {d['reversed']:.0%} |" for d in summary["density"]]
+    lines += ["", "## Density", "", "| Shapes | Connections found | Right way round | Reversed |", "|---|---|---|---|"]
+    lines += [f"| {d['shapes']} | {d['found']:.0%} | {d['right']:.0%} | {d['reversed']:.0%} |"
+              for d in summary["density"]]
     if cost_note:
         lines += ["", cost_note]
     return "\n".join(lines) + "\n"
