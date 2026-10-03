@@ -115,12 +115,26 @@ since replaced 376 of those requests with 36. Rendering is the costliest step wi
 LLM: about 40 s for TMT's 1,241 sketches and the module views of its 44 large diagrams
 (`--no-render` skips them).
 
-`--image-pixels N` (default 645,120) is the pixel budget of sketches and of the images sent to the
-vision model. `google/gemma-4-31B-it` on DeepInfra sees every image through 280 soft tokens of
-48 × 48 px, scaled to fill that area at the image's own aspect ratio, so sketches are drawn to fill
-it exactly, with sides in multiples of 48, and larger images are scaled down to it. Images go
-before the text in each request, as Google advises (see
-`docs/research/gemma4-images-2026-09-30.md`).
+`--image-pixels N` is the pixel budget of sketches and of the images sent to the vision model:
+by default the vision model's calibration (see "Calibrating sketches to the vision model"),
+uncalibrated 645,120. `google/gemma-4-31B-it` on DeepInfra sees every image through 280 soft
+tokens of 48 × 48 px, scaled to fill that area at the image's own aspect ratio, so sketches are
+drawn to fill it exactly, with sides in multiples of 48, and larger images are scaled down to
+it. Images go before the text in each request, as Google advises, unless calibration finds the
+model reads better with them after (see `docs/research/gemma4-images-2026-09-30.md`).
+
+Each sketch's request also explains the drawing conventions that sketch uses, one sentence each:
+- number tags, and names cut short;
+- nesting and frames;
+- arrowheads and hollow triangles;
+- trees, and containment trees;
+- dashed dependencies, and association classes;
+- pins and ports, and item flows;
+- connector circles, fork and join bars, and sequence diagrams.
+
+The sketches are ours, so we know what each mark means. With the guide, gemma-4 found 80% of
+connections rather than 75%, and invented a third fewer
+(`docs/research/sketch-ambiguities-2026-10-03.md`).
 
 ### Large diagrams and packages
 

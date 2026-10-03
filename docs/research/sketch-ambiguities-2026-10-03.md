@@ -107,12 +107,38 @@ members as in the table above (41 → 51 found, 41 → 50 right).
 - **Directions reach the descriptions as text in any case.** What the picture must show is
   which shapes are joined, and there both models gain.
 
+## Reading guides (the maintainer's decision, 2026-10-03)
+
+"A prompt informs how to read a diagram when we're clearly in a position to know." Each
+request that sends a sketch now explains the drawing conventions that sketch uses, one sentence
+each, chosen from its graph. The guide is part of `diagram-description` v6,
+`module-description` v3 and validation's `eye-sketch` v2.
+
+**Measured:** both samples, both models, the same sketches with and without the guide. One
+sketch, TMT's "Observatory Configuration Data Types" (23 connections), got an empty answer
+from Qwen3-VL with the guide, `{"shapes": [], "connections": []}`. It is left out of both
+columns below. A single answer is a single sample, and with it Qwen3-VL's targeted stratum fell
+from 72% found to 46%.
+
+| | Without the guide | With it |
+|---|---|---|
+| gemma-4, 48 sketches: names, found, directions, invented | 98%, 75%, 97%, 37% | 96%, 80%, 95%, 26% |
+| gemma-4, tree members found, the right way round (of 68) | 51, 50 | 47, 47 |
+| Qwen3-VL, 46 sketches: names, found, directions, invented | 96%, 71%, 96%, 28% | 95%, 77%, 97%, 26% |
+| Qwen3-VL, tree members found, the right way round (of 68) | 46, 28 | 47, 31 |
+
+- **Both models find more connections** with the guide (gemma-4 +5 points, Qwen3-VL +6).
+  gemma-4 invents a third fewer.
+- **Modules gain most** for gemma-4: 72% → 81% found.
+- **Qwen3-VL's top-down reading of trees** improves a little: 28 → 31 of 68 the right way
+  round. The guide doesn't cure it.
+- **gemma-4's tree members** dip by 3 or 4, within the noise of single answers.
+
+The guide is adopted.
+
 ## Open
 
-- **For the maintainer:** keep the trees as drawn (B), knowing that a model like Qwen3-VL may
-  read clean trees top-down? Or draw the trees only for the model that reads them better,
-  which calibration would then have to measure (a further card family)?
-- **A hint in the prompts,** such as "in a tree, each triangle marks the parent", might settle
-  Qwen3-VL's reading. The descriptions are asked again at the release check anyway, so a
-  template change now would cost nothing extra there.
+- **Decided:** the trees stay as drawn (B), with reading guides in the prompts.
+- **The prompt hint,** done as reading guides (above). It helps both models, though it doesn't
+  settle Qwen3-VL's reading of clean trees.
 - **Follow-ups:** sequence diagrams; lines between undrawn ends.

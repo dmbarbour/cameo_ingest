@@ -37,7 +37,9 @@ the roadmap in the top-level `README.md`.
   tables, allocation and dependency matrices) from the table configuration and the model.
   BASE-001 is fixed, so the configuration is now read (scope, row types, columns).
 - **Attachments.** Link `BINARY-*` images and documents to the elements that own them, and
-  convert PDF and Office attachments to text.
+  convert PDF and Office attachments to text. An image's description could then be asked with
+  what owns it: its name, kind and documentation. Today the request says "nothing says which
+  element owns it or where it appears" (plan SK, 2026-10-03).
 - **Chunk splitting.** Split very large requirement and member sections so that downstream
   chunkers don't have to. Long tagged values are already cut on pages (FU-020).
 - **Better module boundaries.** Split sequence diagrams into bands along the time axis, and
