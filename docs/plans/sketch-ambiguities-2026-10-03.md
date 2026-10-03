@@ -1,9 +1,12 @@
 # Plan: sketches that read as drawn, and a release check with the LLM, 2026-10-03
 
 - **Status:** Approved on 2026-10-03 ("Go with 1 then 2"; on the cost of the release check,
-  "NP"). CP1 done; CP2 measured and halted at its stop rule, for the maintainer to decide how
-  trees are drawn (see SK-05). Type hierarchies as text, for search, are a tentative plan of
-  their own (plan index).
+  "NP"). CP1 done; CP2 measured and halted at its stop rule.
+  - **The maintainer's decision, 2026-10-03:** "a prompt informs how to read a diagram when we're
+    clearly in a position to know. Not only should we do so here, we could also look for other
+    cases where our local knowledge of Cameo could help a model process an image."
+  - **So:** reading guides (SK-08, SK-09) before the release check, the trees drawn as now.
+  - Type hierarchies as text, for search, are a tentative plan of their own (plan index).
 - **Step prefix:** `SK`, so steps are `SK-01`, `SK-02` and so on
 - **Addresses:**
   - The follow-ups of plan VA's live check
@@ -74,6 +77,39 @@ module boundaries", not here.
   - retrieval on the fictional questions (`questions-ra.jsonl`, 210 questions, the same
     windows), against `out/ra/final-llm`, with the report's significance test.
 
+## Reading guides (added 2026-10-03)
+
+Validation showed a model reading a correct sketch against its notation: Qwen3-VL listed a
+clean tree's generalizations from parent to child, against the triangles. The sketches are
+ours, so we know what each mark means, and a request can say so.
+
+**The guide:**
+- **What it is:** one versioned sentence per convention, part of each template that sends a
+  sketch, sent only when the sketch has that convention.
+- **The conventions,** from `sketch.py` and Cameo's diagram types:
+  - number tags, and names cut with '…';
+  - nesting, and plain frames that only group;
+  - open arrowheads, and undirected lines;
+  - hollow triangles (generalization, realization);
+  - trees (each connection runs from a child to the parent);
+  - containment trees (no head: the root contains the rest);
+  - dashed dependencies;
+  - association classes;
+  - pins and ports as dots;
+  - mid-line item-flow arrows;
+  - connector circles ('to N', 'from N');
+  - fork and join bars;
+  - sequence diagrams (lifelines, activations, messages in time order).
+- **Where:** the diagram and module descriptions (new versions), and validation's prompt, so
+  that validation measures the guide. The large diagram's synthesis builds on the modules'
+  text, and is left as it is.
+
+**Other cases of what we know and the model doesn't:**
+- **Embedded images:** the request says "nothing says which element owns it or where it
+  appears". The owner, its kind and documentation, would help. Images aren't yet linked to
+  their elements, though: that is the roadmap's "Attachments". Noted there, not done here.
+- **Module sketches:** the faded context and edge tags are explained already.
+
 ## Steps
 
 | Step | What | Status |
@@ -83,6 +119,8 @@ module boundaries", not here.
 | SK-03 | **Labels and association classes:** `AssociationTextBox` and `MessageSignature` as decorations; `LinkAttribute` dashed.<br>**Tests:** neither label is in the legend or drawn; the association class's line is dashed. | Done |
 | SK-04 | **Validation:** connections invented, in the scores, the report and the one-line summary; `validate.sample` with the sample's size as parameters; `scripts/validate_sketches.py` (the sample by key, from a file or chosen; a targeted stratum; results as JSON and Markdown).<br>**Tests:** a reader that adds a connection per sketch is scored for it; the script on the fiction. | Done (fbb5235) |
 | SK-05 | **Before and after,** on the samples and the fiction:<br>- 12 sketches per stratum, and 12 targeted, with 0.13.0 (a worktree at b2037c4) and with the fixes;<br>- for gemma-4, and Qwen3-VL;<br>- in a research note, with the sketches of the six diagrams named above.<br>**Also:** 0.14.0; README; a `--no-llm` tree compared with 0.13.0's, every difference explained (sketches, SVGs, legends without the labels). A few cents. | Measured, then halted for the maintainer (`docs/research/sketch-ambiguities-2026-10-03.md`): containment trees fixed on the way (a508528); members keep their heads, which reads better than one head (94de089); Qwen3-VL reads clean trees top-down. 0.14.0, README and the `--no-llm` comparison wait on the decision |
+| SK-08 | **Reading guides:** the conventions present in a sketch (or in a module's view of it), from its graph; their sentences as fragments of `diagram-description` (v6), `module-description` (v3) and validation's `eye-sketch` (v2).<br>**Tests:** the fixture's conventions found, and its request carries their sentences and no others; the templates pinned anew. | |
+| SK-09 | **The guides measured:** both samples, both models, with the guides against plan SK's sketches without them (no new drawing). Adopted if they help, and not if they cost a measure; in the research note. Then 0.14.0, README and the `--no-llm` comparison (SK-05's rest). | |
 | SK-06 | **The release check's run,** as in the design. | |
 | SK-07 | **The release check's findings:** outcomes, invariants, the reading of twelve descriptions, retrieval against `out/ra/final-llm`; in the research note and here. | |
 
@@ -91,7 +129,8 @@ module boundaries", not here.
 | Checkpoint | Steps | Output |
 |---|---|---|
 | CP1: the fixes | SK-01, SK-02, SK-03 | Sketches with trees, frames under shapes, no label shapes, dashed association-class lines |
-| CP2: measured | SK-04, SK-05 | Validation before and after; 0.14.0 |
+| CP2: measured | SK-04, SK-05 | Validation before and after |
+| CP2b: reading guides | SK-08, SK-09 | Guides in the vision prompts, measured; 0.14.0 |
 | CP3: the release check | SK-06, SK-07 | The LLM tree, retrieval, the reading |
 
 ## When to stop and ask
