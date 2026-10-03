@@ -51,7 +51,7 @@ class Phase:
     def amount(self, n: int) -> str:
         if self.unit == "B":
             return f"{n / 1e6:,.1f} MB"
-        return f"{n:,} {self.unit}{'' if n == 1 else 's'}"
+        return f"{n:,} {self.unit}{'' if n == 1 else 'es' if self.unit.endswith(('ch', 'sh', 's', 'x')) else 's'}"
 
     def status(self) -> str:
         elapsed = time.monotonic() - self.started

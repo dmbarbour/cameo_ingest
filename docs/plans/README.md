@@ -18,7 +18,7 @@ here.
 | [Labels for references outside a project](used-project-labels-2026-10-02.md) | Done (2026-10-02, 0.9.0): raw ids and library fragments in the samples' chunks fell from 17,056 to 3,268; about $1 of LLM requests change at the next live run | The tentative plan for labels from used projects: 12,987 references in the samples read as raw ids or library fragments |
 | [Versions of a model, and removing projects](project-versions-2026-10-03.md) | Done (2026-10-03, 0.10.0): `scan`, `projects`, `groups`, `remove`, `restore`; on the samples it finds the TMT pair and nothing else | The maintainer's sources: 282 Cameo files, many of them versions of one model; list projects, group them by shared element ids, remove what isn't wanted |
 | [Calibrating sketches to the vision model](vision-calibration-2026-10-03.md) | Done 2026-10-03 (0.12.0: gemma-4's figures as the uncalibrated defaults) | The tentative plan for vision calibration by eye chart: sketch constants found by hand for gemma-4 on DeepInfra |
-| [Calibrating to the configured vision model, and validating on real sketches](vision-autocalibration-2026-10-03.md) | Approved 2026-10-03 | Calibration automatic for whichever vision model is configured, with fallbacks rather than gemma-4's values as defaults, and expected quality measured on the tree's own sketches |
+| [Calibrating to the configured vision model, and validating on real sketches](vision-autocalibration-2026-10-03.md) | Done 2026-10-03 (0.13.0) | Calibration automatic for whichever vision model is configured, with fallbacks rather than gemma-4's values as defaults, and expected quality measured on the tree's own sketches |
 
 ## Deferred indefinitely
 

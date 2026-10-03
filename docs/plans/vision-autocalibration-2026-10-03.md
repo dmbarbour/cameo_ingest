@@ -1,6 +1,6 @@
 # Plan: calibrating to the configured vision model, and validating on real sketches, 2026-10-03
 
-- **Status:** Approved on 2026-10-03, with three decisions:
+- **Status:** Done on 2026-10-03 (0.13.0). Approved that day, with three decisions:
   - **Low validation scores:** "warn and carry on";
   - **The second model:** Qwen3-VL, "seems good";
   - **The fallbacks:** "treat the gemma-4 figures as our new uncalibrated defaults for now,
@@ -110,7 +110,7 @@ calibration, and the calibration over the fallbacks:
 | VA-04 | **The image's place:** the both-ways cards, the choice and `image_first` as an option per model, through `EnrichmentSession.ask`.<br>**Tests:** a fake model that reads only with the text first gets text first; ties keep image first. | Done, with a change: the trial comes first (6 cards both ways), and the rest are asked in the chosen order, so that a model that reads poorly with the image first isn't measured that way. `--image-first`/`--image-last` set it by hand |
 | VA-05 | **Validation on real sketches:** the sample, the prompt (outside `CURRENT`), scoring against `DiagramGraph`, `validation.md`, and the summary in `run` and `status`.<br>**Tests:**<br>- a perfect reader scores 100% on the fixture's and the fiction's diagrams;<br>- a reader that drops every third label is reported at about 67%, with the warning. | Done: `validate.py`; `render_png` reports the names it drew, as truth; a tree without diagrams records an empty sample, so that runs don't look again. The fiction (8 sketches, no modules unless its modules are made small) in tests |
 | VA-06 | **Docs and version:** the README's calibration section rewritten around automatic calibration and the tiers; 0.13.0. A `--no-llm` tree is the same as 0.12.0's (`treediff`). | Done: README; 0.13.0; a `--no-llm` tree of the samples and the fiction is the same as 0.12.0's |
-| VA-07 | **Live check, two models:**<br>- gemma-4 at DeepInfra: the eye charts from the store, the validation new;<br>- a model that reads at native resolution, Qwen3-VL at DeepInfra, if offered: a full calibration and validation, which exercises the other branch of the budget rule.<br>**Results:** a research note comparing the two calibrations and their expected quality. A few cents. | |
+| VA-07 | **Live check, two models:**<br>- gemma-4 at DeepInfra: the eye charts from the store, the validation new;<br>- a model that reads at native resolution, Qwen3-VL at DeepInfra, if offered: a full calibration and validation, which exercises the other branch of the budget rule.<br>**Results:** a research note comparing the two calibrations and their expected quality. A few cents. | Done: `docs/research/vision-autocalibration-two-models-2026-10-03.md` |
 
 ## Checkpoints
 
@@ -120,6 +120,27 @@ calibration, and the calibration over the fallbacks:
 | CP2: automatic | VA-03, VA-04 | `run` calibrates the configured model |
 | CP3: validation | VA-05, VA-06 | Expected quality on real sketches; 0.13.0 |
 | CP4: two models | VA-07 | The research note |
+
+## Results (2026-10-03)
+
+The live check (`docs/research/vision-autocalibration-two-models-2026-10-03.md`), on the samples
+and the fiction:
+
+| | gemma-4 | Qwen3-VL (235B) |
+|---|---|---|
+| How it sees | A fixed budget | Native resolution: the budget, a cost, as configured |
+| Calibrated sizes | 13 px text, 10 px heads, 1 px lines, modules of 25: the defaults | 13 px text, 10 px heads, **2 px lines**, **modules of 36** |
+| The image's place | First (no difference) | First (+5 points after the text, within twice the error) |
+| Validation, 12 of the tree's sketches: names, connections, directions | 99%, 73%, 91% | 97%, 82%, 98% |
+
+- **The halting question on image order** didn't arise: gemma-4 reads the same either way.
+- **Most connections missed are in two sketches** whose pictures are ambiguous: a
+  generalization trunk that ends away from its parent, and association classes drawn on their
+  lines. These are follow-ups for the sketches, found by validation on its first real run.
+- **Changed during the check:**
+  - the sample now takes projects in turn within each diagram type (the first took all 12
+    sketches from TMT);
+  - progress says "sketches".
 
 ## When to stop and ask
 

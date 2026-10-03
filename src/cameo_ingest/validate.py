@@ -94,7 +94,8 @@ def _truth(g: DiagramGraph, shapes: dict[int, str], ends: set[int]) -> dict[str,
 
 def sample(state: State, settings: TreeSettings, progress: Progress = QUIET) -> list[Sketch]:
     """Up to PER_STRATUM sketches of each stratum, from up to MAX_PROJECTS of the tree's projects,
-    drawn at `settings`' sizes. Within a stratum, the commonest diagram types come first."""
+    drawn at `settings`' sizes. Within a stratum, the commonest diagram types come first, and
+    within a type, the projects take turns."""
     pixels = settings.image_pixels or IMAGE_PIXELS
     style, modules = SketchStyle(*settings.sketch), settings.modules
     rows = [r for r in state.catalog() if r["status"] != "removed"]
@@ -151,7 +152,7 @@ def sample(state: State, settings: TreeSettings, progress: Progress = QUIET) -> 
     chosen = []
     for stratum in strata(modules[0]):
         by_kind: dict[str, list[Sketch]] = defaultdict(list)
-        for s in pool[stratum]:
+        for s in _alternating(pool[stratum]):
             by_kind[s.kind].append(s)
         queues = [by_kind[k] for k, _ in kinds[stratum].most_common() if by_kind[k]]
         picked: list[Sketch] = []
@@ -163,6 +164,22 @@ def sample(state: State, settings: TreeSettings, progress: Progress = QUIET) -> 
                     queues.remove(q)
         chosen += picked
     return chosen
+
+
+def _alternating(sketches: list[Sketch]) -> list[Sketch]:
+    """The sketches with their projects taken in turn, so that one large project doesn't fill
+    the sample."""
+    by_project: dict[str, list[Sketch]] = defaultdict(list)
+    for s in sketches:
+        by_project[s.project].append(s)
+    queues = list(by_project.values())
+    out = []
+    while queues:
+        for q in list(queues):
+            out.append(q.pop(0))
+            if not q:
+                queues.remove(q)
+    return out
 
 
 def _tokens(text: str) -> list[str]:
