@@ -136,6 +136,56 @@ from 72% found to 46%.
 
 The guide is adopted.
 
+## The release check (SK-06, SK-07)
+
+**The run** (0.14.0):
+- **What:** the samples and the fiction, with gemma-4 at DeepInfra, 8 requests at once,
+  from a copy of plan RA's store.
+- **Calibration:** the run calibrated first, and found today's defaults. Validation warned of
+  medium diagrams (62% of connections found) and modules (80%), as expected.
+- **The build:** 27 projects in 56 min.
+- **Requests:**
+  - 2,451 new, about $1.50 to $2, below the estimate. TMT and TMT-2024x share many identical
+    diagrams, asked once.
+  - 3,656 answers from the store.
+  - None failed. 265 diagrams were too small to describe, as in the last full build.
+- **Invariants:** the tree's hold.
+
+**The reading:** descriptions of the named diagrams and six at random, against
+`out/ra/final-llm` (0.7.2).
+- **Trees, read right:**
+  - "Specialized Animals Inheritance" said "Dog is generalized by House Dog and Wild Dog",
+    backwards; now "Dog is the parent of House Dog and Wild Dog".
+  - "Duration Analysis3" called the six scenarios "generalizations of the Duration Analysis
+    Context"; now the context "serves as a general type" for them.
+- **A sequence diagram:** "FFDS Context Interaction" was two modules, its description in "parts"
+  about "sections". The label boxes no longer count as shapes, so it is one diagram again, and
+  its description follows the messages in order.
+- **The rest:** about the same, with no description worse.
+- **But the reading found a loss.** The 0.7.2 description said the Maintainer sends "Sig
+  StartTheSystem"; the 0.14.0 one, that the Maintainer sends nothing.
+  - "Sig StartTheSystem" is the signature of the message "Start System", shown in its label box.
+  - With label boxes no longer shapes, nothing carried that text any more.
+  - **Fixed in 0.14.1:** a label box's text joins its connection's, where the model's names
+    don't say it already: "Start System (Sig StartTheSystem)", "Start Fire Propagation
+    Modeling(AreaOfInterest)".
+  - The 0.7.2 description had been wrong too: the Operator sends that message, not the
+    Maintainer.
+- **The tree:** rebuilt at 0.14.1 in 5 min, with 22 new requests. FFDS's description now has
+  "the Operator sends Start System (Sig StartTheSystem)".
+
+**Retrieval:** the 210 fictional questions, on `rag/`, as plan RA measured them: e5-large, BM25,
+their fusion, and each reranked by Qwen3-Reranker-0.6B.
+- **The trees:** `out/ra/final-llm` (0.7.2) against `out/sk/llm` (0.14.1). The new tree also
+  holds Kestrel Orchard Irrigation, a fictional project added after plan RA: distractors for
+  these questions.
+- **The result:** no measure moved significantly (paired bootstrap, 4,000 rounds, 95%).
+  - Hit@10 and complete@10 are unchanged for the dense, fused and reranked systems.
+  - MRR@10 moved by at most ±0.007.
+  - e5-large reranked has hit@10 0.97 and MRR@10 0.78 in both.
+- **Why so little:** these questions ask about the models' facts, which the deterministic text
+  carries. Descriptions are a small share of the chunks they compete with.
+
 ## Open
 
 - **Decided:** the trees stay as drawn (B), with reading guides in the prompts.

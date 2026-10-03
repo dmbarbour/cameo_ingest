@@ -19,7 +19,7 @@ here.
 | [Versions of a model, and removing projects](project-versions-2026-10-03.md) | Done (2026-10-03, 0.10.0): `scan`, `projects`, `groups`, `remove`, `restore`; on the samples it finds the TMT pair and nothing else | The maintainer's sources: 282 Cameo files, many of them versions of one model; list projects, group them by shared element ids, remove what isn't wanted |
 | [Calibrating sketches to the vision model](vision-calibration-2026-10-03.md) | Done 2026-10-03 (0.12.0: gemma-4's figures as the uncalibrated defaults) | The tentative plan for vision calibration by eye chart: sketch constants found by hand for gemma-4 on DeepInfra |
 | [Calibrating to the configured vision model, and validating on real sketches](vision-autocalibration-2026-10-03.md) | Done 2026-10-03 (0.13.0) | Calibration automatic for whichever vision model is configured, with fallbacks rather than gemma-4's values as defaults, and expected quality measured on the tree's own sketches |
-| [Sketches that read as drawn, and a release check with the LLM](sketch-ambiguities-2026-10-03.md) | Approved 2026-10-03 | Plan VA's follow-ups: generalization trees, frames over shapes, label shapes and association-class lines that validation found ambiguous; then one LLM run of the samples, with retrieval, before the real corpus |
+| [Sketches that read as drawn, and a release check with the LLM](sketch-ambiguities-2026-10-03.md) | Done 2026-10-03 (0.14.1): trees, frames, labels, reading guides; the release check held retrieval | Plan VA's follow-ups: generalization trees, frames over shapes, label shapes and association-class lines that validation found ambiguous; then one LLM run of the samples, with retrieval, before the real corpus |
 
 ## Deferred indefinitely
 

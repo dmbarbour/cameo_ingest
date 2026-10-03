@@ -1,7 +1,8 @@
 # Plan: sketches that read as drawn, and a release check with the LLM, 2026-10-03
 
 - **Status:** Approved on 2026-10-03 ("Go with 1 then 2"; on the cost of the release check,
-  "NP"). CP1, CP2 and CP2b done (0.14.0); CP3, the release check, next.
+  "NP"). Done on 2026-10-03 (0.14.1): every checkpoint checked. The release check's tree with
+  the LLM is `out/sk/llm`.
   - **The maintainer's decision, 2026-10-03:** "a prompt informs how to read a diagram when we're
     clearly in a position to know. Not only should we do so here, we could also look for other
     cases where our local knowledge of Cameo could help a model process an image."
@@ -121,8 +122,8 @@ ours, so we know what each mark means, and a request can say so.
 | SK-05 | **Before and after,** on the samples and the fiction:<br>- 12 sketches per stratum, and 12 targeted, with 0.13.0 (a worktree at b2037c4) and with the fixes;<br>- for gemma-4, and Qwen3-VL;<br>- in a research note, with the sketches of the six diagrams named above.<br>**Also:** 0.14.0; README; a `--no-llm` tree compared with 0.13.0's, every difference explained (sketches, SVGs, legends without the labels). A few cents. | Done: measured; containment trees fixed (a508528); members keep their heads (94de089); 0.14.0; README; a `--no-llm` tree differs from 0.13.0's only in sketches (764 PNG, 2,478 SVG), the 58 diagram pages and their chunks that listed label shapes, and 4 diagrams no longer split (12 module chunks fewer) |
 | SK-08 | **Reading guides:** the conventions present in a sketch (or in a module's view of it), from its graph; their sentences as fragments of `diagram-description` (v6), `module-description` (v3) and validation's `eye-sketch` (v2).<br>**Tests:** the fixture's conventions found, and its request carries their sentences and no others; the templates pinned anew. | Done |
 | SK-09 | **The guides measured:** both samples, both models, with the guides against plan SK's sketches without them (no new drawing). Adopted if they help, and not if they cost a measure; in the research note. Then 0.14.0, README and the `--no-llm` comparison (SK-05's rest). | Done: with the guides, gemma-4 finds 80% of connections rather than 75% and invents a third fewer; Qwen3-VL 77% rather than 71%. Adopted |
-| SK-06 | **The release check's run,** as in the design. | |
-| SK-07 | **The release check's findings:** outcomes, invariants, the reading of twelve descriptions, retrieval against `out/ra/final-llm`; in the research note and here. | |
+| SK-06 | **The release check's run,** as in the design. | Done: 0.14.0, 56 min, 2,451 new requests (about $1.50 to $2), 3,656 from the store, none failed; rebuilt at 0.14.1 (22 new) |
+| SK-07 | **The release check's findings:** outcomes, invariants, the reading of twelve descriptions, retrieval against `out/ra/final-llm`; in the research note and here. | Done: invariants hold; the reading shows trees and a sequence diagram read better, and found a loss, fixed in 0.14.1 (label boxes' text joins their connections'); retrieval unchanged within the noise (`docs/research/sketch-ambiguities-2026-10-03.md`) |
 
 ## Checkpoints
 
