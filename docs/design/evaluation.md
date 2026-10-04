@@ -72,16 +72,19 @@ the sha256 of the text as sent. Search is exact cosine in numpy.
 ## Comparing two trees
 
 - **Pairing:** the same questions on both trees, paired by question id.
-- **Significance:** a paired bootstrap of 4,000 rounds, 95%. A change is significant when the
-  interval of the mean difference excludes zero. It has been computed ad hoc each time; it isn't
-  in `report.py` (roadmap).
+- **Significance:** a paired bootstrap of 4,000 rounds, 95% (`harness.paired_ci`). A change is
+  significant when the interval of the mean difference excludes zero. `report.compare` pairs two
+  runs' `per_question.jsonl` by system and question; questions asked in one run only are counted
+  and left out. It also names the questions that only one run found in its top 10.
 - **Noise:** with 75 to 88 questions, MRR differences under about 0.07 are noise; 210 questions
   narrow that.
-- **The command for a release check:**
+- **The commands for a release check:** retrieval on the new tree, then the comparison with the
+  reference run, which exits 1 when a measure changed significantly.
 
   ```
   uv run --extra eval python scripts/retrieval_eval.py TREE --env .env --models e5-large-bare \
       --questions out/eval/fiction/questions-ra.jsonl --rag --rerank qwen3-0.6b --out DIR
+  uv run --extra eval python scripts/compare_retrieval.py REF_DIR DIR --out DIR/comparison.md
   ```
 
 ## Findings that shaped the output

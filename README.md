@@ -599,6 +599,7 @@ uv run python scripts/record_llm_fixture.py --env .env   # re-record the LLM rep
 uv run python scripts/make_fictional_projects.py out/eval/fiction   # the fictional projects, and their questions
 uv run --extra eval python scripts/retrieval_eval.py TREE --env .env --questions out/eval/fiction/questions.jsonl --out DIR
                          # retrieval on those questions; the evaluation needs the extra, cameo-ingest[eval]
+uv run --extra eval python scripts/compare_retrieval.py BEFORE AFTER   # two such runs, question by question
 uv run python -m cameo_ingest.treediff BEFORE AFTER   # what a change did to an output tree
 ```
 

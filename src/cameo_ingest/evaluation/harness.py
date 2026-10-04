@@ -159,3 +159,10 @@ def mean_ci(values: list[float], rounds: int = 2000, seed: int = 1) -> tuple[flo
     n = len(values)
     means = sorted(sum(values[rng.randrange(n)] for _ in range(n)) / n for _ in range(rounds))
     return sum(values) / n, means[int(0.025 * rounds)], means[int(0.975 * rounds) - 1]
+
+
+def paired_ci(before: list[float], after: list[float], rounds: int = 4000,
+              seed: int = 1) -> tuple[float, float, float]:
+    """The mean change from `before` to `after`, paired by position, and a 95% bootstrap interval
+    over the pairs. A change is significant when the interval excludes zero."""
+    return mean_ci([b - a for a, b in zip(before, after, strict=True)], rounds, seed)

@@ -101,6 +101,38 @@ def test_search_and_measures():
     assert mean == 0.75 and lo <= mean <= hi
 
 
+def test_runs_compared_question_by_question():
+    """Two runs are paired by question within each system they share; a change is significant
+    only when its interval excludes zero, and the questions found by one run only are named."""
+    pytest.importorskip("numpy")  # the eval extra
+    from cameo_ingest.evaluation.harness import paired_ci
+    from cameo_ingest.evaluation.report import compare, render_comparison
+
+    assert paired_ci([0.5, 1.0], [0.5, 1.0]) == (0.0, 0.0, 0.0)
+    change, lo, _ = paired_ci([0.0] * 30, [1.0] * 30)
+    assert change == 1.0 and lo > 0
+
+    def row(system, q, hit, mrr):
+        return {"system": system, "id": q, "hit@10": hit, "mrr@10": mrr}
+
+    before = [row("bm25", f"q{i}", 0.0, 0.0) for i in range(30)] + [row("old", "q0", 1.0, 1.0)]
+    after = ([row("bm25", f"q{i}", 1.0, 0.5) for i in reversed(range(30))]  # another order
+             + [row("bm25", "extra", 1.0, 1.0), row("new", "q0", 1.0, 1.0)])
+    c = compare(before, after, rounds=500)
+    assert (c.questions, c.only_before, c.only_after) == (30, 0, 1)
+    assert list(c.changes) == ["bm25"]  # only the systems both ran
+    hit, mrr = c.changes["bm25"]  # only the measures the rows have, in MEASURES' order
+    assert (hit.measure, hit.before, hit.after, hit.change) == ("hit@10", 0.0, 1.0, 1.0) and hit.significant
+    assert mrr.change == 0.5 and len(c.significant()) == 2
+    assert c.found["bm25"] == ([], sorted(f"q{i}" for i in range(30)))  # in id order
+    text = render_comparison(c, "ref", "new")
+    assert "30 questions in both (0 asked only before, 1 only after, left out)" in text
+    assert "| hit@10 | 0.000 | 1.000 | +1.000 (+1.000 to +1.000) \\* |" in text
+
+    same = compare(before, before, rounds=500)
+    assert not same.significant() and "**Significant changes:** none." in render_comparison(same, "a", "a")
+
+
 def test_panel_consensus():
     """Two judges' grade where they agree; the tie-breaker's where they don't, or the lower."""
     from cameo_ingest.evaluation.judge import consensus, kappa

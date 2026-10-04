@@ -84,8 +84,6 @@ so that their history can be found. When an item becomes a plan, it moves to `do
 
 ## Retrieval evaluation
 
-- **Paired comparison in code:** the paired bootstrap used for every comparison is computed ad
-  hoc; it belongs in `evaluation/report.py`.
 - **Windows over the pages** (RE-05), and generated and ledger chunks in or out (RE-08): untested.
 - **A stricter judge prompt** (v2), and the Kimi tie-breaker on the plain pools
   (`out/eval/judge-plain2/run.sh`).
