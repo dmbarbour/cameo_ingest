@@ -58,6 +58,44 @@ def large_package_model() -> str:
                          f"<packagedElement xmi:type='uml:Package' xmi:id='bigp' name='Big'>{classes}</packagedElement>")
 
 
+def test_a_section_too_long_for_a_part_is_split_not_cut(tmp_path, fake_chat):
+    """A section longer than a part goes in pieces, each headed by its title and which piece it
+    is; every request fits, and nothing is cut (plan TC-01)."""
+    import sqlite3
+
+    from cameo_ingest.enrich import pieces, repack
+    from cameo_ingest.prompts import PART_CHARS
+
+    text = "Class Unit 7\n" + "\n".join(f"- line {i}: " + "word " * 50 for i in range(200)) + "\n\n" + "x" * 30000
+    split = pieces(text)
+    assert len(split) > 2 and all(len(p) <= PART_CHARS[1] for p in split)
+    assert [p.split("\n", 1)[0] for p in split[:2]] == [f"Class Unit 7 (piece {i} of {len(split)})" for i in (1, 2)]
+    assert "".join(p.split("\n", 1)[1] for p in split).replace("\n", "").replace(" ", "") == \
+        text.split("\n", 1)[1].replace("\n", "").replace(" ", "")  # every character of the text, in order
+    assert pieces("Class Unit 7\nshort") == ["Class Unit 7\nshort"]
+    assert repack(["a", "b"], ["A\nsmall", "B\nsmall"]) == [(["a", "b"], "A\nsmall\n\nB\nsmall")]
+    assert [els for els, _ in repack(["a", "b"], ["A\nsmall", text])] == [["a", "b"]] + [["b"]] * (len(split) - 1)
+
+    long_doc = "The unit shall report its state to the operator console within the stated interval. " * 400
+    model = large_package_model().replace(
+        "<packagedElement xmi:type='uml:Class' xmi:id='big7' name='Unit 7'>",
+        "<packagedElement xmi:type='uml:Class' xmi:id='big7' name='Unit 7'>"
+        f"<ownedComment xmi:type='uml:Comment' xmi:id='bigl' body='{long_doc}'><annotatedElement xmi:idref='big7'/>"
+        "</ownedComment>")
+    src = tmp_path / "drone.mdzip"
+    src.write_bytes(make_mdzip(model))
+    out = tmp_path / "out"
+    assert main([str(src), "-o", str(out), "--text-model", "m", "--no-preflight", "--no-render"]) == 0
+    report = json.loads((out / "run.json").read_text())["llm"]
+    assert "truncated_input" not in report["outcomes"]
+    db = sqlite3.connect(out / ".cache/llm.sqlite")
+    prompts = [r[0] for r in db.execute("SELECT slots FROM requests WHERE template LIKE 'module-summary%'")]
+    sections = [json.loads(x)["SECTIONS"] for x in prompts]
+    assert all(len(x) <= PART_CHARS[1] for x in sections)
+    assert sum("Unit 7 (piece " in x for x in sections) >= 3  # 34,000 characters of documentation
+    assert sum(x.count("operator console") for x in sections) == 40 * 8 + 400  # every sentence, once
+
+
 def test_large_package_parts(tmp_path, fake_chat, monkeypatch):
     """A large package is summarized in parts, then from its parts' summaries, through runs of
     them when there are many; each part's summary is a chunk naming its elements (FU-005,
@@ -333,7 +371,7 @@ def test_replay_recorded_llm(tmp_path, sample):
     assert main([str(src), "-o", str(out), "--no-render", "--text-model", model, "--llm-replay", str(REPLAY)]) == 0
     check_invariants(out)
     report = json.loads((out / "run.json").read_text())["llm"]
-    assert report["incomplete"] == [] and set(report["outcomes"]) - {"truncated_input"} == {"replayed"}
+    assert report["incomplete"] == [] and set(report["outcomes"]) == {"replayed"}  # and nothing cut (plan TC-01)
     gen = [c for c in map(json.loads, (out / "chunks.jsonl").open()) if c["metadata"]["kind"].startswith("generated:")]
     assert gen and all(c["metadata"]["provenance"]["derivation"]["model"] == model for c in gen)
 

@@ -105,6 +105,57 @@ def package_parts(view: ProjectView, sections: list[Element], texts: list[str]) 
     return sequence_partition([len(t) + 1 for t in texts], parents, links, *PART_CHARS)
 
 
+def pieces(text: str, limit: int = PART_CHARS[1]) -> list[str]:
+    """A section's text in pieces of at most `limit` characters, each headed by the section's
+    title (its first line) and which piece it is: cut between lines, or between words in a line
+    longer than a piece. A text that fits is one piece, as it is (plan TC-01)."""
+    if len(text) <= limit:
+        return [text]
+    title, _, rest = text.partition("\n")
+    title = title[:limit // 4]
+    room = limit - len(title) - len(" (piece 999 of 999)") - 1
+    bodies: list[list[str]] = [[]]
+    size = 0
+    for line in rest.split("\n"):
+        while True:
+            take = line
+            if len(line) > room:
+                cut = line.rfind(" ", room // 2, room)
+                take = line[:cut] if cut > 0 else line[:room]
+            if size and size + len(take) + 1 > room:
+                bodies.append([])
+                size = 0
+            bodies[-1].append(take)
+            size += len(take) + 1
+            line = line[len(take):].lstrip(" ")
+            if not line:
+                break
+    n = len(bodies)
+    return [f"{title} (piece {i} of {n})\n" + "\n".join(b) for i, b in enumerate(bodies, 1)]
+
+
+def repack(part: list[Element], texts: list[str], limit: int = PART_CHARS[1]) -> list[tuple[list[Element], str]]:
+    """A part's (elements, text) as requests of at most `limit` characters: as it is when it
+    fits; else its sections, in order, packed into as few as fit, a section too long for one
+    split into pieces (plan TC-01). Nothing is cut."""
+    whole = "\n\n".join(texts)
+    if len(whole) <= limit:
+        return [(part, whole)]
+    out: list[tuple[list[Element], str]] = []
+    els: list[Element] = []
+    body = ""
+    for e, text in zip(part, texts, strict=True):
+        for piece in pieces(text, limit):
+            if body and len(body) + 2 + len(piece) > limit:
+                out.append((els, body))
+                els, body = [], ""
+            if e not in els:
+                els = [*els, e]
+            body = f"{body}\n\n{piece}" if body else piece
+    out.append((els, body))
+    return out
+
+
 class Enricher:
     """A project's LLM requests, and their answers as annotations (the view's, by element) and
     image descriptions (`images`, by archive entry)."""
@@ -192,13 +243,14 @@ class Enricher:
                 self._first.append(Request(an.SUMMARY, pkg_id, tr, partial(
                     ask, CURRENT["instances-summary"], v.values, notes=v.notes)))
                 continue
-            parts = [[sections[i] for i in g] for g in package_parts(view, sections, texts)]
+            requests = [r for g in package_parts(view, sections, texts)
+                        for r in repack([sections[i] for i in g], [texts[i] for i in g])]
+            parts = [els for els, _ in requests]
             view.set_parts(pkg_id, [[e.id for e in part] for part in parts])
             self._large_packages.append((pkg_id, tr, parts, own))
-            for k, part in enumerate(parts, 1):
-                v = pv.module_summary(ix.qualified_name(pkg_id), k, len(parts),
-                                      "\n\n".join(texts[sections.index(e)] for e in part))
-                if v.cut:  # a single section over the limit
+            for k, (_, body) in enumerate(requests, 1):
+                v = pv.module_summary(ix.qualified_name(pkg_id), k, len(requests), body)
+                if v.cut:  # repack keeps parts within the limit: this would be a fault
                     self.truncated += 1
                     llm.truncated(tr.locator(), v.cut)
                 self._first.append(Request(an.PART, pkg_id, tr, partial(

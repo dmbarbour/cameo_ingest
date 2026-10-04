@@ -51,32 +51,8 @@ so that their history can be found. When an item becomes a plan, it moves to `do
 
   Sequence diagrams also confuse validation and descriptions: messages join activations, while
   models name lifelines. Their lifelines, lines and activations repeat one name.
-- **Calibrating the text model's reading, and cutting its inputs ourselves** (the maintainer,
-  2026-10-04).
-  - **Today:** a large package is summarized in parts of 3,000 to 12,000 characters
-    (`PART_CHARS`, `SUMMARY_CHARS`). These are constants, measured for gemma-4
-    (`docs/research/sandwiching-2026-09-30.md`):
-    - at 12,000 characters (about 3,000 tokens) it reads an input's start, middle and end evenly
-      (87%, 86% and 86% of names mentioned);
-    - in one request of over 100,000 characters it loses the middle (13% from the middle third,
-      against 21% in parts).
-
-    Where in between its reading starts to sag wasn't measured, and another text model may do
-    better or worse.
-  - **Calibrate,** as the vision model is (ADR-0015):
-    - synthetic inputs of rising length, with invented facts planted at known places, as in the
-      fictional projects;
-    - the model reports what it finds, and each length is scored by where the facts sat;
-    - the longest input still read evenly sets the part size, recorded per text model and
-      endpoint, beside the vision calibration.
-  - **Cut inputs ourselves, never truncate:** a single section larger than a part is cut today at
-    12,000 characters, and the rest is lost. In the 0.15.2 release check, 10 package parts were
-    cut, from sections of 12,004 to 24,449 characters. Such a section should be split into pieces
-    that each repeat its heading, as `rag/` files are, and summarized like any other part.
-  - **Other cut points** could follow the same measure: `DIAGRAM_ITEMS` (150 shapes and
-    connections listed per request) and `DIGEST_CHARS`.
-  - **Not affected:** the RAG files are already cut to fit a 512-token embedding window (since
-    0.5.0); what remains there depends on the RAG stack's model and chunker (RE-09).
+- **Calibrating the text model's reading, and cutting its inputs ourselves:** now plan TC
+  (`docs/plans/text-calibration-2026-10-04.md`).
 - **Keyword search from the command line,** for when Python can run where the corpus is read.
 
 ## Sketches and the vision model

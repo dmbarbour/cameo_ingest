@@ -42,8 +42,11 @@ Named constants in `prompts.py`, interpolated into the slot descriptions:
 | `DIGEST_CHARS` | (8,000, 4,000) | The instance digest, and the package's other sections |
 | `enrich.INSTANCE_SHARE` | 0.8 | The share of instance specifications that calls for a digest |
 
-A single section over 12,000 characters is still cut. The roadmap proposes calibrating these sizes
-to the text model, and splitting such a section instead of cutting it.
+Nothing is cut to fit a part (plan TC-01, 0.15.3). A part over 12,000 characters is repacked
+(`enrich.repack`): its sections, in order, in as few requests as fit. A section longer than a part
+goes in pieces (`enrich.pieces`), cut between lines (or words), each headed by its title and
+"(piece i of n)", each a part of its own. Plan TC proposes calibrating the part size to the
+configured text model.
 
 ## How prompts are written
 
