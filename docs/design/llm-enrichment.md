@@ -42,7 +42,8 @@ Named constants in `prompts.py`, interpolated into the slot descriptions:
 | `DIGEST_CHARS` | (8,000, 4,000) | The instance digest, and the package's other sections |
 | `enrich.INSTANCE_SHARE` | 0.8 | The share of instance specifications that calls for a digest |
 
-A single section over 12,000 characters is still cut (roadmap).
+A single section over 12,000 characters is still cut. The roadmap proposes calibrating these sizes
+to the text model, and splitting such a section instead of cutting it.
 
 ## How prompts are written
 
