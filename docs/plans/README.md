@@ -9,7 +9,7 @@ plan yet is in `docs/roadmap.md`. When a plan is done, its content goes to `docs
 
 | Plan | Prefix | Status |
 |---|---|---|
-| [Inputs cut by us, and calibrating to the configured text model](text-calibration-2026-10-04.md) | TC | CP1 done (0.15.3); CP2 in progress |
+| [Inputs cut by us, and calibrating to the configured text model](text-calibration-2026-10-04.md) | TC | CP1 done (0.15.3); CP2 measured, waiting on the maintainer |
 
 ## Archived
 

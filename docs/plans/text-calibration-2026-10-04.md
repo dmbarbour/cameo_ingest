@@ -1,6 +1,6 @@
 # Plan: inputs cut by us, and calibrating to the configured text model, 2026-10-04
 
-- **Status:** Active. CP1 done (0.15.3); CP2 in progress.
+- **Status:** Active. CP1 done (0.15.3); CP2 measured, stopped for the maintainer's review.
 - **Step prefix:** `TC`, so steps are `TC-01`, `TC-02` and so on.
 - **Addresses:** the maintainer, 2026-10-04, on the roadmap's chunk splitting:
 
@@ -38,9 +38,9 @@ Between the two, nothing was measured.
 |---|---|---|
 | TC-01 | **Split, don't cut:** `enrich.repack` keeps a part that fits as it is. Otherwise it packs the part's sections, in order, into as few requests as fit. A section too long for one request goes in pieces (`enrich.pieces`), cut between lines, or between words in a longer line. Each piece is headed by the section's title and "(piece i of n)", and each request is a part of its own. The page lists each part's elements, so a split section appears in several parts.<br>**Tests:**<br>- every character of the section, in order, within the limit;<br>- a run with a 34,000-character section: no `truncated_input`, every sentence sent once;<br>- the replay fixture recorded again, now with nothing cut. | Done (0.15.3) |
 | TC-02 | **The release check:** the whole tree rebuilt from 0.15.2's store; the requests that change; the invariants; retrieval compared (`scripts/compare_retrieval.py`). Version 0.15.3. | Done: 546 new requests (517 parts, renumbered where a section was split, 16 of them pieces; 29 syntheses), none failed, none cut; the invariants hold; retrieval identical to 0.15.2's for every system |
-| TC-03 | **Reading cards,** in `textcal.py`, the counterpart of `eyechart.py`:<br>- synthetic package text in the format of real parts (`Section.text`): invented blocks, requirements and activities, with documentation, attributes and relationships;<br>- every name and figure invented and unique, so that a mention is an exact match, as in the fictional projects;<br>- lengths of 6,000, 12,000, 24,000, 48,000 and 96,000 characters;<br>- six cards per length, from fixed seeds.<br>**Two probes on each card:**<br>- **summary:** the real `module-summary` template, scored by the names it mentions in each fifth of the input;<br>- **facts:** five questions about facts planted in different fifths, in a calibration-only template, scored right or wrong.<br>**Tests:** the cards are deterministic, and the scoring is exact on canned answers. | |
-| TC-04 | **The measurement,** with gemma-4 and DeepSeek-V3.2, both on DeepInfra: about 60 requests a probe, roughly 280,000 input tokens a model. A research note: by length, the share of names from each fifth, facts found by position, and how the two probes agree. | |
-| TC-05 | **The rule,** drafted from TC-04: the longest length still read evenly, with a margin such as plan VA's `FLAT`, and which probe decides. | |
+| TC-03 | **Reading cards,** in `textcal.py`, the counterpart of `eyechart.py`:<br>- synthetic package text in the format of real parts (`Section.text`): invented blocks, requirements and activities, with documentation, attributes and relationships;<br>- every name and figure invented and unique, so that a mention is an exact match, as in the fictional projects;<br>- lengths of 6,000, 12,000, 24,000, 48,000 and 96,000 characters;<br>- six cards per length, from fixed seeds.<br>**Two probes on each card:**<br>- **summary:** the real `module-summary` template, scored by the names it mentions in each fifth of the input;<br>- **facts:** five questions about facts planted in different fifths, in a calibration-only template, scored right or wrong.<br>**Tests:** the cards are deterministic, and the scoring is exact on canned answers. | Done, revised once: the first cards' elements were all alike, and a right summary of them names examples from the start. Cards now hold five groups, each with a hub of its own purpose, one a fifth; scored by groups covered. 8 cards a length, up to 192,000 characters |
+| TC-04 | **The measurement,** with gemma-4 and DeepSeek-V3.2, both on DeepInfra: about 60 requests a probe, roughly 280,000 input tokens a model. A research note: by length, the share of names from each fifth, facts found by position, and how the two probes agree. | Done: `docs/research/text-reading-2026-10-04.md`. Neither model loses its place on these cards up to 192,000 characters, and the probes agree; but the cards are easier than real packages, which lost their middle above 100,000 in one request |
+| TC-05 | **The rule,** drafted from TC-04: the longest length still read evenly, with a margin such as plan VA's `FLAT`, and which probe decides. | Waiting on the maintainer: the measure can't set a larger part size for strong models (it saturates), only guard against weak ones |
 
 ## Checkpoints
 
@@ -62,6 +62,17 @@ Between the two, nothing was measured.
 - **The pieces read well:** the drone's "Perform Delivery Operations", in two pieces, is
   summarized from both. One answer of 16 repeats the marker "(piece 2 of 2)" as if it were part of
   a name. Rewording the marker would change those requests again; noted, not changed.
+
+**CP2 (2026-10-04):** `docs/research/text-reading-2026-10-04.md`.
+- **On the reading cards,** gemma-4 and DeepSeek-V3.2 cover every group, and find almost every
+  planted figure, at every length up to 192,000 characters: 16 times today's part.
+- **The cards are easier than real packages.** In real packages of over 100,000 characters,
+  gemma-4 lost the middle in one request (the sandwiching study). Real packages are long
+  unmarked lists, and the failure is in choosing what matters, which these cards don't test.
+- **So the measure saturates for strong models.** It can't say how large their parts may grow.
+  It can catch a model that reads worse, or a context window or endpoint that cuts inputs.
+- **The part size is also a choice about the summaries.** At 12,000 characters gemma-4's part
+  summaries name 94% of the elements; at 48,000, 15%.
 
 ## When to stop and ask
 

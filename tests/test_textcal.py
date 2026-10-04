@@ -8,17 +8,19 @@ from cameo_ingest import textcal as tc
 def test_cards_are_fixed_and_fit():
     for n in tc.LENGTHS:
         c = tc.card(n, 0)
-        assert n - 600 < len(c.text) <= n and c.text == tc.card(n, 0).text  # the same seed, the same card
+        assert 0.85 * n < len(c.text) <= n and c.text == tc.card(n, 0).text  # the same seed, the same card
         per_fifth = [sum(e.fifth == f for e in c.elements) for f in range(tc.FIFTHS)]
         assert max(per_fifth) - min(per_fifth) <= 2, per_fifth  # elements spread evenly
         words = [e.word for e in c.elements]
         assert len(set(words)) == len(words)
         figures = [e.fact[1] for e in c.elements if e.fact]
         assert len({f.split()[0] for f in figures}) == len(figures)  # each figure once
-        for i, e in enumerate(c.elements):  # an element is named where it sits, and by its neighbours only
+        assert [e.fifth for e in c.elements if e.theme] == list(range(tc.FIFTHS))  # a group's hub in each fifth
+        for i, e in enumerate(c.elements):  # an element is named only in its own group: where it sits
             assert c.text.index(e.text) == e.start
-            naming = [j for j, o in enumerate(c.elements) if re.search(rf"\b{e.word}\b", o.text)]
-            assert naming[0] == i and naming[-1] - i <= 2, (e.name, naming)
+            naming = [o for o in c.elements if re.search(rf"\b{e.word}\b", o.text)]
+            assert {o.fifth for o in naming} <= {e.fifth - 1, e.fifth, e.fifth + 1}, e.name
+            assert e.theme or len(naming) <= 3, (e.name, [o.name for o in naming])
     assert tc.card(12_000, 0).text != tc.card(12_000, 1).text
 
 
@@ -31,17 +33,22 @@ def test_scoring_is_exact():
     wrong = replies.replace(f"Q1: {asked[0].fact[1]}", "Q1: not stated")
     assert sum(tc.score_facts(c, wrong)["right"]) == 4 and tc.score_facts(c, None)["right"] == [0] * 5
     first, last = c.elements[0], c.elements[-1]
-    s = tc.score_summary(c, f"The part models the {first.name.lower()} and the {last.word} array.")
-    assert s["named"][0] == 1 and s["named"][-1] == 1 and sum(s["named"]) == 2
-    assert sum(s["present"]) == len(c.elements)
+    hubs = [e for e in c.elements if e.theme]
+    s = tc.score_summary(c, f"The part models the {first.name.lower()} and the {last.word} array, the "
+                            f"{hubs[1].name}, and a unit that handles {hubs[3].theme}.")
+    assert s["named"][0] >= 1 and s["named"][-1] >= 1 and sum(s["present"]) == len(c.elements)
+    assert s["groups"] == [1] * 5 and s["covered"][1] == s["covered"][3] == 1  # by name, or by purpose
+    assert s["covered"][2] == 0
     values = tc.summary_values(c)
     assert values["SECTIONS"] == c.text and "{{" not in tc.FACTS.render(tc.facts_values(c))
 
 
 def test_summary_by_length():
-    results = [{"length": 6_000, "asked": True, "probe": "summary", "named": [2, 1, 1, 1, 2], "present": [4] * 5},
+    results = [{"length": 6_000, "asked": True, "probe": "summary", "covered": [2, 1, 1, 1, 2], "groups": [2] * 5,
+                "named": [2, 1, 1, 1, 2], "present": [4] * 5},
                {"length": 6_000, "asked": True, "probe": "facts", "right": [1, 1, 0, 1, 1], "posed": [1] * 5},
                {"length": 6_000, "asked": False, "probe": "facts", "right": [0] * 5, "posed": [1] * 5}]
     [s] = tc.summarize(results)
-    assert s["named"] == [0.5, 0.25, 0.25, 0.25, 0.5] and s["middle_over_ends"] == 0.5
+    assert s["covered"] == [1, 0.5, 0.5, 0.5, 1] and s["middle_over_ends"] == 0.5
+    assert s["named"] == [0.5, 0.25, 0.25, 0.25, 0.5]
     assert s["right"] == [1, 1, 0, 1, 1] and s["right_all"] == 0.8  # a card not asked isn't scored

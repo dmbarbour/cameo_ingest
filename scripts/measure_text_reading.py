@@ -54,11 +54,12 @@ def main() -> None:
                                                        "by_length": summary}, indent=1), encoding="utf-8")
     print(f"{args.model}: {sum(r['asked'] for r in results)} of {len(results)} requests answered, "
           f"{llm.calls} sent")
-    print("length  cards | named by fifth                  all   mid/ends | right by fifth                  all")
+    print("length  cards | groups covered by fifth         all   mid/ends | named | facts right by fifth            all")
     for s in summary:
         mid = s["middle_over_ends"]
-        print(f"{s['length']:6}  {s['cards']:5} | {fifths(s['named'])}  {s['named_all']:4.2f}  "
-              f"{'  -  ' if mid is None else f'{mid:5.2f}'}    | {fifths(s['right'])}  {s['right_all']:4.2f}")
+        print(f"{s['length']:6}  {s['cards']:5} | {fifths(s['covered'])}  {s['covered_all']:4.2f}  "
+              f"{'  -  ' if mid is None else f'{mid:5.2f}'}    | {s['named_all']:5.2f} | "
+              f"{fifths(s['right'])}  {s['right_all']:4.2f}")
 
 
 if __name__ == "__main__":
