@@ -1,6 +1,6 @@
 # Review: architecture, 2026-10-01
 
-- **Status:** Open. Stage 1 of the remediation order is done (2026-10-02); stages 2 to 4 are plan RA (`docs/plans/refactoring-2026-10-02.md`).
+- **Status:** Closed on 2026-10-02: every finding fixed. Stage 1 of the remediation order was done in the review itself; stages 2 to 4 by plan RA (`docs/archive/plans/refactoring-2026-10-02.md`). AR-002's escapes in LLM legends remain (`docs/roadmap.md`). Retired to the archive on 2026-10-03.
 - **Finding prefix:** `AR`
 - **Subject:** cameo-ingest at commit `949030f` (version 0.5.2), after the follow-up review
   (`followup-2026-09-30.md`, closed) and plans DV, RE and RF. That is about 13,200 lines: the

@@ -1,7 +1,7 @@
 # Retrieval baseline, before judging
 
 - **Date:** 2026-10-01
-- **For:** plan steps RE-05 and RE-07 in `docs/plans/retrieval-evaluation-2026-09-30.md`
+- **For:** plan steps RE-05 and RE-07 in `docs/archive/plans/retrieval-evaluation-2026-09-30.md`
 - **Status:** preliminary, and superseded by the judged grades in
   `docs/research/chunk-styles-2026-10-01.md`, which also tests the changes suggested at the end.
   - **The synthetic questions are graded fully:** their answers are known by construction.

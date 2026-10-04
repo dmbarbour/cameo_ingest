@@ -4,7 +4,7 @@
   answers are under Decisions.
 - **Step prefix:** `RI`, so steps are `RI-01`, `RI-02` and so on
 - **Addresses:** BASE-008R1, BASE-016R2, BASE-017R1 and BASE-021R1 in
-  `docs/reviews/baseline-2026-09-29.md`
+  `docs/archive/reviews/baseline-2026-09-29.md`
 - **Starting point:** commit `53cebf7`
 
 ## Goals

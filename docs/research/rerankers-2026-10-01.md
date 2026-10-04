@@ -1,7 +1,7 @@
 # Rerankers, on the fictional questions
 
 - **Date:** 2026-10-01
-- **For:** plan RF, step RF-02 (`docs/plans/related-facts-2026-10-01.md`)
+- **For:** plan RF, step RF-02 (`docs/archive/plans/related-facts-2026-10-01.md`)
 - **Question:** how much does a reranker add to keyword search, to vector search and to hybrids,
   and how deep should it look?
 - **Answer:**

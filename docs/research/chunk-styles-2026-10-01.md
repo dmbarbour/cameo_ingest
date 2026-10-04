@@ -1,7 +1,7 @@
 # Chunk styles compared, on judged grades
 
 - **Date:** 2026-10-01
-- **For:** plan steps RE-06 to RE-09 in `docs/plans/retrieval-evaluation-2026-09-30.md`. It follows
+- **For:** plan steps RE-06 to RE-09 in `docs/archive/plans/retrieval-evaluation-2026-09-30.md`. It follows
   `retrieval-baseline-2026-10-01.md`, whose numbers credited only the known answers.
 - **Question:** do the chunks find answers better as plain text (`--chunk-style plain`) than
   as the Markdown of the pages, and in what form?

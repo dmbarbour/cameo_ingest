@@ -1,7 +1,7 @@
 # Related facts brought together: an index across models, and threads
 
 - **Date:** 2026-10-01
-- **For:** plan RF, steps RF-03 to RF-06 (`docs/plans/related-facts-2026-10-01.md`)
+- **For:** plan RF, steps RF-03 to RF-06 (`docs/archive/plans/related-facts-2026-10-01.md`)
 - **Question:** do assembled chunks help find answers spread over several places?
   - **The index:** for each identifier, every place in every model that holds it.
   - **Threads:** for each derivation tree, its requirements with what satisfies and verifies

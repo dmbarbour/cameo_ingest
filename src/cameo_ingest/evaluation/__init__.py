@@ -1,4 +1,4 @@
-"""Retrieval evaluation of an output tree (plan RE, `docs/plans/retrieval-evaluation-2026-09-30.md`).
+"""Retrieval evaluation of an output tree (plan RE, `docs/archive/plans/retrieval-evaluation-2026-09-30.md`).
 
 Not needed for ingesting: its heavier dependencies (numpy, tokenizers) are the `eval` extra,
 installed with `pip install "cameo-ingest[eval]"`, or `uv sync --extra eval` in a checkout. Grading

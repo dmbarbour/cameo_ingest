@@ -166,7 +166,7 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--image-last", dest="image_first", action="store_const", const=False,
                    help="put the image after the text in requests to the vision model")
     flag_pair(g, "calibrate", "calibrate the sketches to the vision model before building, when the tree has no "
-              "calibration for it: about 80 requests, once per model (see README, Calibrating sketches to the vision "
+              "calibration for it: about 90 requests, once per model (see README, Calibrating sketches to the vision "
               "model)", "draw sketches to the uncalibrated defaults", default=True)
     flag_pair(g, "rag-files", "write rag/: every chunk as a .txt file, ending with its source and trace, for RAG "
               "tools that read files but not JSONL", "do not write rag/ (chunks.jsonl has the same chunks)",
@@ -248,7 +248,7 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--suite", choices=("quick", "standard"), default="standard",
                    help="quick: 11 eye charts, to check a model; standard: 80, and a trial of the image's place, to "
                         "calibrate it (the default)")
-    q = sub.add_parser("quality", help="measure the quality of LLM enrichment (see docs/plans/llm-quality-*.md)")
+    q = sub.add_parser("quality", help="measure the quality of LLM enrichment (see docs/design/llm-enrichment.md)")
     qs = q.add_subparsers(dest="action", required=True, metavar="ACTION")
     qsample = qs.add_parser("sample", parents=[common], help="draw a spot-check set of requests and answers")
     qsample.add_argument("--n", type=int, default=30, help="items to draw (default 30)")

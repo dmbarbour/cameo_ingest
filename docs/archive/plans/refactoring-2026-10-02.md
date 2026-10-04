@@ -9,7 +9,7 @@
   - The new summaries were adopted after a reading.
   - `out/ra/final-llm` is the reference tree with the LLM, at 0.7.2.
 - **Step prefix:** `RA`, so steps are `RA-01`, `RA-02` and so on
-- **Addresses:** the architecture review (`docs/reviews/architecture-2026-10-01.md`), stages 2
+- **Addresses:** the architecture review (`docs/archive/reviews/architecture-2026-10-01.md`), stages 2
   to 4 of its remediation order, with the maintainer's four decisions. Stage 1 (bugs and the
   validity of the evaluation) is done in the review itself: AR-001, AR-002, AR-003R1, AR-005R1
   and R2, AR-006, AR-012R2's label fix and AR-016R2.

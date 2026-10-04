@@ -1,7 +1,7 @@
 # Fictional projects: what they found, and retrieval graded by construction
 
 - **Date:** 2026-10-01
-- **For:** plan step RE-10 (decision 13) in `docs/plans/retrieval-evaluation-2026-09-30.md`
+- **For:** plan step RE-10 (decision 13) in `docs/archive/plans/retrieval-evaluation-2026-09-30.md`
 - **What:** four invented Cameo projects, of rising size and difficulty, with 178 questions
   whose answers are known by construction. They serve as test inputs that are ours to share,
   and as a gold standard for retrieval that needs no judges and no spot checks.

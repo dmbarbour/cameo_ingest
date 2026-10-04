@@ -1,4 +1,4 @@
-"""Measuring the quality of LLM enrichment (plan docs/plans/llm-quality-2026-09-30.md).
+"""Measuring the quality of LLM enrichment (plan docs/archive/plans/llm-quality-2026-09-30.md).
 
 `sample` draws a spot-check set from an output tree: its generated chunks, joined with the
 request log in llm.sqlite, so that each item shows exactly what the model was asked and what

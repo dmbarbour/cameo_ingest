@@ -9,7 +9,7 @@
 - **Addresses:** the "Retrieval evaluation" tentative plan in `docs/plans/README.md`, and the
   advice in the README's "Using the output for RAG", which is untested. It also informs the
   tentative plan for splitting chunks. The judging here overlaps with the deferred judge panel
-  of `docs/plans/llm-quality-2026-09-30.md` (LQ-04 to LQ-06), so the two should share it.
+  of `docs/archive/plans/llm-quality-2026-09-30.md` (LQ-04 to LQ-06), so the two should share it.
 
 ## Goals
 

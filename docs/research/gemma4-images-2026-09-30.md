@@ -1,6 +1,8 @@
 # How gemma-4 sees images
 
 - **Date:** 2026-09-30
+- **Origin:** written for the maintainer's `semantic_pdf_diff`, and copied here for FU-015. Its links to
+  round 1 and the lever index point into that project.
 - **Asked by:** the owner: "can you study gemma-4's image processing? I think it's a bit more sophisticated than a fixed budget, something about patches and spooling."
 - **Method:**
   - Primary sources, read by a research agent: the [tech report](https://arxiv.org/html/2607.02770v1), the [model card](https://ai.google.dev/gemma/docs/core/model_card_4), the Hugging Face processor code ([image_processing_gemma4.py](https://github.com/huggingface/transformers/blob/main/src/transformers/models/gemma4/image_processing_gemma4.py), [modeling_gemma4.py](https://github.com/huggingface/transformers/blob/main/src/transformers/models/gemma4/modeling_gemma4.py)), the [vLLM recipe](https://docs.vllm.ai/projects/recipes/en/stable/Google/Gemma4.html), [DeepInfra's vision docs](https://docs.deepinfra.com/chat/vision).

@@ -1,0 +1,33 @@
+# ADR-0007: `rag/` files sized to one window, with sources by label
+
+- **Status:** Accepted, 2026-10-01 (RE-11, RF-01).
+- **Sources:**
+  - plan RE's decision 14 (`docs/archive/plans/retrieval-evaluation-2026-09-30.md`);
+  - plan RF's RF-01 and the maintainer's answers;
+  - `docs/research/chunk-styles-2026-10-01.md`.
+
+## Context
+
+- **The maintainer's RAG stack** reads only `.md`, `.txt`, `.pdf`, `.docx`, `.pptx` and `.json`
+  files, not JSONL, so provenance must travel in the text.
+- **It cuts text into 512-token windows** with some overlap.
+- **The tracing that matters** is from whatever the RAG returns back to the source file:
+  "requirements to source files".
+
+## Decision
+
+- **One file per chunk:** `rag/text/<project>/<sha256 of the text>.txt`, ending with a source
+  line, and `rag/meta/<project>/<sha256>.json` beside it.
+- **Sized to one window:** a file fits one 512-token window (`plain.WINDOW`, with 100 tokens kept
+  for the source line), by an estimate fitted to e5's tokenizer.
+- **The source line:** `--rag-source trace` (the default) gives the project and trace locator;
+  `id` gives short ids that `rag/meta/_sources.json` resolves to files.
+- **No paths or file names in chunk text** (ADR-0003). `rag/meta` carries `source_id`,
+  `source_file` and `source_files`.
+- **The output tree** comes from `-o`, or else `CAMEO_INGEST_DEST`.
+
+## Consequences
+
+- **Fit:** 3 of 43,552 files in `rag/` exceed 512 tokens, against 9% of chunks before.
+- **Retrieval:** MRR changed by −0.02 to +0.02, within noise.
+- **Smaller limits:** a model with a smaller limit (MiniLM's 256) sees only the start of each file.

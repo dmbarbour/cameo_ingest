@@ -138,12 +138,13 @@ connections rather than 75%, and invented a third fewer
 
 ### Large diagrams and packages
 
-A diagram with more than 25 shapes is too large to read in one image at that budget. It is
-split into modules of 6 to 25 shapes that are connected and drawn close together
-(`docs/research/diagram-partitioning-2026-09-30.md`). Each module is drawn and described on
-its own, and the diagram is then described as a whole from those descriptions.
-`--diagram-modules N:MIN:MAX` (default `25:6:25`; `N` = 0 never splits) changes the
-thresholds; it is there for tuning, and the default should serve.
+A diagram with more shapes than the vision model reads well in one image is split into
+modules that are connected and drawn close together
+(`docs/research/diagram-partitioning-2026-09-30.md`). Uncalibrated, that is more than 25
+shapes, into modules of 6 to 25; calibration sets the size for the model (below). Each module
+is drawn and described on its own, and the diagram is then described as a whole from those
+descriptions. `--diagram-modules N:MIN:MAX` (`N` = 0 never splits) sets the thresholds
+explicitly; it is there for tuning, and the calibrated sizes should serve.
 
 A package whose text is over 12,000 characters is summarized in parts of 3,000 to 12,000
 characters, grouped by nesting, relationships and order. The package is then summarized from
@@ -444,7 +445,7 @@ Suggestions, roughly in order of value, measured on the samples where the number
 A folder of models collected over time holds several versions of the same model, under the same
 name or another, and copies of each. Copies cost nothing, since a project is known by its
 content and processed once. Versions are told apart by the tree's tools, and you choose which to
-keep (plan PV, `docs/plans/project-versions-2026-10-03.md`):
+keep (plan PV, `docs/archive/plans/project-versions-2026-10-03.md`):
 
 ```sh
 cameo-ingest add -o OUT path/to/models      # the task list
@@ -473,7 +474,7 @@ cameo-ingest run -o OUT                     # build what remains
 
 `cameo-ingest export` writes the tree's models as a file that people search with ordinary
 office tools, without Python, a database or the tree itself (plan KX,
-`docs/plans/keyword-export-2026-10-02.md`). The RAG finds things by meaning. Keyword search is
+`docs/archive/plans/keyword-export-2026-10-02.md`). The RAG finds things by meaning. Keyword search is
 better at ids and names: embeddings almost never find a requirement by its id, and keyword
 search does nine times in ten (`docs/research/retrieval-baseline-2026-10-01.md`).
 
@@ -533,6 +534,10 @@ links, and search all of them, for those who have the tree and one of these tool
 | `files` | Each written project's files with their sha256. |
 | `runs` | Each run: times, command, outcome (`finished`, `interrupted`, `failed`), LLM report (JSON). |
 | `settings` | The tree's remembered run settings. |
+| `fingerprints` | Each project's save time, project id, exporter and element ids, which tell versions apart. |
+| `removed` | Projects removed from the tree. |
+| `calibrations` | Each vision model's calibration and validation. |
+| `meta` | The schema version. |
 
 Views: `current_sightings` (sightings in the current version of each input, with its path,
 status and metadata) and `project_status` (every content, its output status and how often it
@@ -547,69 +552,38 @@ SELECT started, outcome, json_extract(llm, '$.calls') FROM runs ORDER BY started
 
 ## Design
 
-```
-runner: inputs ─► archive.discover ─► state (contents, sightings) ─► per project, in by-sha256/.work/:
-                  (find projects,      xmi.parse_into / finalize ─► layout ─► diagrams.render_png ─►
-                   hash each)          llm (optional, concurrent) ─► emit.ProjectWriter ─► publish ─► exports
-```
+The documents for whoever maintains the tool are in `docs/` (`docs/README.md`):
+- **How it works:** `docs/design/`, starting with `architecture.md` (the pipeline, the modules,
+  state and publishing, security).
+- **Why:** the architecture decision records in `docs/decisions/`. Among them: XMI read by its
+  conventions alone, so that new Cameo versions and custom profiles need no code (ADR-0001);
+  deterministic text as the authority, with LLM text labelled as such (ADR-0005); and sketches
+  redrawn for the vision model and calibrated to it (ADR-0012, ADR-0015).
+- **Evidence:** dated measurements in `docs/research/`.
 
-- **Schema-agnostic XMI reading** (`xmi.py`). The parser relies only on XMI conventions:
-  - a node with `xmi:id` is an element;
-  - a node with `xmi:idref` or `href` is a reference;
-  - a top-level node with a `base_*` attribute is a stereotype application.
-
-  Attributes whose values are known ids become references in a second pass. As a result,
-  metamodel changes between Cameo versions and custom profiles (such as TMT_Requirement,
-  ReqIF or UAF) need no code changes. The parse is streaming (`iterparse`), so memory stays
-  bounded: TMT (27 MB zipped, 71k elements) peaks at about 400 MB RSS and parses in about 3 s.
-- **UML/SysML interpretation** (`semantics.py`) is a best-effort layer on top: documentation
-  comments, multiplicities, value specifications, relationship ends, and requirement
-  detection by stereotype name or `Id`/`Text` tags.
-- **Rich text.** Cameo stores documentation, requirement text and string tags as HTML;
-  `richtext.py` converts it to plain text.
-- **Diagrams** (`diagram_graph.py`, `diagram_text.py`, `sketch.py`). Layout streams hold
-  presentation elements with an `elementID`, absolute `geometry` and link ends. They produce a
-  deterministic node and edge list, which is the authoritative description. They also produce
-  a PNG sketch that a vision model describes, with the node and edge list as context, so a
-  weak model has less room to hallucinate.
-- **Modules and parts** (`partition.py`). Large diagrams are split by Louvain community
-  detection (`networkx`) on their connections, weighted by how close the shapes are drawn.
-  Large packages are split the same way, with document order in place of geometry and
-  sizes in characters. LLM requests run in rounds: modules and parts first, then the
-  descriptions and summaries built from their answers.
-- **State and publishing** (`state.py`, `runner.py`, `exports.py`). A project is built in a
-  work directory and published by one rename plus one database transaction, so a project
-  directory is always complete, and files a new version no longer produces disappear with
-  the old directory. The root files are rebuilt from the database after every run.
-- **Security.** Nothing is extracted to disk from archives. A zip-bomb budget applies (10 GB
-  decompressed per input, and a 1000:1 ratio for large members). XML parsing has entity
-  resolution and network access disabled. Encrypted ZIPs are rejected with an error.
-
-## Known limitations and roadmap
+## Known limitations
 
 - **Tables and matrices.** Their rows are computed by Cameo and aren't stored in the file,
-  so only their configuration (scope, columns, element types) is emitted. The next step is
-  to recompute the common cases, such as requirement tables and allocation matrices, from
-  the model.
+  so only their configuration (scope, columns, element types) is emitted.
 - **Used projects** (`proxy.*` entries) aren't ingested as projects.
   - **References into them** read by the names in each model's cached copy of the used project.
   - **References to the standard UML and SysML libraries** read by their names (`String`,
     `Real`, `Block`).
   - **Still shown as written:** ids inside text, such as DocGen's view lists, table column
     settings and UUID-valued tagged values.
-- **`.mdzipx` SVGs** are deferred indefinitely: no sample exists, among the maintainer's files
-  or in public. Their nested `.mdzip` is ingested as usual.
-- **Attachments** (`BINARY-*` PNG, JPEG or PDF) are listed at project level but not yet
-  linked to their owning elements. PDF and Office attachments aren't converted yet.
+- **`.mdzipx` SVGs** aren't used. Their nested `.mdzip` is ingested as usual.
+- **Attachments** (`BINARY-*` PNG, JPEG or PDF) are listed at project level but not
+  linked to their owning elements. PDF and Office attachments aren't converted.
 - **Chunk sizes.** Plain chunks are split to fit 512-token embedding windows, by an estimate
   of e5's tokens: 3 of 43,552 files in `rag/` for the samples ran over. A model with a smaller
   limit (MiniLM's 256) sees only the start of each. Tagged
   values are cut at 4,000 characters on pages, and hex-encoded images are described rather
   than shown.
-- **Sequence diagrams and swimlanes** are split into modules like any other diagram. Bands
-  along the time axis, and activity partitions, would be better module boundaries.
+- **Sequence diagrams and swimlanes** are split into modules like any other diagram.
 - **Deleted diagrams.** Diagrams whose layout stream is missing still get a page, listing
   the elements known from the XMI.
+
+What is planned, deferred or waiting on a decision is in `docs/roadmap.md`.
 
 ## Development
 
@@ -627,19 +601,24 @@ uv run --extra eval python scripts/retrieval_eval.py TREE --env .env --questions
 uv run python -m cameo_ingest.treediff BEFORE AFTER   # what a change did to an output tree
 ```
 
-**Fictional projects.** Four invented Cameo projects, ours to share, are built by
+**Fictional projects.** Seven invented Cameo projects, ours to share, are built by
 `cameo_ingest.evaluation.fiction` in the format Cameo writes. They grow in size and difficulty:
+- **Kestrel Orchard Irrigation:** small, with planted facts whose every name and figure is
+  invented, so that each question has one right answer;
 - **Ashgrove Library Book Return Kiosk:** small and plain;
 - **Riverbend Water Treatment Works:** a custom profile, near-duplicate instruments,
-  requirements imported from DOORS, instances, a state machine and a constraint block;
+  requirements imported from DOORS, instances, a state machine and a constraint block; with
+  two rival bids for the same works under the same file name, told apart by folder, whose
+  answers lie across all three;
 - **Ferrous Valley Level Crossing:** two variants whose blocks share their names, traceability
   three levels deep, a hazard log, and a fact found only in a diagram note;
 - **Port Calder Traffic Signal System:** about 5,100 XMI ids, 150 intersections with
   near-duplicate names.
 
-Each comes with questions whose answers are known by construction (178 in all, tagged by
-difficulty), for the retrieval evaluation (`scripts/retrieval_eval.py --questions
-out/eval/fiction/questions.jsonl`). The tests ingest every project and check that each answer
+Each comes with questions whose answers are known by construction (238 in all, tagged by
+difficulty; 210 without Kestrel, in `questions-ra.jsonl`, the set every comparison since
+2026-10-02 uses), for the retrieval evaluation (`scripts/retrieval_eval.py --questions
+out/eval/fiction/questions.jsonl`; `docs/design/evaluation.md`). The tests ingest every project and check that each answer
 is where the key says it is.
 
 The regular tests replay real model answers from `tests/fixtures/llm-replay.sqlite`, offline.

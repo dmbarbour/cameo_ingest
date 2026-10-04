@@ -5,7 +5,7 @@
   tokens, IIRC), but I wouldn't count on equal quality for start and end of context, so we might
   also look into sandwiching techniques, e.g. repeat the short headers and prompts again at the
   end to focus attention and reasoning."
-- **For:** plan step DV-06 in `docs/plans/diagram-views-2026-09-30.md`.
+- **For:** plan step DV-06 in `docs/archive/plans/diagram-views-2026-09-30.md`.
 - **Model:** `google/gemma-4-31B-it` on DeepInfra.
 - **Method:** two experiments on the drone sample, SAF_FFDS and TMT.
   - **Parts** (`scripts/sandwich_study.py`): 121 parts of large packages (all 12 of the

@@ -3,7 +3,7 @@
 - **Status:** Accepted on 2026-09-30, with the maintainer's answers under Decisions, and widened
   to large packages (FU-005). Completed on 2026-09-30.
 - **Step prefix:** `DV`, so steps are `DV-01`, `DV-02` and so on
-- **Addresses:** FU-011R1 and FU-005R1 in `docs/reviews/followup-2026-09-30.md`. It builds on
+- **Addresses:** FU-011R1 and FU-005R1 in `docs/archive/reviews/followup-2026-09-30.md`. It builds on
   FU-007, FU-008, FU-012 and FU-015 (the legend, clearer marks, drawing at the model's pixel
   budget), which are fixed first, inside that review.
 

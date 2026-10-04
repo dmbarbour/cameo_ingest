@@ -6,7 +6,7 @@
   answered (say if any should change). Template rating (goal 5) was added at the maintainer's
   request. In progress.
 - **Step prefix:** `LQ`, so steps are `LQ-01`, `LQ-02` and so on
-- **Addresses:** FU-006 in `docs/reviews/followup-2026-09-30.md`; it also measures the fixes
+- **Addresses:** FU-006 in `docs/archive/reviews/followup-2026-09-30.md`; it also measures the fixes
   for FU-001, FU-002, FU-004 and FU-005
 
 ## Goals

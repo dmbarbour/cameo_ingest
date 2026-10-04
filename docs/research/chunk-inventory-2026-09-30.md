@@ -1,7 +1,7 @@
 # Chunk inventory against the target embedding models
 
 - **Date:** 2026-09-30
-- **For:** plan step RE-01 in `docs/plans/retrieval-evaluation-2026-09-30.md`
+- **For:** plan step RE-01 in `docs/archive/plans/retrieval-evaluation-2026-09-30.md`
 - **Method:** `scripts/chunk_inventory.py out/all` (retired; at tag `studies-2026-10-02`), run under a 3 GB memory cap (peak 2.0 GB,
   3.6 minutes). It counts each chunk's length in each model's own tokens, with Hugging Face's
   tokenizers, and cuts the text into the windows the production stack is thought to make.

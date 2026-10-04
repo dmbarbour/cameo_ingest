@@ -3,7 +3,7 @@
 - **Date:** 2026-09-30
 - **Asked by:** the maintainer, answering plan DV's question about `networkx`: "you could give it
   a try, perhaps contrast with some alternatives, see what works."
-- **For:** plan step DV-02 in `docs/plans/diagram-views-2026-09-30.md`.
+- **For:** plan step DV-02 in `docs/archive/plans/diagram-views-2026-09-30.md`.
 - **Method:** `scripts/partition_study.py` (retired; at tag `studies-2026-10-02`), run as
   `uv run --with networkx --with igraph python scripts/partition_study.py samples/Package_Delivery_Drone.mdzip samples/TMT.mdzip samples/SAF_FFDS.mdzip --draw DIR`.
   - **Diagrams:** the 57 with more than 25 shapes: 2 in the drone sample, 44 in TMT and 11 in
