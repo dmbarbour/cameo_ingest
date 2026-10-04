@@ -97,3 +97,4 @@ the sha256 of the text as sent. Search is exact cosine in numpy.
 | The identifier index raises coverage@10 from 0.77 to 0.97; threads cost nothing measurable; line references cost completeness | `docs/research/related-facts-2026-10-01.md` |
 | Embeddings rarely find a requirement by its id; keyword search does | `docs/research/retrieval-baseline-2026-10-01.md` |
 | Plan SK's descriptions and sketches: no significant change (the questions ask for facts the deterministic text carries) | `docs/research/sketch-ambiguities-2026-10-03.md` |
+| 0.15.2's tables' rows, resolved self-references and plain legends: no significant change | `docs/research/used-objects-2026-10-03.md` |

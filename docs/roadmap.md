@@ -98,6 +98,10 @@ so that their history can be found. When an item becomes a plan, it moves to `do
 
 ## Known gaps and small fixes
 
+- **HTML in shapes' text:** a note's or text shape's text in the layout can be HTML (`<html>
+  <head> <style> p {padding:0px…`), and legends show it as written: 72 of 6,551 stored diagram and
+  module prompts, and 41 diagram pages, at 0.15.2. Documentation and tagged values are converted
+  (`richtext`); shapes' text isn't. Converting it changes those requests.
 - **Stale proxies:** a stale snapshot could name an element differently from Cameo. Nothing
   checks for this.
 - **`quality`** still cuts an answer out of the rendered page with a regex (AR-012R2, partial by

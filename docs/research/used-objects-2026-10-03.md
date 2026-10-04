@@ -52,3 +52,19 @@ and what would `usedObjects` add?
 - **Open:**
   - recomputing tables' cells (roadmap);
   - whether a drawn diagram should also name what it shows inside shapes.
+
+## Release check (0.15.2, 2026-10-04)
+
+The whole tree (the samples and the fiction) was rebuilt at 0.15.2, from the store of
+`out/sk/llm` (0.14.1). It holds this change and two others: references to the project itself
+resolve (0.15.1), and diagram legends reach the model without Markdown's escapes (0.15.2).
+- **The run:** 13 minutes; 260 new requests, 5,750 from the store, none failed. They were:
+  - 182 diagram and module descriptions, whose legends had held escapes;
+  - 32 syntheses built on those descriptions;
+  - 46 package summaries, parts and syntheses.
+- **Invariants:** they hold (`tests/helpers.check_invariants`).
+- **Retrieval:** the 210 fictional questions, as plan SK measured them
+  (`scripts/compare_retrieval.py`). No measure moved significantly, and MRR@10 moved by at most
+  0.005. e5-large reranked: hit@10 0.97, MRR@10 0.78, as before.
+- **Found on the way:** some notes' and text shapes' text is HTML, which legends show as written
+  (roadmap).
