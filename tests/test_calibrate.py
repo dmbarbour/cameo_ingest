@@ -389,12 +389,14 @@ def test_the_budget_follows_the_host():
     r = recs(summary({0.5: 7.0, 1.0: 10.0, 2.0: 14.0, 4.0: 20.0}))
     assert r["image_pixels"].recommended == IMAGE_PIXELS // 2 and r["image_pixels"].recommended % (48 * 48) == 0
     assert r["sketch_font_px"].recommended == 10  # read at the half budget: 1.3 x 7 = 9.1 px
+    assert "at most that budget, perhaps less" in r["image_pixels"].why  # the range's lower end
     # A host whose budget is above ours: text reads as well in twice the area.
     r = recs(summary({0.5: 7.0, 1.0: 7.0, 2.0: 7.4, 4.0: 11.0}))
     assert r["image_pixels"].recommended == 2 * IMAGE_PIXELS
     # Native resolution: the same threshold at every area; the budget, a cost, as configured.
     r = recs(summary({0.5: 6.0, 1.0: 6.2, 2.0: 6.0, 4.0: 6.1}))
     assert not r["image_pixels"].changes and "native resolution" in r["image_pixels"].why
+    assert "at least 4 times this one" in r["image_pixels"].why  # or a host budget beyond the range
     assert r["sketch_font_px"].recommended == 9  # 1.3 x 6.2 px at the configured budget
     # Too small a font for this model.
     r = recs(summary({0.5: 10.5, 1.0: 10.5, 2.0: 10.5, 4.0: 10.5}))

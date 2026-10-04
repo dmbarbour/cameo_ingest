@@ -69,8 +69,6 @@ so that their history can be found. When an item becomes a plan, it moves to `do
   matters.
 - **Direction in large modules:** Qwen3-VL reads 56% of directions right among 36 shapes, its
   calibrated module size. Should modules yield to direction?
-- **The budget's range:** report "at least 4×" when every tested area reads flat, as plan VA
-  intended. Today such a host falls into the native-resolution branch.
 - **A judged check of descriptions themselves,** beyond what validation measures from the image.
 
 ## LLM quality

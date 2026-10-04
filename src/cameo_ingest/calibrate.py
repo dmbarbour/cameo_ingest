@@ -180,19 +180,24 @@ def _reading(summary: dict[str, Any], pixels: int, font: int) -> list[Recommenda
     flat = {a for a, t in reads.items() if t is not None and t <= FLAT * floor}  # areas read as well as any
     shown = ", ".join(f"{a:g}x: {f'{t:g} px' if t is not None else 'none'}" for a, t in sorted(reads.items()))
     measured = f"90% read at, by image area: {shown}"
+    areas = sorted(reads)
     if len(flat) == len(reads):
+        # The range can't tell these apart (plan VA): either way, more pixels read no smaller text.
         recs = [Recommendation("image_pixels", pixels, pixels, measured,
-                               "the threshold doesn't grow with the image: the model reads at native resolution, "
-                               "where more pixels cost more tokens and read no smaller text; the budget is a "
-                               "matter of cost, kept as configured")]
+                               f"the threshold doesn't grow with the image from {areas[0]:g} to {areas[-1]:g} "
+                               "times the budget: the model reads at native resolution, or its host's own budget "
+                               f"is at least {areas[-1]:g} times this one. More pixels cost more tokens and read "
+                               "no smaller text, so the budget is a matter of cost, kept as configured")]
         threshold_px = reads.get(1.0) or floor
     else:  # the host shrinks images to a budget of its own: the largest area read as well as the smallest
-        areas = sorted(reads)
         held = [a for k, a in enumerate(areas) if all(b in flat for b in areas[:k + 1])]
         best = max(held) if held else max(flat)
-        recs = [Recommendation("image_pixels", pixels, _patches(best * pixels), measured,
-                               f"text reads as well up to {best:g} times the budget and worse beyond: the host "
-                               "shrinks larger images to about that budget")]
+        why = (f"text reads as well up to {best:g} times the budget and worse beyond: the host shrinks larger "
+               "images to about that budget")
+        if best == areas[0]:
+            why = (f"text reads worse beyond {best:g} times the budget, the smallest size tested: the host shrinks "
+                   "images to at most that budget, perhaps less; the smallest size tested is used")
+        recs = [Recommendation("image_pixels", pixels, _patches(best * pixels), measured, why)]
         threshold_px = reads[best]
     needed = math.ceil(FONT_MARGIN * threshold_px)
     recs.append(Recommendation("sketch_font_px", font, needed, f"90% read at {threshold_px:g} px",

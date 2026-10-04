@@ -71,16 +71,17 @@ From the measurements alone (ADR-0014). Where the cards decide nothing, the defa
 | Setting | Rule | Constant |
 |---|---|---|
 | Image's place | After the text only if it reads better by at least 5 points and by more than twice the standard error of the per-card difference | `ORDER_GAIN` = 0.05 |
-| `image_pixels` | Areas whose 90% threshold is within 1.15× of the smallest read "as well". If all do, the model reads at native resolution: the budget, a cost, stays as configured. Otherwise, the largest area that, with every smaller one, reads as well, in whole patches | `FLAT` = 1.15 |
+| `image_pixels` | Areas whose 90% threshold is within 1.15× of the smallest read "as well". If all do, the model reads at native resolution, or its host's budget is at least 4×: either way the budget, a cost, stays as configured. Otherwise, the largest area that, with every smaller one, reads as well, in whole patches; when that is the smallest tested, the report says the host's budget is at most half, perhaps less | `FLAT` = 1.15 |
 | Font | `ceil(1.3 × the threshold)` at the chosen budget (at 1× for a native-resolution model) | `FONT_MARGIN` = 1.3 |
 | Arrowheads, lines | The thinnest lines, then the smallest heads, with 95% of arrows the right way round. No margin | `ARROWS_PASS` = 0.95 |
 | Modules | The most shapes among which 90% of connections are found, either way round (a monotone fit across counts); `N:min(6,N):N` | `DENSITY_PASS` = 0.9 |
 
 - **Density ignores direction:** direction is the arrows' measure, and reversals happen among 9
   boxes as among 36. Counting them made every density fail.
-- **The budget's range:** a host whose budget is beyond 4× reads flat at every area, so it falls
-  into the native-resolution branch and keeps its configured budget. Plan VA meant to report "at
-  least 4×"; that isn't done.
+- **The budget's range:** 0.5× to 4×. A host whose budget is beyond 4× reads flat at every area,
+  like a model at native resolution, and the report names both. Either way larger images read no
+  smaller text, so the configured budget is kept. A host below 0.5× gets the smallest tested, and
+  the report says its budget may be smaller still.
 - **Unmeasured:** image sides in whole 48 px patches; they round a side by at most 47 px.
 
 ## Validation on the tree's own sketches (`validate.py`)
