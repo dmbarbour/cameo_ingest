@@ -83,7 +83,9 @@ def load_layouts(project: Project, ix: ModelIndex, progress: Progress = QUIET) -
             own_elements(layout, ix.elements)
             if layout.views:
                 out[d.id] = layout
-                d.shown = list(dict.fromkeys(d.shown + [e for e in layout.elements() if e in ix.elements]))
+                # What is drawn. The XMI's list (`usedObjects`) also names what is shown inside
+                # shapes (compartments, triggers), and serves only diagrams without a layout: tables.
+                d.shown = list(dict.fromkeys(e for e in layout.elements() if e in ix.elements))
             ph.advance()
     return out
 

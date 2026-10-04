@@ -30,6 +30,16 @@ a 55-byte declaration. Each `mdElement` is a view:
 - **References:** `<file>#<id>` references resolve to the element when its id is in the model
   (FU-019).
 
+**Elements shown** (`Diagram.shown`) feed the elements' "Shown in diagrams", the catalog and the
+tables:
+- **A drawn diagram:** the elements its layout draws.
+- **A diagram without a layout** (tables, mostly): its `usedObjects`, which Cameo writes as
+  `href='#id'`. For a table, these are its rows when last saved, and its page lists them as
+  "Elements shown when last saved".
+
+A drawn diagram's `usedObjects` also name what is shown inside shapes (compartments, triggers),
+so they aren't used there (`docs/research/used-objects-2026-10-03.md`).
+
 ## The graph and the text
 
 `diagram_graph.build` turns a layout into numbered nodes (shapes) and links (connections).

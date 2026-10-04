@@ -173,15 +173,18 @@ class PageWriter:
             blocks.append(sx.Block("Connections", [sx.markdown_line(e) for e in edges], form="list",
                                    label=f"**Connections ({len(edges)}):**"))
         tbl = [sx.line(t) for t in self.view.table_config(el)]
-        if any(w in (d.diagram_type or "") for w in ("Table", "Matrix")):
+        table = any(w in (d.diagram_type or "") for w in ("Table", "Matrix"))
+        if table:
             blocks.append(sx.Block("Table / matrix configuration", tbl, form="list", label=(
-                "**Table / matrix configuration** (rows are computed by Cameo and not stored in the file):")))
+                "**Table / matrix configuration** (Cameo computes the rows and cells from it when it shows the "
+                "table):")))
         else:
             blocks.append(sx.Block("Stereotypes and tagged values", tbl, form="list"))
         if d.shown and layout is None:
+            shown = f"Elements shown when last saved ({len(d.shown)})" if table else f"Elements shown ({len(d.shown)})"
             blocks.append(sx.Block("Elements shown", [sx.line(
                 f"- {ix.elements[e].kind} {' '.join(f'«{s}»' for s in ix.stereotype_names(e)) + ' ' if ix.stereotype_names(e) else ''}",
-                self.view.ref(e)) for e in d.shown], form="list", label=f"**Elements shown ({len(d.shown)}):**"))
+                self.view.ref(e)) for e in d.shown], form="list", label=f"**{shown}:**"))
         view = sx.Section(sx.line("Diagram: ", sx.name(d.name or dia_id)), fields, blocks)
         lines = view.markdown(1, self.plan.linker(rel))
         tr = self.view.trace(el)

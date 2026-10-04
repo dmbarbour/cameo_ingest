@@ -192,6 +192,8 @@ class _Parser:
             if sid:
                 dia.streams.append(sid)
             ref = self.xattr(node, "idref")
+            if not ref and local == "usedObjects" and (node.get("href") or "").startswith("#"):
+                ref = node.get("href")[1:]  # how Cameo writes them: href='#id' (BASE-013)
             if ref:
                 dia.shown.append(ref)
             if local == "ownedComment" and xid:  # diagram documentation

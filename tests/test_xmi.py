@@ -76,3 +76,31 @@ def test_omg_namespace_prefixes():
     assert _prefix_for("http://schema.omg.org/spec/XMI/2.1", {}) == "xmi"
     std = "http://www.omg.org/spec/UML/20131001/StandardProfile"
     assert _prefix_for(std, {std: "StandardProfile"}) == "StandardProfile"
+
+
+def test_used_objects_list_what_a_table_shows(tmp_path):
+    """Cameo writes a diagram's `usedObjects` as href='#id'. A diagram without a layout, such as a
+    table, lists them as the elements shown when last saved, and they link back to it; a drawn
+    diagram lists what it draws, not what is shown inside shapes (BASE-013)."""
+    import csv
+
+    from fixture_model import MODEL
+
+    model = MODEL.replace(
+        "<diagramContents><binaryObject/></diagramContents>",
+        "<diagramContents><binaryObject/><usedObjects href='#r1'/><usedObjects href='#b1'/></diagramContents>",
+    ).replace(
+        "<diagramContents><binaryObject streamContentID='BINARY-1'/></diagramContents>",
+        "<diagramContents><binaryObject streamContentID='BINARY-1'/><usedObjects href='#odd'/></diagramContents>",
+    )
+    assert model.count("usedObjects") == 3
+    proj = project_dir(run(tmp_path, "drone.mdzip", make_mdzip(model)))
+    shown = {r["name"]: r["elements_shown"] for r in csv.DictReader((proj / "tables/diagrams.csv").open())}
+    assert shown == {"Req Table": "2", "Drone BDD": "2"}  # the table's two; the two drawn
+    page = (proj / "diagrams/Req_Table.md").read_text()
+    assert "**Elements shown when last saved (2):**" in page and "Endurance" in page
+    chunks = [json.loads(line) for line in (proj / "index/chunks.jsonl").open()]
+    shown_in = {c["metadata"]["element_id"]: c["text"] for c in chunks if "Shown in diagrams" in c["text"]}
+    assert "Shown in diagrams: Req Table" in shown_in["r1"]
+    assert "Shown in diagrams: Drone BDD, Req Table" in shown_in["b1"]
+    assert "odd" not in shown_in  # in the BDD's list, not drawn

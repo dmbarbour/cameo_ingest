@@ -49,7 +49,7 @@ class Diagram:
     diagram_type: str | None  # e.g. "SysML Block Definition Diagram"
     uml_type: str | None  # e.g. "Class Diagram"
     streams: list[str] = field(default_factory=list)  # archive entries holding layout
-    shown: list[str] = field(default_factory=list)  # ids of model elements shown
+    shown: list[str] = field(default_factory=list)  # ids of the elements drawn; without a layout, `usedObjects`
     entry: str = ""
     line: int | None = None
 

@@ -25,9 +25,11 @@ so that their history can be found. When an item becomes a plan, it moves to `do
 
 ## Tentative plans
 
-- **Recompute tables and matrices.** Cameo computes their rows when it displays them; the file
-  holds only the configuration (scope, row types, columns), which is read (BASE-001). Rebuild the
-  common cases: requirement tables, allocation and dependency matrices.
+- **Recompute tables and matrices.** The file holds a table's configuration (scope, row types,
+  columns), which is read (BASE-001), and its rows when last saved (`usedObjects`), which its page
+  lists (`docs/research/used-objects-2026-10-03.md`). Only the cells are computed, from the rows'
+  own properties. Rebuild the common cases: requirement tables, then allocation and dependency
+  matrices, which store no rows.
 - **Attachments:**
   - link `BINARY-*` images and documents to the elements that own them;
   - convert PDF and Office attachments to text;
@@ -106,8 +108,9 @@ so that their history can be found. When an item becomes a plan, it moves to `do
   checks for this.
 - **`quality`** still cuts an answer out of the rendered page with a regex (AR-012R2, partial by
   decision).
-- **"Elements shown"** (BASE-013) is filled from `xmi:idref` only, which Cameo may not use in
-  `usedObjects`. Unverified on the samples.
+- **What a drawn diagram shows inside shapes:** its `usedObjects` also name compartment
+  properties, operations, ports and triggers (12,095 elements in 594 diagrams of the samples).
+  Its "Elements shown" and the elements' "Shown in diagrams" count only what is drawn.
 - **Package-part thresholds** are constants, not settings.
 - **The scripts are untested** (AR-022, accepted).
 

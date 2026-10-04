@@ -563,8 +563,9 @@ The documents for whoever maintains the tool are in `docs/` (`docs/README.md`):
 
 ## Known limitations
 
-- **Tables and matrices.** Their rows are computed by Cameo and aren't stored in the file,
-  so only their configuration (scope, columns, element types) is emitted.
+- **Tables and matrices.** Cameo computes their cells when it shows them. A table's page has its
+  configuration (scope, columns, element types) and the elements it showed when last saved, its
+  rows, but not its cells.
 - **Used projects** (`proxy.*` entries) aren't ingested as projects.
   - **References into them** read by the names in each model's cached copy of the used project.
   - **References to the standard UML and SysML libraries** read by their names (`String`,
