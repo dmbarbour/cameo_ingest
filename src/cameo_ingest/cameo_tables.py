@@ -77,6 +77,35 @@ def is_table(diagram_type: str | None) -> bool:
     return "Table" in t
 
 
+def computed_kind(diagram_type: str | None) -> bool:
+    """A table, a matrix or a map: what Cameo computes when it shows it."""
+    t = diagram_type or ""
+    return any(w in t for w in ("Table", "Matrix", "Map"))
+
+
+def not_computed(ix: ModelIndex, dia_id: str) -> tuple[str, str] | None:
+    """Why a table, matrix or map (without a layout) that `build` doesn't compute isn't: a short
+    reason, and a sentence that says what is missing and why (plan CT). None for a diagram of
+    another kind."""
+    d = ix.diagrams.get(dia_id)
+    if d is None or not computed_kind(d.diagram_type):
+        return None
+    if not is_table(d.diagram_type):
+        what, parts = (("matrix", "rows, columns and cells") if "Matrix" in (d.diagram_type or "")
+                       else ("map", "elements and connections"))
+        return (f"a {what}", (f"Cameo computes what this {what} shows whenever it shows it, and the model file "
+                              f"stores none of it, so its {parts} aren't shown here."))
+    tags = configuration(ix, dia_id)
+    if not tags.get("columnIds"):
+        return ("no columns", "Its configuration names no columns, so its cells aren't shown here.")
+    if any(x in ix.elements for k in ("rowElements", "additionalElements") for x in tags.get(k, [])):
+        return None  # computed
+    if [s for s in tags.get("scope", []) if s in ix.elements]:
+        return ("rows from scope", ("Cameo finds this table's rows in its scope whenever it shows the table, and "
+                                    "the model file doesn't store them, so its rows and cells aren't shown here."))
+    return ("no rows", "The model file lists no rows for it, so its cells aren't shown here.")
+
+
 def configuration(ix: ModelIndex, dia_id: str) -> dict[str, list[str]]:
     """The tags of the diagram's stereotypes, but DiagramInfo's: a table's configuration."""
     out: dict[str, list[str]] = {}

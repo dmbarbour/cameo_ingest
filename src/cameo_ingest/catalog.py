@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from . import cameo_tables as ct
 from . import semantics as sem
 from .progress import QUIET, Progress
 from .text import one_line
@@ -71,6 +72,7 @@ def project_catalog(view: ProjectView, sink: ChunkSink, root: Path | None = None
 
     records: list[dict[str, Any]] = []
     left_out: Counter[str] = Counter()
+    tables: Counter[str] = Counter()  # tables, matrices and maps: computed, or why not (plan CT)
     for el in ix.elements.values():
         if el.kind in sem.RELATIONSHIP_KINDS or el.kind in OUT_OF_SCOPE:
             continue
@@ -80,6 +82,12 @@ def project_catalog(view: ProjectView, sink: ChunkSink, root: Path | None = None
             d = ix.diagrams[el.id]
             rec: dict[str, Any] = {"type": "diagram", "kind": d.diagram_type or "Diagram",
                                    "owner": ref(d.owner) if d.owner else None, "shapes": len(d.shown)}
+            if (t := view.table(el.id)) is not None:
+                rec["table"] = f"{len(t.rows)} rows"
+                tables["computed"] += 1
+            elif el.id not in view.layouts and (why := ct.not_computed(ix, el.id)) is not None:
+                rec["table"] = f"not computed: {why[0]}"
+                tables["not computed"] += 1
             images = [a for a in view.ann.get(el.id, []) if a.image]
             for a in images:  # its sketch, and a large diagram's modules (plan KX-05)
                 if a.module is None:
@@ -128,7 +136,8 @@ def project_catalog(view: ProjectView, sink: ChunkSink, root: Path | None = None
             summaries.append(rec)
     counts = Counter(r["type"] for r in records + rels + summaries)
     yield {"type": "project", "name": view.content.name, "label": view.content.label, "token": view.content.token,
-           "saved_by": ix.exporter, "counts": dict(sorted(counts.items())), "left_out": dict(sorted(left_out.items()))}
+           "saved_by": ix.exporter, "counts": dict(sorted(counts.items())), "left_out": dict(sorted(left_out.items())),
+           "tables": dict(sorted(tables.items()))}
     yield from records
     yield from rels
     yield from summaries

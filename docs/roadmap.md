@@ -20,7 +20,7 @@ Ranked on 2026-10-04: easy and valuable first. The items are described in the se
 2. **What a drawn diagram shows inside shapes:** the data is already read (`usedObjects`).
    "Shown in diagrams" would also name compartment properties, ports and triggers. That changes
    many chunks, so it needs the maintainer's yes.
-3. **Tables' cells:** now plan CT (`docs/plans/cameo-tables-2026-10-04.md`).
+3. **Matrices:** tables are done (plan CT, 0.17); matrices remain.
 
 **Waiting on evidence:**
 - **Attachments:** the public samples hold 20 images and 1 PDF in all. Whether the maintainer's
@@ -60,8 +60,12 @@ Ranked on 2026-10-04: easy and valuable first. The items are described in the se
 
 ## Tentative plans
 
-- **Recompute tables and matrices:** tables are plan CT (`docs/plans/cameo-tables-2026-10-04.md`).
-  Matrices (dependency, allocation, refine) store no rows, and follow in a plan of their own.
+- **Matrices** (dependency, allocation, refine; 32 in the samples) store nothing they show. Their
+  rows and columns come from scopes and element types, and their cells from relationship criteria
+  (`dependencyCriteria`). Tables that list their rows are computed (plan CT, ADR-0025).
+- **Tables that find their rows in a scope** (147 in the samples) wait on evidence: a model that
+  saved such a table's rows would test a rule. Whether opening and saving a table in Cameo stores
+  them is untested.
 - **Attachments:**
   - link `BINARY-*` images and documents to the elements that own them;
   - convert PDF and Office attachments to text;

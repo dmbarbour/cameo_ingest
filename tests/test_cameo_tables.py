@@ -98,3 +98,30 @@ def test_headers_order_and_values():
     assert ct._words("SatisfiedBy") == "Satisfied By" and ct._words("hierarchyId") == "Hierarchy Id"
     assert ct._natural("REQ-2") < ct._natural("REQ-10") and ct._natural("b") > ct._natural("A")
     assert ct._once([ct.Value("Key"), ct.Value("Key")]) == [ct.Value("Key")]  # one tag on two stereotypes
+
+
+def test_a_table_not_computed_says_why(tmp_path):
+    """A table that finds its rows in a scope lists none in the file: its page says what isn't
+    shown and why, and the catalog, the workbook and the search page report it (plan CT)."""
+    import xlsx
+
+    from cameo_ingest.cli import main
+
+    model = table_model().replace("rowElements='r1 r2'", "scope='p2'")
+    out = run(tmp_path, "drone.mdzip", make_mdzip(model))
+    proj = project_dir(out)
+    page = (proj / "diagrams/Req_Table.md").read_text()
+    assert ("**Not computed:**\n\nCameo finds this table's rows in its scope whenever it shows the table, and the model "
+            "file doesn't store them, so its rows and cells aren't shown here. Its configuration follows.") in page, page
+    assert "**Rows" not in page and "**Table / matrix configuration**" in page
+    assert not (proj / "tables/diagram-tables").exists()
+    records = [json.loads(line) for line in (proj / "index/catalog.jsonl").open()]
+    assert records[0]["tables"] == {"not computed": 1}
+    assert next(r for r in records if r.get("key") == "d2")["table"] == "not computed: rows from scope"
+    book = tmp_path / "catalog.xlsx"
+    assert main(["export", "-o", str(out), "--workbook", str(book), "--search-page", str(tmp_path / "s.html")]) == 0
+    sheets = xlsx.sheets(book)
+    assert ["Not computed", "1"] in [row[:2] for row in sheets["About"]]
+    assert any("not computed: rows from scope" in (row or []) for row in sheets["Diagrams"])
+    assert "tables not computed 1" in str(sheets["Projects"])
+    assert "Tables show their rows only where the model file lists them" in (tmp_path / "s.html").read_text()

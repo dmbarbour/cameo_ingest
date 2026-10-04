@@ -2,7 +2,7 @@
 
 **Question.** Cameo computes a table's cells whenever it shows the table, and stores none. How
 much of the samples' tables can be computed from the model, as Cameo shows them? This is plan
-CT (`docs/plans/cameo-tables-2026-10-04.md`).
+CT (`docs/archive/plans/cameo-tables-2026-10-04.md`).
 
 **Method.** Every table on a diagram without a layout, in every `.mdzip` in `samples/`, parsed
 with the library and computed by `cameo_tables.build`.
@@ -82,8 +82,9 @@ them. A rule was tried on the 64 tables that both list their rows and have a sco
 - **Instance tables:** the rows' classifiers read correctly. Of the 87 scope-only instance
   tables, the rule finds instances for 9.
 
-**Decision:** stopped, as the plan said, for the maintainer's choice. Tables defined by scope
-keep their configuration on the page.
+**Decision** (the maintainer's): rows aren't inferred. Tables defined by scope, matrices and maps
+are reported as not computed, each with its reason, on their page, in the catalog, the workbook and
+the search page. No remedy is suggested, since none is verified (ADR-0025).
 
 ## Release check (0.17.0)
 

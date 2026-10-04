@@ -7,13 +7,11 @@ plan yet is in `docs/roadmap.md`. When a plan is done, its content goes to `docs
 
 ## Active
 
-| Plan | Prefix | Status |
-|---|---|---|
-| [Cameo's tables, computed as Cameo shows them](cameo-tables-2026-10-04.md) | CT | CP1 done (0.17.0); CP2 stopped: rows from scope can't be checked |
+None.
 
 ## Archived
 
-Retired on 2026-10-03, and TC on 2026-10-04.
+Retired on 2026-10-03, and TC and CT on 2026-10-04.
 
 | Plan | Prefix | Done | Its content now |
 |---|---|---|---|
@@ -30,6 +28,7 @@ Retired on 2026-10-03, and TC on 2026-10-04.
 | [Calibrating to the configured vision model, and validating](../archive/plans/vision-autocalibration-2026-10-03.md) | VA | 2026-10-03 (0.13.0) | ADR-0015, 0016; design/vision-calibration; roadmap |
 | [Sketches that read as drawn, and a release check](../archive/plans/sketch-ambiguities-2026-10-03.md) | SK | 2026-10-03 (0.14.1) | ADR-0017, 0018; design/diagrams, design/vision-calibration; roadmap |
 | [Inputs cut by us, and calibrating to the configured text model](../archive/plans/text-calibration-2026-10-04.md) | TC | 2026-10-04 (0.16.0) | ADR-0024; design/llm-enrichment; research/text-reading; roadmap |
+| [Cameo's tables, computed as Cameo shows them](../archive/plans/cameo-tables-2026-10-04.md) | CT | 2026-10-04 (0.17.1); rows from scope not inferred | ADR-0025; design/output-and-chunks; research/cameo-tables; roadmap |
 
 ## Reviews
 

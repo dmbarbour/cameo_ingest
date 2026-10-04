@@ -33,8 +33,9 @@ PINNED = {
     "TMT.mdzip": {  # slow
         "summary": {"elements": 71093, "diagrams": 1346, "stereotype_applications": 22551, "relationships": 7947,
                     "requirements": 4284},
-        # Tables computed (plan CT); those with a row list but no columns, as saved (BASE-013).
-        "table_configs": 63, "computed_tables": 37, "diagrams_with_shapes": 1171, "tables_with_rows": 3,
+        # Tables computed (plan CT); the configuration of tables, matrices and maps not computed; those with a
+        # row list but no columns, as saved (BASE-013).
+        "table_configs": 68, "computed_tables": 37, "diagrams_with_shapes": 1171, "tables_with_rows": 3,
     },
 }
 

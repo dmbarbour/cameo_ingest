@@ -175,11 +175,14 @@ class PageWriter:
             blocks.append(sx.Block("Connections", [sx.markdown_line(e) for e in edges], form="list",
                                    label=f"**Connections ({len(edges)}):**"))
         tbl = [sx.line(t) for t in self.view.table_config(el)]
-        table = any(w in (d.diagram_type or "") for w in ("Table", "Matrix"))
+        table = ct.computed_kind(d.diagram_type)  # a table, a matrix or a map
         computed = self.view.table(dia_id)
         if computed is not None:  # a table, computed as Cameo shows it (plan CT)
             blocks += self.table_blocks(computed)
         elif table:
+            missing = ct.not_computed(ix, dia_id) if layout is None else None
+            if missing is not None:  # what isn't shown, and why: said, not guessed at (plan CT)
+                blocks.append(sx.Block("Not computed", [sx.line(missing[1] + " Its configuration follows.")]))
             blocks.append(sx.Block("Table / matrix configuration", tbl, form="list", label=(
                 "**Table / matrix configuration** (Cameo computes the rows and cells from it when it shows the "
                 "table):")))

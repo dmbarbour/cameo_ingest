@@ -31,3 +31,4 @@ supersedes it, and its status says so.
 | [0022](0022-retrieval-evaluated-by-construction.md) | Retrieval evaluated by construction, with paired comparisons |
 | [0023](0023-evaluation-as-library-code.md) | Evaluation code is library code; finished studies retire to a tag |
 | [0024](0024-text-calibration-guards-the-part-size.md) | The text model's calibration guards the part size; it never enlarges it |
+| [0025](0025-tables-computed-from-what-the-file-lists.md) | Tables are computed from what the file lists; what Cameo infers is reported, not guessed |

@@ -31,6 +31,36 @@ ADR-0003, 0005 to 0008, 0019.
   - a module's or part's covered names stay in its heading as keywords (unmeasured; AR-004R1);
     the metadata calls them `covers`.
 
+## Cameo's tables (`cameo_tables.py`)
+
+Cameo computes a table's cells whenever it shows the table; the file stores its configuration (a
+stereotype's tags on the diagram) and, usually, the rows it lists (plan CT, ADR-0025,
+`docs/research/cameo-tables-2026-10-04.md`).
+- **Computed:** a table that lists its rows (`rowElements`, `additionalElements`):
+  - its visible columns (`columnIds` without `hideColumns`), in order, sorted by `sort` with numbers
+    in text compared as numbers;
+  - each column read from the row: its properties, a requirement's Id and Text, a tag of any
+    stereotype the model uses, a model attribute or reference, a relationship (Satisfied By,
+    Derived From), one stereotype's tag, or an instance's slot (`IColumn`).
+- **Columns not computed:** custom expression columns, and properties a profile derives. They keep
+  their header, empty, and the page names them.
+- **Where it goes:**
+  - the page: a sentence ("Columns: …. Sorted by …. Rows: …"), then the rows as a table, cells cut
+    at 500 characters;
+  - `tables/diagram-tables/<page>.csv`: cells whole, with `id` and `trace`;
+  - the diagram's details chunks: a line per row, every cell named, cut at 300 characters.
+
+  Diagrams aren't package sections, so tables reach no LLM request.
+- **Not computed, and said so:**
+  - tables that find their rows in a scope;
+  - matrices and maps, which store nothing they show;
+  - tables without columns.
+
+  Each one's page says what isn't shown and why (`cameo_tables.not_computed`), and keeps the
+  configuration. The catalog counts them per project (`tables`), the workbook's About, Projects
+  and Diagrams sheets report them, and the search page's footer says so. Rows weren't inferred
+  from scope: no rule reproduced the listed rows of tables that have both.
+
 ## Every chunk carries
 
 Made by `chunks.make`, checked by `chunks.problems`, at creation and in every test's invariants:

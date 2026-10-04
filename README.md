@@ -312,7 +312,8 @@ out/
                          the rest of the diagram faded; the page has a section per module
     images/, images.md   embedded raster images (attachment streams)
     tables/              elements, relationships, requirements, properties, tagged_values,
-                         diagrams (.csv)
+                         diagrams (.csv); diagram-tables/<name>.csv, each table that lists its
+                         rows, as Cameo shows it
     index/               elements.jsonl (full structure), hierarchy.json, chunks.jsonl,
                          ids.jsonl and threads.jsonl (the index across models and the threads),
                          catalog.jsonl (what `export` writes out, one record per item)
@@ -585,9 +586,13 @@ The documents for whoever maintains the tool are in `docs/` (`docs/README.md`):
 
 ## Known limitations
 
-- **Tables and matrices.** Cameo computes their cells when it shows them. A table's page has its
-  configuration (scope, columns, element types) and the elements it showed when last saved, its
-  rows, but not its cells.
+- **Tables, matrices and maps.** Cameo computes what they show whenever it shows them, and a
+  model file stores only the rows a table lists itself:
+  - **A table that lists its rows** is shown as Cameo shows it: its columns, sorted as configured,
+    on its page, in `tables/diagram-tables/` and in chunks. A column only Cameo can compute (a
+    custom expression, a property a profile derives) keeps its header, and the page names it.
+  - **A table that finds its rows in a scope, a matrix, or a map** is shown without rows. Its page
+    says so and why, and keeps its configuration; the workbook and search page say so too.
 - **Used projects** (`proxy.*` entries) aren't ingested as projects.
   - **References into them** read by the names in each model's cached copy of the used project.
   - **References to the standard UML and SysML libraries** read by their names (`String`,

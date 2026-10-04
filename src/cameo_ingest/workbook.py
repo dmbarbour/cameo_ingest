@@ -39,7 +39,7 @@ SHEETS: dict[str, list[tuple[str, int]]] = {  # name -> columns (header, width)
                  ("Documentation", 80), ("Listed in", 30)],
     "Relationships": [("Source", 40), ("Relationship", 18), ("Target", 40), ("Kind", 16), ("Project", 28)],
     "Diagrams": [("Name", 40), ("Type", 28), ("Owner", 40), ("Project", 28), ("Elements shown", 10),
-                 ("Description (generated)", 80)],
+                 ("Table", 24), ("Description (generated)", 80)],
     "Summaries": [("Of", 40), ("What", 18), ("Project", 28), ("Summary (generated)", 100), ("Model", 24),
                   ("Part", 10)],
     "Projects": [("Project", 30), ("Label", 30), ("Content", 24), ("Source", 60), ("Metadata", 30),
@@ -105,16 +105,18 @@ def write_workbook(path: Path, projects: Iterable[ProjectCatalog], version: str)
     find = book.add_worksheet("Find")
     sheets = {name: _Sheet(book, name, cols, head) for name, cols in SHEETS.items()}
     left_out: Counter[str] = Counter()
+    tables: Counter[str] = Counter()
     n_projects = 0
     for p in projects:
         n_projects += 1
         _project_rows(p, sheets)
         left_out.update(p.header.get("left_out", {}))
+        tables.update(p.header.get("tables", {}))
     for s in sheets.values():
         s.close()
     rows = {name: s.row for name, s in sheets.items()}
     _find_sheet(find, book, head, rows["Search"])
-    _about_sheet(about, book, rows, left_out, n_projects, version, [n for n, s in sheets.items() if s.full])
+    _about_sheet(about, book, rows, left_out, n_projects, version, [n for n, s in sheets.items() if s.full], tables)
     book.close()
     return rows
 
@@ -147,7 +149,7 @@ def _project_rows(p: ProjectCatalog, sheets: dict[str, _Sheet]) -> None:
         elif t == "diagram":
             owner = (r.get("owner") or [None, None])[1]
             sheets["Diagrams"].add({"Name": r["name"], "Type": r.get("kind"), "Owner": owner,
-                                    "Project": project, "Elements shown": r.get("shapes"),
+                                    "Project": project, "Elements shown": r.get("shapes"), "Table": r.get("table"),
                                     "Description (generated)": described.get(r["key"])}, LIMITS["summaries"])
         elif t == "relationship":
             sheets["Relationships"].add({"Source": r["source"][1], "Relationship": r["phrase"],
@@ -169,8 +171,10 @@ def _project_rows(p: ProjectCatalog, sheets: dict[str, _Sheet]) -> None:
                             "Requirements": c.get("requirement", 0), "Elements": c.get("element", 0),
                             "Diagrams": c.get("diagram", 0), "Packages": c.get("package", 0),
                             "Relationships": c.get("relationship", 0), "Summaries": c.get("summary", 0),
-                            "Left out": ", ".join(f"{k} {n}" for k, n in sorted(p.header.get("left_out", {}).items(),
-                                                                                key=lambda kv: -kv[1])[:8])},
+                            "Left out": ", ".join(
+                                ([f"tables not computed {n}"] if (n := p.header.get("tables", {}).get("not computed"))
+                                 else []) + [f"{k} {n}" for k, n in sorted(p.header.get("left_out", {}).items(),
+                                                                           key=lambda kv: -kv[1])[:8]])},
                            LIMITS["search"])
 
 
@@ -210,7 +214,7 @@ def _find_sheet(ws, book: xlsxwriter.Workbook, head, n: int) -> None:
 
 
 def _about_sheet(ws, book: xlsxwriter.Workbook, rows: dict[str, int], left_out: Counter[str], n_projects: int,
-                 version: str, full: list[str]) -> None:
+                 version: str, full: list[str], tables: Counter[str] | None = None) -> None:
     bold = book.add_format({"bold": True})
     title = book.add_format({"bold": True, "font_size": 14})
     ws.set_column(0, 0, 28)
@@ -241,6 +245,13 @@ def _about_sheet(ws, book: xlsxwriter.Workbook, rows: dict[str, int], left_out: 
               ("Why", ("Elements without a name, documentation or a chunk of their own (literals, unnamed pins and "
                        "the like), by kind:"), bold)]
     lines += [(k, f"{n:,}", bold) for k, n in left_out.most_common(20)]
+    if tables:
+        lines += [("", "", None), ("Tables, matrices and maps", "", title),
+                  ("Shown with their rows", f"{tables.get('computed', 0):,}", bold),
+                  ("Not computed", f"{tables.get('not computed', 0):,}", bold),
+                  ("Why", ("Cameo computes what a table, matrix or map shows whenever it shows it, and a model file "
+                           "stores only what the table lists itself. Tables that find their rows in a scope, and "
+                           "matrices, are shown without rows; the Diagrams sheet's Table column says which."), bold)]
     for i, (a, b, fmt) in enumerate(lines):
         if a:
             ws.write_string(i, 0, a, fmt)
