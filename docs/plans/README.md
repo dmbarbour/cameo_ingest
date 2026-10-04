@@ -7,7 +7,9 @@ plan yet is in `docs/roadmap.md`. When a plan is done, its content goes to `docs
 
 ## Active
 
-None.
+| Plan | Prefix | Status |
+|---|---|---|
+| [Cameo's tables, computed as Cameo shows them](cameo-tables-2026-10-04.md) | CT | CP1 in progress |
 
 ## Archived
 

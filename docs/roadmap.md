@@ -20,8 +20,7 @@ Ranked on 2026-10-04: easy and valuable first. The items are described in the se
 2. **What a drawn diagram shows inside shapes:** the data is already read (`usedObjects`).
    "Shown in diagrams" would also name compartment properties, ports and triggers. That changes
    many chunks, so it needs the maintainer's yes.
-3. **Requirement tables' cells:** the rows are now known, and the columns are configured. Each
-   cell comes from its row's properties.
+3. **Tables' cells:** now plan CT (`docs/plans/cameo-tables-2026-10-04.md`).
 
 **Waiting on evidence:**
 - **Attachments:** the public samples hold 20 images and 1 PDF in all. Whether the maintainer's
@@ -61,11 +60,8 @@ Ranked on 2026-10-04: easy and valuable first. The items are described in the se
 
 ## Tentative plans
 
-- **Recompute tables and matrices.** The file holds a table's configuration (scope, row types,
-  columns), which is read (BASE-001), and its rows when last saved (`usedObjects`), which its page
-  lists (`docs/research/used-objects-2026-10-03.md`). Only the cells are computed, from the rows'
-  own properties. Rebuild the common cases: requirement tables, then allocation and dependency
-  matrices, which store no rows.
+- **Recompute tables and matrices:** tables are plan CT (`docs/plans/cameo-tables-2026-10-04.md`).
+  Matrices (dependency, allocation, refine) store no rows, and follow in a plan of their own.
 - **Attachments:**
   - link `BINARY-*` images and documents to the elements that own them;
   - convert PDF and Office attachments to text;
