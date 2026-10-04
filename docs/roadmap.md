@@ -3,6 +3,45 @@
 Gathered on 2026-10-03 from the retired plans and reviews (`docs/archive/`), whose IDs are given
 so that their history can be found. When an item becomes a plan, it moves to `docs/plans/`.
 
+## Next, by ease and reward
+
+Ranked on 2026-10-04: easy and valuable first. The items are described in the sections below.
+
+**Quick wins** (hours each; no decision needed):
+1. **HTML in shapes' text:** convert it as documentation is converted, at the one place the
+   layout reader takes a shape's text (`layout.py`). Notes on diagrams, often rationale, become
+   readable in pages, chunks and legends. 41 pages; about 72 requests asked again.
+2. **The piece marker:** reword "(piece i of n)" so that it doesn't read as part of a name. Done
+   with item 1, the requests that change are asked again once.
+3. **`calibrate-text` on demand,** a copy of `calibrate-vision`'s command: recalibrate after a
+   host changes its limits without rebuilding a tree.
+4. **The upward-arrow spot check:** read the descriptions of diagrams with many upward arrows.
+   This is cheap, and decides whether the arrow items under "Sketches" are worth their cost.
+
+**Larger, and worth it** (a day or more each):
+5. **Type hierarchies for search:** the maintainer asked for them. They are deterministic, with
+   no LLM, and follow the pattern of the requirement threads.
+6. **What a drawn diagram shows inside shapes:** the data is already read (`usedObjects`).
+   "Shown in diagrams" would also name compartment properties, ports and triggers. That changes
+   many chunks, so it needs the maintainer's yes.
+7. **Requirement tables' cells:** the rows are now known, and the columns are configured. Each
+   cell comes from its row's properties.
+
+**Waiting on evidence:**
+- **Attachments:** the public samples hold 20 images and 1 PDF in all. Whether the maintainer's
+  models have more decides this.
+- **Better module boundaries, lines between undrawn ends, and the arrows' margin:** each costs a
+  redraw and new descriptions. Item 4 says whether they matter.
+
+**Later:**
+- the judge panel and ratings;
+- the TC follow-ups (other limits, cards that lose real packages);
+- keyword search from the command line;
+- the retrieval evaluation's extras;
+- facet lists;
+- stale proxies;
+- `quality`'s regex.
+
 ## Waiting on the maintainer
 
 - **The exports' trial** (KX-08, KX-09):
