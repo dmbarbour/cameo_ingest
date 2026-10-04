@@ -7,9 +7,12 @@ so that their history can be found. When an item becomes a plan, it moves to `do
 
 Ranked on 2026-10-04: easy and valuable first. The items are described in the sections below.
 
-**Quick wins:** done on 2026-10-04 (0.16.1): HTML in shapes' text converted, the piece marker
-on a line of its own, and `calibrate-text`. Left: the upward-arrow spot check, which decides
-whether the arrow items under "Sketches" are worth their cost.
+**Quick wins:** all done on 2026-10-04 (0.16.1):
+- HTML in shapes' text converted;
+- the piece marker on a line of its own;
+- `calibrate-text`;
+- the upward-arrow spot check. No description of the 10 diagrams with the most upward arrows
+  states one backwards, so the arrow items are deferred (`docs/research/upward-arrows-2026-10-04.md`).
 
 **Larger, and worth it** (a day or more each):
 1. **Type hierarchies for search:** the maintainer asked for them. They are deterministic, with
@@ -23,8 +26,9 @@ whether the arrow items under "Sketches" are worth their cost.
 **Waiting on evidence:**
 - **Attachments:** the public samples hold 20 images and 1 PDF in all. Whether the maintainer's
   models have more decides this.
-- **Better module boundaries, lines between undrawn ends, and the arrows' margin:** each costs a
-  redraw and new descriptions. Item 4 says whether they matter.
+- **Better module boundaries, and lines between undrawn ends:** each costs a redraw and new
+  descriptions. A reading of descriptions where they apply (sequence diagrams, TMT's collaborator
+  views) would show whether they matter.
 
 **Later:**
 - the judge panel and ratings;
@@ -97,13 +101,15 @@ whether the arrow items under "Sketches" are worth their cost.
   ADR-0017). Only embedded images (above) and module sketches have been examined.
 - **Lines between undrawn ends:** some connections end at views that aren't drawn as shapes (TMT's
   collaborator views), and invite invented connections.
-- **A margin for the arrows' rule:** 10 px heads pass at exactly 95% for both models measured;
-  14 px read all 44.
-- **The upward-arrow bias:** gemma-4 reverses 24 to 28% of upward arrows. Would a filled head or a
-  mid-line arrow help? A spot check of descriptions with many upward arrows would tell whether it
-  matters.
-- **Direction in large modules:** Qwen3-VL reads 56% of directions right among 36 shapes, its
-  calibrated module size. Should modules yield to direction?
+- **Arrows, deferred** (`docs/research/upward-arrows-2026-10-04.md`). Descriptions take each
+  connection's direction from its text, and none of 175 upward connections checked was stated
+  backwards. These matter again only if images are read without their connection lists:
+  - a margin for the arrows' rule: 10 px heads pass at exactly 95% for both models measured, and
+    14 px read all 44;
+  - the upward-arrow bias: gemma-4 reverses 24% of upward arrows on the eye charts, which a filled
+    head or a mid-line arrow might help;
+  - direction in large modules: Qwen3-VL reads 56% of directions right among 36 shapes, its
+    calibrated module size.
 - **A judged check of descriptions themselves,** beyond what validation measures from the image.
 
 ## LLM quality
