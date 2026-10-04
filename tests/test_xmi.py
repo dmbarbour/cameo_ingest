@@ -86,7 +86,7 @@ def test_used_objects_list_what_a_table_shows(tmp_path):
 
     from fixture_model import MODEL
 
-    model = MODEL.replace(
+    model = MODEL.replace("<columnIds>QPROP:Element:name</columnIds>", "").replace(  # a table not computed
         "<diagramContents><binaryObject/></diagramContents>",
         "<diagramContents><binaryObject/><usedObjects href='#r1'/><usedObjects href='#b1'/></diagramContents>",
     ).replace(

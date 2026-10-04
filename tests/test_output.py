@@ -38,8 +38,10 @@ def test_mdzip_end_to_end(tmp_path):
     assert (proj / "diagrams/Drone_BDD.png").exists()
 
     table = (proj / "diagrams/Req_Table.md").read_text()
-    assert "**Table / matrix configuration**" in table and "«DiagramTable» displayMode: List" in table
-    assert "additionalElements: Model::Requirements::Endurance; Model::Structure::Drone" in table
+    # A table with columns and rows is computed as Cameo shows it (plan CT).
+    assert "Columns: Name. Rows: 2, as the table lists them." in table and "| Name |" in table
+    assert "| [Endurance](../packages/Model__Requirements.md#" in table and "Table / matrix" not in table
+    assert (proj / "tables/diagram-tables/Req_Table.csv").read_text().startswith("Name,id,trace")
 
     readme = (proj / "README.md").read_text()
     kinds = readme.split("## Element kinds")[1].split("##")[0]

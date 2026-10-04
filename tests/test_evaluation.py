@@ -248,12 +248,16 @@ def test_structural_questions(tmp_path, fiction_tree):
 def test_natural_questions_keep_only_quoted_answers(tmp_path):
     """A written question is kept only when its quote is in its chunk, which is then its answer;
     a reply that isn't JSON, or quotes what the chunk doesn't say, is dropped."""
-    from fixture_model import make_mdzip
+    from fixture_model import MODEL, make_mdzip
     from helpers import ingest
 
     from cameo_ingest.evaluation.questions import natural, sample_chunks
 
-    out = ingest(tmp_path, ("drone.mdzip", make_mdzip()), args=("--no-llm", "--no-render"))
+    doc = "The battery is charged at the depot between deliveries, and swapped when it runs low. " * 4
+    model = MODEL.replace("<packagedElement xmi:type='uml:Class' xmi:id='b2' name='Battery'/>",
+                          f"<packagedElement xmi:type='uml:Class' xmi:id='b2' name='Battery'><ownedComment "
+                          f"xmi:type='uml:Comment' xmi:id='bc' body='{doc}'/></packagedElement>")
+    out = ingest(tmp_path, ("drone.mdzip", make_mdzip(model)), args=("--no-llm", "--no-render"))
     chunks = sample_chunks(out, 3)
     assert len(chunks) == 3
     first, second, third = (c["id"] for c in chunks)

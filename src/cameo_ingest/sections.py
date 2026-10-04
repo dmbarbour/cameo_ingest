@@ -63,6 +63,24 @@ def to_plain(spans: Line) -> str:
     return "".join(s.text for s in spans)
 
 
+def cut(spans: Line, limit: int) -> Line:
+    """The line cut at `limit` characters of text, with an ellipsis."""
+    out: list[Span] = []
+    room = limit
+    for s in spans:
+        if len(s.text) <= room:
+            out.append(s)
+            room -= len(s.text)
+            continue
+        out.append(Span(s.text[:room].rstrip() + "…", s.style, s.ref, s.escape))
+        break
+    return tuple(out)
+
+
+PAGE_CELL = 500  # characters of a table's cell on a page (plan CT); its CSV has them whole
+CHUNK_CELL = 300  # in a chunk: the row's element has its own chunk
+
+
 @dataclass
 class Block:
     """A block of a section, under a label: "**Documentation:**" on pages, "Documentation:" in
@@ -71,14 +89,24 @@ class Block:
     name: str
     lines: list[Line]
     label: str = ""  # the page's label line, when it isn't "**{name}:**"
-    form: str = "text"  # "text": label, blank line, lines; "list": label, lines; "inline": label and lines on one line
+    form: str = "text"  # "text": label, blank line, lines; "list": label, lines; "inline": label and lines on one line;
+    # "table": label, then `columns` and `rows` as a table on pages, a line per row in plain text
     detail: bool = False  # structure (members, tagged values), which plain chunks put after the meaning
     quoted: bool = False  # quoted on pages (requirement text)
     fenced: bool = False  # a code block on pages (a specification)
     before: list[str] = field(default_factory=list)  # Markdown lines before the label (an annotation's image)
+    columns: list[str] = field(default_factory=list)  # a table's headers
+    rows: list[list[Line]] = field(default_factory=list)  # a table's cells, by row
 
     def markdown(self, link: Link) -> list[str]:
         out = self.before[:]
+        if self.form == "table":
+            if not self.rows:
+                return out
+            esc = lambda t: t.replace("|", "\\|").replace("\n", " ")
+            head = ["| " + " | ".join(esc(md_inline(c)) for c in self.columns) + " |", "|" + "---|" * len(self.columns)]
+            body = ["| " + " | ".join(esc(to_markdown(cut(c, PAGE_CELL), link)) for c in row) + " |" for row in self.rows]
+            return out + [self.label or f"**{self.name}:**", "", *head, *body, ""]
         if not self.lines:
             return out
         label = self.label or f"**{self.name}:**"
@@ -92,6 +120,13 @@ class Block:
         return out + ([label, "", *body, ""] if self.form == "text" else [label, *body, ""])
 
     def plain(self) -> str:
+        if self.form == "table":  # every cell named, so that a chunk cut between rows still says what it is
+            lines = []
+            for row in self.rows:
+                cells = [(h, one_line(to_plain(cut(c, CHUNK_CELL)))) for h, c in zip(self.columns, row, strict=True)]
+                number = cells[0][1] + ". " if cells and cells[0][0] == "#" else ""
+                lines.append("- " + number + "; ".join(f"{h}: {t}" for h, t in cells if t and h != "#"))
+            return "\n".join(lines)
         sep = ", " if self.form == "inline" else "\n"
         return re.sub(r"\n{3,}", "\n\n", sep.join(to_plain(ln) for ln in self.lines)).strip()
 

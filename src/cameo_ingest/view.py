@@ -7,6 +7,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
+from . import cameo_tables as ct
 from . import diagram_graph as dg
 from . import partition as pt
 from . import plain as pl
@@ -52,11 +53,25 @@ class ProjectView:
                         self.notes[target].append(c)
         self._graphs: dict[str, dg.DiagramGraph] = {}
         self._parts: dict[str, pt.Partition | None] = {}
+        self._tables: dict[str, ct.Table | None] = {}
+        self._columns: ct.Columns | None = None
         self.package_parts: dict[str, list[list[str]]] = {}  # large packages, summarized in parts (element ids)
         self.diagrams_showing: dict[str, list[str]] = defaultdict(list)
         for d in ix.diagrams.values():
             for e in d.shown:
                 self.diagrams_showing[e].append(d.id)
+
+    def table(self, dia_id: str) -> ct.Table | None:
+        """The table a diagram shows, computed as Cameo shows it (plan CT); None for a diagram
+        that isn't a table, or a table that lists no columns or rows (built once)."""
+        if dia_id not in self._tables:
+            d = self.ix.diagrams.get(dia_id)
+            if d is None or not ct.is_table(d.diagram_type) or dia_id in self.layouts:
+                self._tables[dia_id] = None
+            else:
+                self._columns = self._columns or ct.Columns(self.ix, self.rels)
+                self._tables[dia_id] = ct.build(self.ix, self._columns, dia_id)
+        return self._tables[dia_id]
 
     def graph(self, dia_id: str) -> dg.DiagramGraph | None:
         """The diagram's shapes and connections, numbered (built once)."""

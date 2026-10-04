@@ -7,6 +7,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from . import cameo_tables as ct
 from . import crossref
 from . import diagram_text as dt
 from . import sections as sx
@@ -175,13 +176,16 @@ class PageWriter:
                                    label=f"**Connections ({len(edges)}):**"))
         tbl = [sx.line(t) for t in self.view.table_config(el)]
         table = any(w in (d.diagram_type or "") for w in ("Table", "Matrix"))
-        if table:
+        computed = self.view.table(dia_id)
+        if computed is not None:  # a table, computed as Cameo shows it (plan CT)
+            blocks += self.table_blocks(computed)
+        elif table:
             blocks.append(sx.Block("Table / matrix configuration", tbl, form="list", label=(
                 "**Table / matrix configuration** (Cameo computes the rows and cells from it when it shows the "
                 "table):")))
         else:
             blocks.append(sx.Block("Stereotypes and tagged values", tbl, form="list"))
-        if d.shown and layout is None:
+        if d.shown and layout is None and computed is None:
             shown = f"Elements shown when last saved ({len(d.shown)})" if table else f"Elements shown ({len(d.shown)})"
             blocks.append(sx.Block("Elements shown", [sx.line(
                 f"- {ix.elements[e].kind} {' '.join(f'«{s}»' for s in ix.stereotype_names(e)) + ' ' if ix.stereotype_names(e) else ''}",
@@ -209,6 +213,30 @@ class PageWriter:
             "provenance": self.view.file_provenance(trace=tr.to_dict(), layout_streams=d.streams),
         })
         self.write_text(rel, fm + text)
+
+    def table_blocks(self, t: ct.Table) -> list[sx.Block]:
+        """A computed table: what it shows, in a sentence or two, then its rows (plan CT)."""
+        ix = self.view.ix
+        about = [f"Columns: {', '.join(c.header for c in t.columns)}."]
+        if t.sort:
+            about.append(f"Sorted by {t.sort}.")
+        if t.row_types:
+            about.append(f"Row types: {', '.join(t.row_types)}.")
+        if t.scope:
+            about.append(f"Scope: {', '.join(ix.qualified_name(s) for s in t.scope)}.")
+        about.append(f"Rows: {len(t.rows)}, as the table lists them.")
+        if t.not_computed:
+            about.append(f"Not computed here (Cameo computes them): {', '.join(t.not_computed)}.")
+
+        def cell(values: list[ct.Value]) -> sx.Line:
+            spans: list[sx.Span | str] = []
+            for k, v in enumerate(values):
+                spans += (["; "] if k else []) + [sx.ref(v.ref, v.text) if v.ref else sx.name(v.text)]
+            return sx.line(*spans)
+
+        return [sx.Block("Table", [sx.line(" ".join(about))]),
+                sx.Block("Rows", [], label=f"**Rows ({len(t.rows)}):**", form="table", detail=True,
+                         columns=[c.header for c in t.columns], rows=[[cell(c) for c in row] for row in t.cells])]
 
     def module_sections(self, el: Element, part: Partition, rel: str) -> list[str]:
         """A section per module of a large diagram: its sketch, description, legend and

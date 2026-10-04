@@ -28,12 +28,13 @@ PINNED = {
     "Package_Delivery_Drone.mdzip": {
         "summary": {"elements": 839, "diagrams": 11, "stereotype_applications": 238, "relationships": 281,
                     "requirements": 42},
-        "table_configs": 2, "diagrams_with_shapes": 9, "tables_with_rows": 0,
+        "table_configs": 1, "computed_tables": 1, "diagrams_with_shapes": 9, "tables_with_rows": 0,
     },
     "TMT.mdzip": {  # slow
         "summary": {"elements": 71093, "diagrams": 1346, "stereotype_applications": 22551, "relationships": 7947,
                     "requirements": 4284},
-        "table_configs": 100, "diagrams_with_shapes": 1171, "tables_with_rows": 40,  # usedObjects (BASE-013)
+        # Tables computed (plan CT); those with a row list but no columns, as saved (BASE-013).
+        "table_configs": 63, "computed_tables": 37, "diagrams_with_shapes": 1171, "tables_with_rows": 3,
     },
 }
 
@@ -50,6 +51,7 @@ def test_samples(tmp_path, sample):
         assert {k: summary[k] for k in expected["summary"]} == expected["summary"]
         pages = [p.read_text(encoding="utf-8") for p in out.glob("by-sha256/*/diagrams/*.md")]
         assert sum("**Table / matrix configuration**" in p for p in pages) == expected["table_configs"]
+        assert sum("**Rows (" in p for p in pages) == expected["computed_tables"]  # plan CT
         assert sum("**Shapes (" in p for p in pages) == expected["diagrams_with_shapes"]
         assert sum("**Elements shown when last saved (" in p for p in pages) == expected["tables_with_rows"]
         check_edge_directions(sample)

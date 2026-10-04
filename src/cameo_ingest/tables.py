@@ -10,6 +10,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from . import cameo_tables as ct
 from . import catalog, crossref
 from . import semantics as sem
 from .files import FilePlan
@@ -93,6 +94,14 @@ class TableWriter:
                          self.view.trace(ix.elements[d.id]).locator()])
         self.write_csv("tables/diagrams.csv", ["id", "name", "diagram_type", "uml_type", "owner", "elements_shown",
                                                 "file", "trace"], rows)
+        for d in ix.diagrams.values():  # each computed table as Cameo shows it, cells whole (plan CT)
+            t = self.view.table(d.id)
+            if t is None or d.id not in self.plan.dia_file:
+                continue
+            stem = Path(self.plan.dia_file[d.id]).stem
+            self.write_csv(f"tables/diagram-tables/{stem}.csv", [c.header for c in t.columns] + ["id", "trace"],
+                           [[ct.text_of(c) for c in cells] + [r, self.view.trace(ix.elements[r]).locator()]
+                            for r, cells in zip(t.rows, t.cells, strict=True)])
 
     def write_indices(self, threads: list[dict[str, Any]]) -> None:
         ix = self.view.ix
