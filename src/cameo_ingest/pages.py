@@ -12,6 +12,7 @@ from . import diagram_text as dt
 from . import sections as sx
 from . import semantics as sem
 from .annotations import Annotation
+from .external import library_name
 from .files import FilePlan, relpath
 from .model import Element
 from .partition import Partition
@@ -291,9 +292,11 @@ class PageWriter:
             lines += [f"- «{k}»: {n}" for k, n in sorted(st_counts.items(), key=lambda x: -x[1])]
             lines.append("")
         if ix.external_refs:
-            mods = sorted({h.split("#", 1)[0] for h in ix.external_refs})
-            lines.append("## Referenced external modules / profiles\n")
-            lines += [f"- `{m}`" for m in mods]
+            bases = sorted({h.split("#", 1)[0] for h in ix.external_refs})
+            libraries = {b: library_name(b) for b in bases if library_name(b)}
+            lines.append("## Used projects and standard libraries\n")
+            lines += [f"- Used project `{b}`" for b in bases if b not in libraries]
+            lines += [f"- Standard library {name}: `{b}`" for b, name in libraries.items()]
             lines.append("")
         text = "\n".join(lines)
         tr = self.view.trace()

@@ -79,6 +79,11 @@ Every element reads by one vocabulary (`semantics`), the pages' wording being th
 
   Names are keyed by fragment, and the first seen wins. Ids inside text (DocGen view lists, table
   column settings, UUID-valued tags) stay as written.
+- **References to the project itself** are to its elements. Cameo writes the Model's packages kept
+  in its shared part as `local:/PROJECT-<its id>?resource=…#id`; an href whose fragment is one of
+  the project's elements resolves to it (`xmi.finalize`), as a diagram's shapes do (FU-019).
+- **A project's README** lists its used projects by file name, which is how Cameo names them, and
+  the OMG libraries by name and version: "PrimitiveTypes (OMG UML, 20131001)".
 - **Relationships** read with their verbs, forward or inverse, from `semantics.RELATIONS`.
   Requirement containment is ownership, not a relationship.
 

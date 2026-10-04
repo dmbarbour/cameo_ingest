@@ -69,6 +69,16 @@ def omg_name(uri: str) -> str | None:
     return frag.rsplit(".", 1)[-1]  # SysML_dataType.Real, SysML.Block
 
 
+def library_name(base: str) -> str | None:
+    """An OMG library's name and version from its URI, `http://www.omg.org/spec/UML/20131001/
+    PrimitiveTypes.xmi` → "PrimitiveTypes (OMG UML 20131001)"; None for another reference."""
+    m = re.search(r"omg\.org/spec/([^/]+)/([^/]+)/(\w+)\.xmi$", base)
+    if not m:
+        return None
+    spec, version, name = m.groups()
+    return f"{name} (OMG, {version})" if name == spec else f"{name} (OMG {spec}, {version})"
+
+
 def external_label(names: dict[str, str], ref: str) -> str:
     """How a reference outside the project reads: its library or used project's name for it,
     else its id's last part."""

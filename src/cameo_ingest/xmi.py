@@ -276,6 +276,15 @@ def finalize(index: ModelIndex) -> None:
         if el is not None:
             el.stereotypes.append(app.id)
     ids = index.elements
+
+    def own(ref: str) -> str:
+        """An href to one of the project's own elements is a reference to it: Cameo writes the
+        Model's packages kept in its shared part as `local:/PROJECT-<its id>?resource=…#id`."""
+        frag = ref.rsplit("#", 1)[-1]
+        return frag if ref in index.external_refs and frag in ids else ref
+
+    for el in ids.values():
+        el.refs = [(k, own(r)) for k, r in el.refs]
     for el in ids.values():
         for k in list(el.attrs):
             if k in SCALAR_ATTRS_NEVER_REFS:
@@ -297,7 +306,8 @@ def finalize(index: ModelIndex) -> None:
                 if len(toks) > 1 and all(t in ids for t in toks):
                     out += toks  # an id list stored as one attribute, e.g. a table's scope
                 else:
-                    out.append(to_text(v) if "<" in v and is_html(v) else v)
+                    out.append(to_text(v) if "<" in v and is_html(v) else own(v))
             app.tags[k] = out
+    index.external_refs = {r for r in index.external_refs if own(r) == r}
     for dia in index.diagrams.values():
         dia.shown = list(dict.fromkeys(s for s in dia.shown if s in ids))
