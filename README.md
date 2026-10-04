@@ -594,6 +594,7 @@ uv run pytest            # synthetic fixtures, plus the samples under 5 MB (abou
                          # (each skipped when missing)
 uv run pytest -m slow    # the large samples: TMT, TMT-2024x, SAF_FFDS, SAF_Plugin (about 1 min)
 uv run pytest -m llm     # a real LLM endpoint, from the environment or .env (about 1 min, ~20 requests)
+uv run ruff check src scripts tests   # lint, with the version the lock file pins
 uv run python scripts/record_llm_fixture.py --env .env   # re-record the LLM replay fixture
 uv run python scripts/make_fictional_projects.py out/eval/fiction   # the fictional projects, and their questions
 uv run --extra eval python scripts/retrieval_eval.py TREE --env .env --questions out/eval/fiction/questions.jsonl --out DIR

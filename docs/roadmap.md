@@ -111,7 +111,6 @@ so that their history can be found. When an item becomes a plan, it moves to `do
 - **"Elements shown"** (BASE-013) is filled from `xmi:idref` only, which Cameo may not use in
   `usedObjects`. Unverified on the samples.
 - **Package-part thresholds** are constants, not settings.
-- **Dead code:** `crossref._rows` and its `csv` import.
 - **The scripts are untested** (AR-022, accepted).
 
 ## Deferred indefinitely

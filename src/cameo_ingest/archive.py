@@ -99,7 +99,8 @@ class Project:
 
         if self._zip is None:
             return None
-        times = [dt.datetime(*i.date_time) for i in self._zip.infolist() if i.date_time[0] >= 1981]
+        times = [dt.datetime(*i.date_time)  # noqa: DTZ001 (zip times are local, with no zone)
+                 for i in self._zip.infolist() if i.date_time[0] >= 1981]
         return max(times) if times else None
 
     def size(self, entry: str) -> int:

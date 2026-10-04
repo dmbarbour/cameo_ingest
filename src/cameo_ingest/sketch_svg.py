@@ -10,6 +10,7 @@ be cut. Like the PNG, it is not a Cameo rendering: the diagram's page holds its 
 from __future__ import annotations
 
 import math
+from itertools import pairwise
 from xml.sax.saxutils import escape as _escape
 from xml.sax.saxutils import quoteattr as _quoteattr
 
@@ -62,7 +63,7 @@ def _arrowhead(p: tuple[float, float], q: tuple[float, float], hollow: bool) -> 
 
 
 def _mid_arrow(pts: list[tuple[float, float]], along: bool) -> str:
-    lengths = [math.dist(p, q) for p, q in zip(pts, pts[1:], strict=False)]
+    lengths = [math.dist(p, q) for p, q in pairwise(pts)]
     half, i = sum(lengths) / 2, 0
     while i < len(lengths) - 1 and half > lengths[i]:
         half -= lengths[i]
@@ -98,11 +99,11 @@ def render_svg(ix: ModelIndex, g: DiagramGraph, title: str) -> str | None:
         return None
     x0, y0 = min(xs) - MARGIN, min(ys) - MARGIN - TITLE
     w, h = max(xs) - x0 + MARGIN, max(ys) - y0 + MARGIN
-    out = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{_n(x0)} {_n(y0)} {_n(w)} {_n(h)}" '
-           f'width="{_n(w)}" height="{_n(h)}" font-family="Segoe UI, Arial, sans-serif" font-size="{_n(FONT)}">',
+    out = [(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{_n(x0)} {_n(y0)} {_n(w)} {_n(h)}" '
+            f'width="{_n(w)}" height="{_n(h)}" font-family="Segoe UI, Arial, sans-serif" font-size="{_n(FONT)}">'),
            f'<rect x="{_n(x0)}" y="{_n(y0)}" width="{_n(w)}" height="{_n(h)}" fill="white"/>',
-           f'<text x="{_n(x0 + MARGIN)}" y="{_n(y0 + 15)}" font-weight="bold">'
-           f'{escape(_fit(title, w - 2 * MARGIN))}</text>']
+           (f'<text x="{_n(x0 + MARGIN)}" y="{_n(y0 + 15)}" font-weight="bold">'
+            f'{escape(_fit(title, w - 2 * MARGIN))}</text>')]
 
     def end(view: View | None):
         return g.node_of.get(view.view_id or "") if view is not None else None

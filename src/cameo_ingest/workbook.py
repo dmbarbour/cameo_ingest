@@ -99,7 +99,7 @@ def write_workbook(path: Path, projects: Iterable[ProjectCatalog], version: str)
                                            "strings_to_urls": False, "strings_to_numbers": False,
                                            "use_future_functions": True})
     book.set_properties({"title": "Catalog of the models", "comments": f"Made by cameo-ingest {version}",
-                         "created": dt.datetime(2000, 1, 1)})
+                         "created": dt.datetime(2000, 1, 1)})  # noqa: DTZ001 (fixed, for reproducible bytes)
     head = book.add_format({"bold": True, "bg_color": "#DDEBF7", "border": 1})
     about = book.add_worksheet("About")  # first in the book, written last: it reports the totals
     find = book.add_worksheet("Find")
@@ -194,7 +194,7 @@ def _find_sheet(ws, book: xlsxwriter.Workbook, head, n: int) -> None:
     for i, (col, _) in enumerate(SHEETS["Search"]):
         ws.write_string(5, i, col, head)
     last = n + 1
-    rng = lambda c: f"Search!${c}$2:${c}${last}"  # noqa: E731
+    rng = lambda c: f"Search!${c}$2:${c}${last}"
 
     def has(word: str) -> str:
         hits = "+".join(f"ISNUMBER(SEARCH({word},{rng(c)}))" for c in ("C", "D", "F", "G"))
@@ -217,20 +217,20 @@ def _about_sheet(ws, book: xlsxwriter.Workbook, rows: dict[str, int], left_out: 
     ws.set_column(1, 1, 110)
     lines: list[tuple[str, str, Any]] = [
         ("Catalog of the models", "", title),
-        ("What this is", f"Every requirement, diagram, package, named or documented element, relationship and "
-                         f"generated summary of {plural(n_projects, 'model')}, one row each, made by "
-                         f"cameo-ingest {version}.", bold),
-        ("Search everything", "Desktop Excel: Ctrl+F, then Options, Within: Workbook, and Find All. Where Find "
-                              "searches only the open sheet, use the Search sheet: it holds every item.", bold),
-        ("Find several words", "The Find sheet lists the rows that hold all the words typed into it, ids and names "
-                               "first (Excel 2021, Microsoft 365 or Excel for the web).", bold),
+        ("What this is", (f"Every requirement, diagram, package, named or documented element, relationship and "
+                          f"generated summary of {plural(n_projects, 'model')}, one row each, made by "
+                          f"cameo-ingest {version}."), bold),
+        ("Search everything", ("Desktop Excel: Ctrl+F, then Options, Within: Workbook, and Find All. Where Find "
+                               "searches only the open sheet, use the Search sheet: it holds every item."), bold),
+        ("Find several words", ("The Find sheet lists the rows that hold all the words typed into it, ids and names "
+                                "first (Excel 2021, Microsoft 365 or Excel for the web)."), bold),
         ("Filter a column", "Each sheet's header has filters: Text Filters, Contains, for one column.", bold),
-        ("Generated text", "Summaries and diagram descriptions were written by an LLM, named in the Summaries "
-                           "sheet; they are not part of the source models.", bold),
+        ("Generated text", ("Summaries and diagram descriptions were written by an LLM, named in the Summaries "
+                            "sheet; they are not part of the source models."), bold),
         ("Source", "Where each model was found when it was ingested: its path and the metadata given then.", bold),
-        ("Long text", f"Cut at {LIMITS['search']:,} characters in Search, {LIMITS['requirements']:,} in "
-                      f"Requirements, {LIMITS['elements']:,} in Elements and {LIMITS['summaries']:,} in Summaries; "
-                      f"the search page and the output tree hold it whole.", bold),
+        ("Long text", (f"Cut at {LIMITS['search']:,} characters in Search, {LIMITS['requirements']:,} in "
+                       f"Requirements, {LIMITS['elements']:,} in Elements and {LIMITS['summaries']:,} in Summaries; "
+                       f"the search page and the output tree hold it whole."), bold),
         ("", "", None),
         ("Rows", "", title),
     ]
@@ -238,8 +238,8 @@ def _about_sheet(ws, book: xlsxwriter.Workbook, rows: dict[str, int], left_out: 
     if full:
         lines.append(("Sheets cut short", ", ".join(full) + f": Excel's limit of {MAX_ROWS:,} rows", bold))
     lines += [("", "", None), ("Left out", "", title),
-              ("Why", "Elements without a name, documentation or a chunk of their own (literals, unnamed pins and "
-                      "the like), by kind:", bold)]
+              ("Why", ("Elements without a name, documentation or a chunk of their own (literals, unnamed pins and "
+                       "the like), by kind:"), bold)]
     lines += [(k, f"{n:,}", bold) for k, n in left_out.most_common(20)]
     for i, (a, b, fmt) in enumerate(lines):
         if a:

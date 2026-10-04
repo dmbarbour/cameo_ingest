@@ -19,7 +19,6 @@ that a search for the id finds, in one chunk, every model that addresses it.
 
 from __future__ import annotations
 
-import csv
 import json
 import re
 from collections import defaultdict
@@ -37,7 +36,6 @@ from .text import one_line
 if TYPE_CHECKING:
     from .view import ProjectView
 
-csv.field_size_limit(1 << 30)
 ID = re.compile(r"(?<![\w-])[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+(?![\w-])")  # letters first, a hyphen, and a digit somewhere
 SNIPPET = 90  # characters of context either side of a mention
 NOT_IDS = re.compile(r"^(UTF-\d+|UCS-\d+|US-ASCII|ISO-8859-\d+|WINDOWS-\d+|X-[A-Z0-9-]+)$")  # encodings and such
@@ -56,14 +54,6 @@ class Place:
     snippet: str
     chunk_id: str | None
     locator: str
-
-
-def _rows(project_dir: Path, table: str) -> list[dict[str, str]]:
-    path = project_dir / "tables" / f"{table}.csv"
-    if not path.is_file():
-        return []
-    with path.open(encoding="utf-8", newline="") as f:
-        return list(csv.DictReader(f))
 
 
 def _ids(text: str) -> set[str]:

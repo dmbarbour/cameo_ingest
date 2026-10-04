@@ -66,7 +66,7 @@ def _utc(iso: str) -> str:
 
     when = dt.datetime.fromisoformat(iso)
     if when.tzinfo is not None:
-        when = when.astimezone(dt.timezone.utc).replace(tzinfo=None)
+        when = when.astimezone(dt.UTC).replace(tzinfo=None)
     return when.isoformat()
 
 
@@ -140,8 +140,8 @@ def _row(m: Member, newest: bool) -> str:
 
 def render(report: Report, out: Path) -> str:
     lines = ["# Versions of the same model", "",
-             f"{len(report.groups)} group(s) of likely versions, newest first in each, by Cameo's save time. "
-             "Nothing has been removed: check each group, then copy the command at the end if you agree.", ""]
+             (f"{len(report.groups)} group(s) of likely versions, newest first in each, by Cameo's save time. "
+              "Nothing has been removed: check each group, then copy the command at the end if you agree."), ""]
     for k, g in enumerate(report.groups, 1):
         lines += [f"## Group {k}: {g.members[0].name}", "",
                   "| Token | Project | Saved | Elements | Ids | Found at |", "|---|---|---|---|---|---|"]
