@@ -40,7 +40,7 @@ def llm_report(out: Path) -> dict:
 def test_live_enrichment(tmp_path, live):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
-    args = [str(src), "--text-model", live, "--cache-dir", str(tmp_path / "store"), "--llm-concurrency", "4"]
+    args = [str(src), "--text-model", live, "--no-calibrate", "--cache-dir", str(tmp_path / "store"), "--llm-concurrency", "4"]
     out = tmp_path / "out"
     assert main([*args, "-o", str(out)]) == 0
     check_invariants(out)  # includes: LLM text only in labelled generated:* chunks
@@ -63,7 +63,7 @@ def test_live_bad_model(tmp_path, live, capsys):
     assert bad in capsys.readouterr().err
     # ...and without it, failures are logged, enrichment is switched off, and the ingest succeeds.
     out = tmp_path / "b"
-    assert main([str(src), "-o", str(out), "--text-model", bad, "--no-preflight", "--llm-retries", "0"]) == 0
+    assert main([str(src), "-o", str(out), "--text-model", bad, "--no-calibrate", "--no-preflight", "--llm-retries", "0"]) == 0
     report = llm_report(out)
     assert report["disabled_after_failures"] and report["outcomes"] == {"failed": 3, "skipped_disabled": 1}
 
@@ -72,7 +72,7 @@ def test_live_bad_model(tmp_path, live, capsys):
 def test_live_sample(tmp_path, live):
     out = tmp_path / "out"
     # A call budget caps the cost of the run.
-    assert main([str(DRONE), "-o", str(out), "--text-model", live, "--llm-max-calls", "8",
+    assert main([str(DRONE), "-o", str(out), "--text-model", live, "--no-calibrate", "--llm-max-calls", "8",
                  "--llm-concurrency", "4"]) == 0
     check_invariants(out)
     gen = [c for c in map(json.loads, (out / "chunks.jsonl").open()) if c["metadata"]["kind"].startswith("generated:")]

@@ -11,7 +11,7 @@ What the LLM is asked, how, and how its answers are kept and judged. Decisions: 
 | `module-description@v3` | A module of a large diagram | The module's sketch, legend, connections within and with other modules, a reading guide | 120 |
 | `diagram-synthesis@v2` | A large diagram as a whole | The overview sketch, the modules' descriptions, the connections between modules | 200 |
 | `image-description@v2` | An embedded image | The image alone (its owner isn't linked yet) | 200 |
-| `package-summary@v4` | A package of up to 12,000 characters | Its sections as plain text | 150 |
+| `package-summary@v4` | A package of up to the part size (12,000 characters by default) | Its sections as plain text | 150 |
 | `module-summary@v3` | A part of a large package | The part's sections | 120 |
 | `package-synthesis@v3` | A large package | Its parts' summaries, through runs of at most 30 | 200 |
 | `instances-summary@v2` | A package at least 80% instance specifications | A digest of its instances by classifier and slot | 150 |
@@ -35,18 +35,42 @@ Named constants in `prompts.py`, interpolated into the slot descriptions:
 | Constant | Value | Means |
 |---|---|---|
 | `DIAGRAM_ITEMS` | 150 | Shapes and connections listed per request; more are cut, with a note |
-| `SUMMARY_CHARS` | 12,000 | A package larger than this is summarized in parts |
-| `PART_CHARS` | (3,000, 12,000) | A part's size |
+| `SUMMARY_CHARS` | 12,000 | The default part size: a package larger than it is summarized in parts |
+| `PART_CHARS` | (3,000, 12,000) | A part's size: the smallest worth a request, and the default part size |
 | `OWN_CHARS` | 6,000 | A large package's own section, in its synthesis |
 | `MAX_SUMMARIES` | 30 | Summaries per synthesis request; more go in runs |
 | `DIGEST_CHARS` | (8,000, 4,000) | The instance digest, and the package's other sections |
 | `enrich.INSTANCE_SHARE` | 0.8 | The share of instance specifications that calls for a digest |
 
-Nothing is cut to fit a part (plan TC-01, 0.15.3). A part over 12,000 characters is repacked
+**The part size** is an option (`part_chars`, 0.16.0): `--part-chars` wins, then the text model's
+calibration, then 12,000. It bounds a part, and a package summarized in one request.
+
+**Nothing is cut to fit a part** (plan TC-01, 0.15.3). A part over the size is repacked
 (`enrich.repack`): its sections, in order, in as few requests as fit. A section longer than a part
 goes in pieces (`enrich.pieces`), cut between lines (or words), each headed by its title and
-"(piece i of n)", each a part of its own. Plan TC proposes calibrating the part size to the
-configured text model.
+"(piece i of n)", each a part of its own.
+
+## Calibrating to the text model (`textcal.py`)
+
+A guard, not a tuner (ADR-0024). The first run with a text model asks it to read reading cards:
+- **The cards:** synthetic package text in the plain form of parts, in five groups, one a fifth.
+  Each group has a hub with a purpose of its own, and blocks and requirements that serve it.
+  Every name is a made-up word, and every figure appears once.
+- **The probes:** the real part request, scored by the groups the summary covers; and five
+  questions, one about a figure in each fifth.
+- **The guard:** 5 cards at each of 6,000, 12,000 and 24,000 characters, 30 requests.
+  - A length is even when 90% of groups are covered and 90% of answers are right, and no fifth
+    falls below 60%: a lost fifth is what an input cut short looks like.
+  - The part size stays 12,000 when 12,000 is even. Otherwise it is 6,000, with a warning when
+    6,000 isn't even either. 24,000 is reported, never used.
+- **The record:** `calibrations`, kind `text`, per model and endpoint; an incomplete calibration
+  isn't recorded. The report is `calibration/<model>-text-<date>/report.md`.
+
+**Why only a guard:** on these cards gemma-4 and DeepSeek-V3.2 read evenly to 192,000 characters,
+but the cards are easier than real packages. In one request, gemma-4 lost the middle of real
+packages over 100,000 characters. And the part size also sets how fine part summaries are:
+gemma-4 names 94% of a 12,000-character part's elements, and 15% of a 48,000-character part's
+(`docs/research/text-reading-2026-10-04.md`).
 
 ## How prompts are written
 

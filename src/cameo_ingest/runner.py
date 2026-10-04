@@ -254,7 +254,7 @@ class Runner:
             result = ingest_project(content, project, work, self.llm, render=self.options.render,
                                     progress=self.progress, concurrency=self.concurrency,
                                     image_pixels=self.options.image_pixels, modules=self.options.modules,
-                                    style=SketchStyle(*self.options.sketch))
+                                    style=SketchStyle(*self.options.sketch), part_chars=self.options.part_chars)
         except Exception as e:  # one bad project must not stop the others (BASE-004)
             log.error("project %s (sha256:%s) failed: %s: %s", content.name, sha[:16], type(e).__name__, e)
             log.debug("traceback for %s", content.name, exc_info=True)
@@ -302,7 +302,7 @@ def status(state: State) -> dict[str, Any]:
             "failed": [{"token": f"sha256:{r['sha256']}", "name": r["name"], "error": r["error"]}
                        for r in state.project_rows("failed")],
         },
-        "calibrations": [{"model": r["model"], "endpoint": r["endpoint"], "created": r["created"],
+        "calibrations": [{"model": r["model"], "kind": r["kind"], "endpoint": r["endpoint"], "created": r["created"],
                           "settings": json.loads(r["settings"]), "report": r["report"],
                           "validation": json.loads(r["validation"]) if r["validation"] else None}
                          for r in state.calibrations()],

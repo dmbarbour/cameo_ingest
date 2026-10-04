@@ -13,6 +13,7 @@ import json
 from dataclasses import dataclass, fields, replace
 from typing import Any
 
+from .prompts import PART_CHARS
 from .provenance import sha256_text
 
 # The sketches' uncalibrated defaults: gemma-4's figures at DeepInfra, for now (the maintainer's
@@ -29,8 +30,10 @@ IMAGE_PIXELS = 280 * 48 * 48
 MODULES = (25, 6, 25)
 # Sketches' font size, arrowhead legs and line width, in pixels.
 SKETCH = (13, 10.0, 1)
-# The tree settings a vision model's calibration sets, unless the tree sets them itself.
-CALIBRATED = ("image_pixels", "diagram_modules", "sketch_font_px", "sketch_arrow_px", "sketch_line_px", "image_first")
+# The tree settings a model's calibration sets, unless the tree sets them itself: the vision
+# model's (plan VA), then the text model's (plan TC).
+CALIBRATED = ("image_pixels", "diagram_modules", "sketch_font_px", "sketch_arrow_px", "sketch_line_px", "image_first",
+              "part_chars")
 
 
 @dataclass(frozen=True)
@@ -51,7 +54,8 @@ class TreeSettings:
     sketch_arrow_px: float | None = None
     sketch_line_px: int | None = None
     image_first: bool | None = None  # the image before the text in vision requests; None: as calibrated
-    calibrate: bool = True  # calibrate the sketches to the vision model (plan VA)
+    part_chars: int | None = None  # the largest LLM input of package text; None: as calibrated (plan TC)
+    calibrate: bool = True  # calibrate to the vision model (plan VA) and the text model (plan TC)
     rag_files: bool = True
     rag_source: str = "trace"  # or "id"
     cross_index: bool = True
@@ -79,7 +83,7 @@ class TreeSettings:
         return (self.sketch_font_px or font, float(self.sketch_arrow_px or arrow), self.sketch_line_px or line)
 
     def calibrated(self, calibration: dict[str, Any] | None) -> TreeSettings:
-        """These settings, with a vision model's calibration (plan VA) filling those the tree
+        """These settings, with the models' calibrations (plans VA, TC) filling those the tree
         leaves unset: explicit settings win, then the calibration, then the defaults."""
         if not calibration:
             return self
@@ -111,25 +115,27 @@ class ProjectOptions:
     templates: tuple[str, ...] = ()  # the prompt templates' versions, when the LLM is on
     sketch: tuple[int, float, int] = SKETCH  # font, arrowhead legs and line width, in pixels
     image_first: bool = True  # the image before the text in vision requests (plan VA)
+    part_chars: int = PART_CHARS[1]  # a package's parts, and a package summarized at once (plan TC)
 
     @classmethod
     def of(cls, settings: TreeSettings, text_model: str | None, vision_model: str | None,
            max_calls: int | None, calibration: dict[str, Any] | None = None) -> ProjectOptions:
         """A run's options, from the tree's settings, the models the LLM configuration chose, and
-        the vision model's calibration."""
+        the models' calibrations."""
         from .prompts import CURRENT
 
         settings = settings.calibrated(calibration)
         enabled = bool(text_model or vision_model)
         return cls(settings.render, text_model, vision_model, max_calls, settings.image_pixels or IMAGE_PIXELS,
                    settings.modules, tuple(sorted(t.key for t in CURRENT.values())) if enabled else (),
-                   settings.sketch, settings.image_first is not False)
+                   settings.sketch, settings.image_first is not False, settings.part_chars or PART_CHARS[1])
 
     def as_dict(self) -> dict[str, Any]:
         """As run.json records them, and as they are hashed."""
         out = {"render": self.render, "text_model": self.text_model, "vision_model": self.vision_model,
                "max_calls": self.max_calls, "image_pixels": self.image_pixels, "modules": list(self.modules),
-               "templates": list(self.templates), "sketch": list(self.sketch), "image_first": self.image_first}
+               "templates": list(self.templates), "sketch": list(self.sketch), "image_first": self.image_first,
+               "part_chars": self.part_chars}
         return out
 
     def hash(self) -> str:

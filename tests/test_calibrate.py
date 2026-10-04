@@ -241,7 +241,7 @@ def test_run_calibrates_the_model_first(tmp_path, monkeypatch, capsys):
     assert settings["diagram_modules"] == "9:6:9"  # no more boxes fit at 16 px in half the budget
     assert options(out)["image_pixels"] == IMAGE_PIXELS // 2 and options(out)["sketch"][0] == 16
     assert main(["status", "-o", str(out)]) == 0
-    assert f"calibrated: {MODEL} on " in capsys.readouterr().out
+    assert f"calibrated (vision): {MODEL} on " in capsys.readouterr().out
 
 
 def test_each_model_has_its_own_calibration(tmp_path, monkeypatch, capsys):
@@ -364,6 +364,29 @@ def test_a_schema_2_tree_migrates(tmp_path):
     assert st.db.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0] == str(SCHEMA_VERSION)
     st.save_calibration("", MODEL, SUITE_VERSION, {"sketch_font_px": 9}, {}, "calibration/x")
     assert json.loads(st.calibration("", MODEL, SUITE_VERSION)["settings"]) == {"sketch_font_px": 9}
+    st.close()
+
+
+def test_a_schema_3_tree_migrates_and_kinds_coexist(tmp_path):
+    """Schema 4 keys calibrations by kind too (plan TC-07): a schema 3 tree keeps its vision
+    records, and one model can then have both a vision and a text calibration."""
+    st = State(tmp_path)
+    st.db.execute("DROP TABLE calibrations")
+    st.db.execute("CREATE TABLE calibrations (endpoint TEXT NOT NULL, model TEXT NOT NULL, suite INTEGER NOT NULL, "
+                  "settings TEXT NOT NULL, summary TEXT NOT NULL, report TEXT NOT NULL, created TEXT NOT NULL, "
+                  "validation TEXT, PRIMARY KEY (endpoint, model, suite))")
+    st.db.execute("INSERT INTO calibrations VALUES ('', ?, ?, '{\"sketch_font_px\": 9}', '{}', 'calibration/x', "
+                  "'2026-10-03', '{}')", (MODEL, SUITE_VERSION))
+    st.db.execute("UPDATE meta SET value = '3' WHERE key = 'schema_version'")
+    st.close()
+    st = State(tmp_path)
+    assert st.db.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0] == str(SCHEMA_VERSION)
+    row = st.calibration("", MODEL, SUITE_VERSION)
+    assert row["kind"] == "vision" and json.loads(row["settings"]) == {"sketch_font_px": 9} and row["validation"] == "{}"
+    st.save_calibration("", MODEL, SUITE_VERSION, {"part_chars": 6000}, {}, "calibration/y", kind="text")
+    assert json.loads(st.calibration("", MODEL, SUITE_VERSION, "text")["settings"]) == {"part_chars": 6000}
+    assert json.loads(st.calibration("", MODEL, SUITE_VERSION)["settings"]) == {"sketch_font_px": 9}
+    assert sorted(r["kind"] for r in st.calibrations()) == ["text", "vision"]
     st.close()
 
 

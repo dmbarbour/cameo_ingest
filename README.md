@@ -146,8 +146,10 @@ is drawn and described on its own, and the diagram is then described as a whole 
 descriptions. `--diagram-modules N:MIN:MAX` (`N` = 0 never splits) sets the thresholds
 explicitly; it is there for tuning, and the calibrated sizes should serve.
 
-A package whose text is over 12,000 characters is summarized in parts of 3,000 to 12,000
-characters, grouped by nesting, relationships and order. The package is then summarized from
+A package whose text is over the part size (12,000 characters, unless the text model's
+calibration lowers it) is summarized in parts of 3,000 characters up to that size, grouped by
+nesting, relationships and order. A single element whose text is longer than a part goes in
+pieces, each headed by its title and "(piece i of n)": nothing is cut. The package is then summarized from
 its parts' summaries, through runs of at most 30 of them when there are more. A package
 made mostly of instance specifications (at least 80%, such as analysis results) is summarized
 instead in one request, from a digest of its instances by classifier and slot. Short parts
@@ -245,6 +247,23 @@ details, sketch by sketch, and `status` repeats the line.
 
 A test that means to push a model past what it reads comfortably should say so, and set its
 sizes from the calibration (for example, the font at the 90% threshold itself).
+
+### Calibrating the part size to the text model
+
+The first run with a text model also checks that it reads a part evenly, start to end (plan TC,
+`docs/research/text-reading-2026-10-04.md`):
+- **What happens:** it summarizes synthetic package text of 6,000, 12,000 and 24,000 characters,
+  laid out in five groups, and answers five questions about each. Every name and figure is
+  invented, so the scoring is exact: did the summary cover every group, and was every answer
+  right?
+- **Its cost:** 30 requests, once per model and endpoint; `--no-calibrate` skips it.
+- **What it can change:** only lower the part size. A model that reads 12,000 characters evenly
+  keeps 12,000. One that doesn't, or an endpoint that cuts long inputs, gets 6,000, with a
+  warning when even 6,000 reads unevenly. Calibration never makes parts larger. Strong models
+  read these cards evenly to 192,000 characters, but real packages are harder to summarize, and
+  larger parts mean coarser part summaries.
+- **The report:** `OUT/calibration/<model>-text-<date>/report.md`. `--part-chars N` sets the size
+  by hand, and wins.
 
 ## Output
 
@@ -536,7 +555,7 @@ links, and search all of them, for those who have the tree and one of these tool
 | `settings` | The tree's remembered run settings. |
 | `fingerprints` | Each project's save time, project id, exporter and element ids, which tell versions apart. |
 | `removed` | Projects removed from the tree. |
-| `calibrations` | Each vision model's calibration and validation. |
+| `calibrations` | Each model's calibration, by kind: vision or text. |
 | `meta` | The schema version. |
 
 Views: `current_sightings` (sightings in the current version of each input, with its path,

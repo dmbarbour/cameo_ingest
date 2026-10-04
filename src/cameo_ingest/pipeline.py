@@ -116,14 +116,14 @@ SKETCH = "re-drawn from layout data, not a Cameo rendering"
 def ingest_project(content: ContentInfo, project: Project, root: Path, llm: EnrichmentSession, render: bool = True,
                    progress: Progress = QUIET, concurrency: int = 1, image_pixels: int = IMAGE_PIXELS,
                    style: sketch.SketchStyle = sketch.STYLE,
-                   modules: tuple[int, int, int] = MODULES) -> ProjectResult:
+                   modules: tuple[int, int, int] = MODULES, part_chars: int = PART_CHARS[1]) -> ProjectResult:
     """Parse, draw the sketches, ask the LLM (`enrich`), write."""
     ix = parse_project(project, progress)
     annotations: dict[str, list[Annotation]] = {}
     base = Trace(content_sha256=content.sha256)
     layouts = load_layouts(project, ix, progress)
     writer = ProjectWriter(content, project, ix, root, annotations, layouts, modules)
-    enricher = Enricher(llm, writer.view, writer.plan, root, image_pixels)
+    enricher = Enricher(llm, writer.view, writer.plan, root, image_pixels, part_chars)
 
     reused = 0  # sketches drawn by an interrupted attempt with the same tool and options
     if render and layouts:
@@ -185,7 +185,7 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: Enri
     if enricher.truncated:
         log.warning("%s: %d LLM input(s) were cut short to fit the prompt (element sections over %s characters, "
                     "diagrams over %d shapes or connections)", project.display_name, enricher.truncated,
-                    f"{PART_CHARS[1]:,}", DIAGRAM_ITEMS)
+                    f"{part_chars:,}", DIAGRAM_ITEMS)
     enricher.run(progress, project.display_name, concurrency)
 
     writer.pages.write_images(images, enricher.images, base)

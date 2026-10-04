@@ -1,7 +1,7 @@
 # Design: architecture
 
 How cameo-ingest is put together, and the rules that keep it so. The decisions behind it are in
-`docs/decisions/`; this describes what holds now (0.15.3).
+`docs/decisions/`; this describes what holds now (0.16.0).
 
 ## The pipeline
 
@@ -73,7 +73,7 @@ and `project_status`. Schema version 3 is migrated in place, and a newer schema 
 | `settings` | The tree's remembered settings (only those that differ from the defaults) |
 | `fingerprints` | Save time, project id, exporter, and element ids as sorted 64-bit hashes (ADR-0020) |
 | `removed` | Projects removed from the tree, kept apart from `contents` |
-| `calibrations` | Each vision model's calibration and validation (ADR-0015, ADR-0016) |
+| `calibrations` | Each model's calibration, by kind: a vision model's, with its validation (ADR-0015, ADR-0016), and a text model's part size (ADR-0024). Schema 4 added the kind |
 
 - **Locking:** one run per tree, by a non-blocking `flock` on `state.lock`; a non-POSIX system runs
   without a lock. The database runs in WAL mode, so `status` works during a run. Writes go

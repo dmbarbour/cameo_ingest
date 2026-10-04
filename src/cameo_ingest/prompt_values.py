@@ -80,14 +80,15 @@ def package_summary(text: str) -> Values:
     return Values({"PACKAGE_TEXT": text})
 
 
-def module_summary(package: str, k: int, n: int, body: str) -> Values:
-    """Part `k` of `n` of a large package."""
-    out = Values({"CUT_NOTE": "", "PACKAGE": package, "PART": f"{k} of {n}", "SECTIONS": body[:PART_CHARS[1]]},
+def module_summary(package: str, k: int, n: int, body: str, limit: int = PART_CHARS[1]) -> Values:
+    """Part `k` of `n` of a large package. A body over `limit` is cut, with a note; parts are
+    made to fit (plan TC-01), so that would be a fault."""
+    out = Values({"CUT_NOTE": "", "PACKAGE": package, "PART": f"{k} of {n}", "SECTIONS": body[:limit]},
                  {"part": f"{k} of {n}"})
-    if len(body) > PART_CHARS[1]:
-        out.values["CUT_NOTE"] = CURRENT["module-summary"].fragment("cut", limit=PART_CHARS[1], length=len(body))
-        out.notes["truncated"] = {"characters": len(body), "limit": PART_CHARS[1]}
-        out.cut = f"part {k}: {len(body):,} characters; the first {PART_CHARS[1]:,} sent"
+    if len(body) > limit:
+        out.values["CUT_NOTE"] = CURRENT["module-summary"].fragment("cut", limit=limit, length=len(body))
+        out.notes["truncated"] = {"characters": len(body), "limit": limit}
+        out.cut = f"part {k}: {len(body):,} characters; the first {limit:,} sent"
     return out
 
 

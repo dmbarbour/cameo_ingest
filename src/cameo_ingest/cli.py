@@ -34,6 +34,7 @@ from .archive import ZIP_MAGIC, sniff_xmi
 from .config import IMAGE_PIXELS, MODULES, SKETCH, ProjectOptions, TreeSettings, parse_modules
 from .llm import EnrichmentSession, LLMConfig, connect
 from .progress import Progress
+from .prompts import PART_CHARS
 from .runner import Runner
 from .state import State, StateError
 
@@ -154,6 +155,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="split diagrams of more than N shapes into modules of MIN to MAX shapes, each drawn and "
                         "described on its own (default: the vision model's calibration; uncalibrated, "
                         f"{':'.join(map(str, MODULES))}; N = 0 never splits)")
+    g.add_argument("--part-chars", type=int, metavar="N",
+                   help="the largest input of package text in one LLM request: a large package's parts, and a "
+                        "package summarized at once (default: the text model's calibration, which only lowers it; "
+                        f"uncalibrated, {PART_CHARS[1]:,})")
     g.add_argument("--sketch-font-px", type=int, metavar="PX",
                    help=f"sketches' font size (default: the vision model's calibration; uncalibrated, {SKETCH[0]})")
     g.add_argument("--sketch-arrow-px", type=float, metavar="PX",
@@ -165,9 +170,9 @@ def build_parser() -> argparse.ArgumentParser:
                         "uncalibrated, first, as Google advises for gemma)")
     g.add_argument("--image-last", dest="image_first", action="store_const", const=False,
                    help="put the image after the text in requests to the vision model")
-    flag_pair(g, "calibrate", "calibrate the sketches to the vision model before building, when the tree has no "
-              "calibration for it: about 90 requests, once per model (see README, Calibrating sketches to the vision "
-              "model)", "draw sketches to the uncalibrated defaults", default=True)
+    flag_pair(g, "calibrate", "calibrate to the models before building, when the tree has no calibration for "
+              "them: the sketches to the vision model (about 90 requests) and the part size to the text model (30), "
+              "once per model (see the README's calibration sections)", "use the uncalibrated defaults", default=True)
     flag_pair(g, "rag-files", "write rag/: every chunk as a .txt file, ending with its source and trace, for RAG "
               "tools that read files but not JSONL", "do not write rag/ (chunks.jsonl has the same chunks)",
               default=True)
@@ -554,7 +559,7 @@ def run_tree(args: argparse.Namespace, argv: list[str]) -> int:
         state.save_settings(settings.stored())
         progress = Progress(heartbeat=args.heartbeat)
 
-        def prepare() -> ProjectOptions:  # after the scan: the vision model calibrated, if it isn't yet
+        def prepare() -> ProjectOptions:  # after the scan: the models calibrated, if they aren't yet
             options = ProjectOptions.of(settings, cfg.text_model, cfg.vision_model, cfg.max_calls,
                                         calibration_for_run(out, state, llm, settings, progress))
             llm.image_first = options.image_first
@@ -583,6 +588,43 @@ def run_tree(args: argparse.Namespace, argv: list[str]) -> int:
 
 def calibration_for_run(out: Path, state: State, llm: EnrichmentSession, settings: TreeSettings,
                         progress: Progress) -> dict[str, Any] | None:
+    """The models' calibrations for a run, as settings: the text model's (plan TC), then the
+    vision model's (plan VA). None: the uncalibrated defaults."""
+    found = {**(text_calibration_for_run(out, state, llm, settings, progress) or {}),
+             **(vision_calibration_for_run(out, state, llm, settings, progress) or {})}
+    return found or None
+
+
+def text_calibration_for_run(out: Path, state: State, llm: EnrichmentSession, settings: TreeSettings,
+                             progress: Progress) -> dict[str, Any] | None:
+    """The text model's calibration (plan TC-08): the tree's record, made first when it has none.
+    It only guards: a model that reads 12,000 characters unevenly gets smaller parts."""
+    from . import textcal
+
+    cfg = llm.cfg
+    if not settings.calibrate or not cfg.text_model:
+        return None
+    found = textcal.recorded(state, cfg.base_url or "", cfg.text_model)
+    if found is not None:
+        return found
+    n = 2 * textcal.GUARD_CARDS * len(textcal.GUARD_LENGTHS)
+    print(f"calibrating to {cfg.text_model}, which this tree has no text calibration for: {n} requests of 6,000 to "
+          "24,000 characters; the answers are stored, so this happens once per model (--no-calibrate skips it)",
+          file=sys.stderr)
+    result = textcal.calibrate_text(out, state, llm, settings.llm_concurrency or 1, progress)
+    if result.problem or result.settings is None:
+        log.warning("the text calibration of %s is incomplete (%s): this run uses the default part size; see %s",
+                    cfg.text_model, result.problem, result.dest / "report.md")
+        return None
+    if result.warning:
+        log.warning("%s", result.warning)
+    print(f"calibrated to {cfg.text_model}: part_chars {result.part_chars:,}, since it {result.why} (the tree's own "
+          f"settings win; see {result.dest / 'report.md'})", file=sys.stderr)
+    return result.settings
+
+
+def vision_calibration_for_run(out: Path, state: State, llm: EnrichmentSession, settings: TreeSettings,
+                               progress: Progress) -> dict[str, Any] | None:
     """The vision model's calibration for a run (plan VA): the tree's record, made first when it
     has none and sketches are drawn. None: the uncalibrated defaults."""
     from . import calibrate
@@ -714,7 +756,7 @@ def print_status(state: State, as_json: bool) -> None:
     print(f"projects: {counts(s['projects']['counts'])}")
     for c in s["calibrations"]:
         sizes = ", ".join(f"{k} {v}" for k, v in c["settings"].items())
-        print(f"calibrated: {c['model']} on {c['created'][:10]}: {sizes} ({c['report']}/report.md)")
+        print(f"calibrated ({c['kind']}): {c['model']} on {c['created'][:10]}: {sizes} ({c['report']}/report.md)")
         if c["validation"]:
             from .validate import one_line
 

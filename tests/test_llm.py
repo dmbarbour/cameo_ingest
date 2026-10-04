@@ -85,7 +85,7 @@ def test_a_section_too_long_for_a_part_is_split_not_cut(tmp_path, fake_chat):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip(model))
     out = tmp_path / "out"
-    assert main([str(src), "-o", str(out), "--text-model", "m", "--no-preflight", "--no-render"]) == 0
+    assert main([str(src), "-o", str(out), "--text-model", "m", "--no-calibrate", "--no-preflight", "--no-render"]) == 0
     report = json.loads((out / "run.json").read_text())["llm"]
     assert "truncated_input" not in report["outcomes"]
     db = sqlite3.connect(out / ".cache/llm.sqlite")
@@ -94,6 +94,27 @@ def test_a_section_too_long_for_a_part_is_split_not_cut(tmp_path, fake_chat):
     assert all(len(x) <= PART_CHARS[1] for x in sections)
     assert sum("Unit 7 (piece " in x for x in sections) >= 3  # 34,000 characters of documentation
     assert sum(x.count("operator console") for x in sections) == 40 * 8 + 400  # every sentence, once
+
+
+def test_the_part_size_is_an_option(tmp_path, fake_chat):
+    """`--part-chars` sets the largest input of package text (plan TC-06): smaller parts are more
+    of them, each within the size, and the size is in the projects' options."""
+    import sqlite3
+
+    src = tmp_path / "drone.mdzip"
+    src.write_bytes(make_mdzip(large_package_model()))
+    sizes = {}
+    for chars in (None, 6000):
+        out = tmp_path / f"out{chars}"
+        args = [str(src), "-o", str(out), "--text-model", "m", "--no-calibrate", "--no-preflight", "--no-render"]
+        assert main(args + (["--part-chars", str(chars)] if chars else [])) == 0
+        db = sqlite3.connect(out / ".cache/llm.sqlite")
+        parts = [json.loads(r[0])["SECTIONS"] for r in db.execute(
+            "SELECT slots FROM requests WHERE template LIKE 'module-summary%' AND item LIKE '%bigp%'")]
+        assert parts and all(len(x) <= (chars or 12000) for x in parts)
+        sizes[chars] = len(parts)
+        assert json.loads((out / "run.json").read_text())["options"]["part_chars"] == (chars or 12000)
+    assert sizes[6000] > sizes[None]
 
 
 def test_large_package_parts(tmp_path, fake_chat, monkeypatch):
@@ -108,7 +129,7 @@ def test_large_package_parts(tmp_path, fake_chat, monkeypatch):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip(large_package_model()))
     out = tmp_path / "out"
-    assert main([str(src), "-o", str(out), "--text-model", "m", "--no-preflight", "--no-render"]) == 0
+    assert main([str(src), "-o", str(out), "--text-model", "m", "--no-calibrate", "--no-preflight", "--no-render"]) == 0
     check_invariants(out)
     page = (project_dir(out) / "packages/Model__Big.md").read_text()
     assert "## Parts, summarized" in page and '<a id="part-1"></a>' in page and re.search('<a id="parts-\\d+-\\d+">', page)
@@ -163,7 +184,7 @@ def test_instance_packages_summarized_from_a_digest(tmp_path, fake_chat):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip(instances_model()))
     out = tmp_path / "out"
-    assert main([str(src), "-o", str(out), "--text-model", "m", "--no-preflight", "--no-render"]) == 0
+    assert main([str(src), "-o", str(out), "--text-model", "m", "--no-calibrate", "--no-preflight", "--no-render"]) == 0
     check_invariants(out)
     page = (project_dir(out) / "packages/Model__Results.md").read_text()
     assert "- **Classifier:** [Battery]" in page and "## Parts, summarized" not in page
@@ -242,7 +263,7 @@ def test_quality_sample(tmp_path, fake_chat, capsys):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     out = tmp_path / "out"
-    assert main([str(src), "-o", str(out), "--text-model", "m", "--no-preflight"]) == 0
+    assert main([str(src), "-o", str(out), "--text-model", "m", "--no-calibrate", "--no-preflight"]) == 0
     drawn = []
     for _ in range(2):  # the same seed draws the same items
         assert main(["quality", "sample", "-o", str(out), "--n", "3", "--seed", "7"]) == 0
@@ -368,7 +389,8 @@ def test_replay_recorded_llm(tmp_path, sample):
     model = db.execute("SELECT model FROM responses LIMIT 1").fetchone()[0]
     db.close()
     out = tmp_path / "out"
-    assert main([str(src), "-o", str(out), "--no-render", "--text-model", model, "--llm-replay", str(REPLAY)]) == 0
+    assert main([str(src), "-o", str(out), "--no-render", "--no-calibrate", "--text-model", model,
+                 "--llm-replay", str(REPLAY)]) == 0
     check_invariants(out)
     report = json.loads((out / "run.json").read_text())["llm"]
     assert report["incomplete"] == [] and set(report["outcomes"]) == {"replayed"}  # and nothing cut (plan TC-01)

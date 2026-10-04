@@ -125,8 +125,8 @@ PACKAGE_SUMMARY = Template(
              "the package's sections as plain text (AR-018): its own (its kind, qualified name, documentation, "
              "members), then one per element, each a title ('«stereotype» name'), its fields ('Kind: Class') and "
              "its blocks ('Documentation: ...', 'Relationships:' and a line each), meaning before members and "
-             f"tagged values, sections apart by a blank line. At most {SUMMARY_CHARS:,} characters: a larger "
-             "package is summarized in parts (FU-005)."),
+             f"tagged values, sections apart by a blank line. At most the part size ({SUMMARY_CHARS:,} characters "
+             "unless calibration lowers it, plan TC): a larger package is summarized in parts (FU-005)."),
     ),
 )
 
@@ -342,15 +342,16 @@ MODULE_SUMMARY = Template(
     ),
     slots=(
         Slot("CUT_NOTE", "text",
-             f"empty, or a sentence saying that a section longer than the part's limit ({PART_CHARS[1]:,} "
-             "characters) was cut, and where."),
+             "empty: parts are made to fit (plan TC-01). Kept for a fault: a sentence saying that the text was "
+             "cut, and where."),
         Slot("PACKAGE", "text", "the package's qualified name."),
         Slot("PART", "text", "'<k> of <n>': the part's number, in the package's order, and the count."),
         Slot("SECTIONS", "text",
              "the part's element sections as plain text, as in package-summary: each with its kind, qualified "
              "name, stereotypes, requirement text, documentation, tagged values (long ones cut, FU-020), members, "
-             f"relationships and diagrams. {PART_CHARS[0]:,} to {PART_CHARS[1]:,} characters where the sections "
-             "allow; one section longer than that is cut."),
+             f"relationships and diagrams. {PART_CHARS[0]:,} characters to the part size ({PART_CHARS[1]:,} unless "
+             "calibration lowers it, plan TC) where the sections allow; a section longer than that goes in "
+             "pieces, each headed by its title and '(piece i of n)'."),
     ),
     fragments=(("cut", "The text was cut at {limit:,} of its {length:,} characters, so its end is missing. "),),
 )

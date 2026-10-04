@@ -129,7 +129,7 @@ def test_options_change_rewrites_projects(tmp_path, monkeypatch, fake_chat):
     # A new prompt template version counts as an option change (FU-014).
     later = dataclasses.replace(prompts.PACKAGE_SUMMARY, version=prompts.PACKAGE_SUMMARY.version + 1)
     monkeypatch.setitem(prompts.CURRENT, "package-summary", later)
-    assert main(["run", "-o", str(out), "--text-model", "m"]) == 0
+    assert main(["run", "-o", str(out), "--text-model", "m", "--no-calibrate"]) == 0
     assert json.loads((out / "run.json").read_text())["projects"]["written"] == 1
     monkeypatch.setitem(prompts.CURRENT, "package-summary", prompts.PACKAGE_SUMMARY)
     assert main(["run", "-o", str(out)]) == 0

@@ -29,7 +29,7 @@ from .model import Element
 from .partition import Partition, sequence_partition
 from .progress import Progress
 from .prompt_values import Level
-from .prompts import CURRENT, MAX_SUMMARIES, PART_CHARS, SUMMARY_CHARS, Template
+from .prompts import CURRENT, MAX_SUMMARIES, PART_CHARS, Template
 from .provenance import Derivation, Trace
 from .view import ProjectView
 from .vision import fit_image
@@ -87,9 +87,11 @@ def _ask_with_image(llm: EnrichmentSession, template: Template, values: dict[str
     return llm.ask(template, values, image=data, mime=mime, image_path=rel, notes=notes, **kw)
 
 
-def package_parts(view: ProjectView, sections: list[Element], texts: list[str]) -> list[list[int]]:
+def package_parts(view: ProjectView, sections: list[Element], texts: list[str],
+                  limit: int = PART_CHARS[1]) -> list[list[int]]:
     """A large package's sections (indices), in parts of related elements: by nesting,
-    relationships and order, each of PART_CHARS where the sections allow (plan DV-05)."""
+    relationships and order, each of PART_CHARS[0] to `limit` characters where the sections allow
+    (plan DV-05)."""
     index = {e.id: i for i, e in enumerate(sections)}
 
     def section_of(el_id: str | None) -> int | None:
@@ -102,7 +104,7 @@ def package_parts(view: ProjectView, sections: list[Element], texts: list[str]) 
     parents = [section_of(e.owner) for e in sections]
     links = [(a, b) for r in view.rels
              if (a := section_of(r.source)) is not None and (b := section_of(r.target)) is not None and a != b]
-    return sequence_partition([len(t) + 1 for t in texts], parents, links, *PART_CHARS)
+    return sequence_partition([len(t) + 1 for t in texts], parents, links, min(PART_CHARS[0], limit // 2), limit)
 
 
 def pieces(text: str, limit: int = PART_CHARS[1]) -> list[str]:
@@ -160,9 +162,11 @@ class Enricher:
     """A project's LLM requests, and their answers as annotations (the view's, by element) and
     image descriptions (`images`, by archive entry)."""
 
-    def __init__(self, llm: EnrichmentSession, view: ProjectView, plan: FilePlan, root: Path, image_pixels: int):
+    def __init__(self, llm: EnrichmentSession, view: ProjectView, plan: FilePlan, root: Path, image_pixels: int,
+                 part_chars: int = PART_CHARS[1]):
         self.llm, self.view, self.plan, self.annotations = llm, view, plan, view.ann
         self.ix, self.content, self.root, self.image_pixels = view.ix, view.content, root, image_pixels
+        self.part_chars = part_chars  # the largest input of package text (plan TC)
         self.images: dict[str, tuple[str, Derivation]] = {}
         self.truncated = 0  # LLM inputs cut short to fit the prompt
         self._first: list[Request] = []
@@ -234,7 +238,7 @@ class Enricher:
             tr = view.trace(pkg)
             text = "\n\n".join([own, *texts])
             ask = partial(llm.ask, project=self.content.token, inputs=(tr.locator(),))
-            if len(text) <= SUMMARY_CHARS:
+            if len(text) <= self.part_chars:
                 self._first.append(Request(an.SUMMARY, pkg_id, tr, partial(
                     ask, CURRENT["package-summary"], pv.package_summary(text).values)))
                 continue
@@ -243,13 +247,13 @@ class Enricher:
                 self._first.append(Request(an.SUMMARY, pkg_id, tr, partial(
                     ask, CURRENT["instances-summary"], v.values, notes=v.notes)))
                 continue
-            requests = [r for g in package_parts(view, sections, texts)
-                        for r in repack([sections[i] for i in g], [texts[i] for i in g])]
+            requests = [r for g in package_parts(view, sections, texts, self.part_chars)
+                        for r in repack([sections[i] for i in g], [texts[i] for i in g], self.part_chars)]
             parts = [els for els, _ in requests]
             view.set_parts(pkg_id, [[e.id for e in part] for part in parts])
             self._large_packages.append((pkg_id, tr, parts, own))
             for k, (_, body) in enumerate(requests, 1):
-                v = pv.module_summary(ix.qualified_name(pkg_id), k, len(requests), body)
+                v = pv.module_summary(ix.qualified_name(pkg_id), k, len(requests), body, self.part_chars)
                 if v.cut:  # repack keeps parts within the limit: this would be a fault
                     self.truncated += 1
                     llm.truncated(tr.locator(), v.cut)

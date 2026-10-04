@@ -20,7 +20,7 @@ from .provenance import utc_now
 
 STATE_FILE = "state.sqlite"
 LOCK_FILE = "state.lock"
-SCHEMA_VERSION = 3  # 2: fingerprints and removed (plan PV); 3: calibrations (plan VA)
+SCHEMA_VERSION = 4  # 2: fingerprints and removed (plan PV); 3: calibrations (plan VA); 4: their kind (plan TC)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -106,13 +106,14 @@ CREATE TABLE IF NOT EXISTS removed (
 CREATE TABLE IF NOT EXISTS calibrations (
     endpoint TEXT NOT NULL,
     model TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'vision',          -- 'vision' (plan VA) or 'text' (plan TC): a model can be both
     suite INTEGER NOT NULL,
     settings TEXT NOT NULL,                       -- JSON, as tree settings name them
-    summary TEXT NOT NULL,                        -- JSON: what the eye charts measured
+    summary TEXT NOT NULL,                        -- JSON: what the eye charts or reading cards measured
     report TEXT NOT NULL,                         -- the report's directory, relative to the tree
     created TEXT NOT NULL,
     validation TEXT,                              -- JSON: what the model read on the tree's sketches
-    PRIMARY KEY (endpoint, model, suite)
+    PRIMARY KEY (endpoint, model, kind, suite)
 );
 
 -- Sightings in the current version of each input (missing inputs included, flagged).
@@ -138,6 +139,17 @@ class StateError(Exception):
     pass
 
 
+def _rebuild_calibrations(db: sqlite3.Connection) -> None:
+    """Schema 3's calibrations, all of vision models, in schema 4's table, keyed by kind too."""
+    db.execute("ALTER TABLE calibrations RENAME TO calibrations_3")
+    start = SCHEMA.index("CREATE TABLE IF NOT EXISTS calibrations")
+    db.execute(SCHEMA[start:SCHEMA.index(";", start)])
+    db.execute("INSERT INTO calibrations (endpoint, model, kind, suite, settings, summary, report, created, validation) "
+               "SELECT endpoint, model, 'vision', suite, settings, summary, report, created, validation "
+               "FROM calibrations_3")
+    db.execute("DROP TABLE calibrations_3")
+
+
 class State:
     def __init__(self, out: Path):
         self.out = out
@@ -158,6 +170,8 @@ class State:
                 if int(row[0]) < 2:  # the status view learns of removals (plan PV)
                     db.execute("DROP VIEW project_status")
                     db.execute(SCHEMA[SCHEMA.index("CREATE VIEW IF NOT EXISTS project_status"):].strip().rstrip(";"))
+                if int(row[0]) == 3:  # calibrations gain their kind, in their key (plan TC-07)
+                    _rebuild_calibrations(db)
                 db.execute("UPDATE meta SET value = ? WHERE key = 'schema_version'", (str(SCHEMA_VERSION),))
         self._lock_fd: Any = None
 
@@ -376,19 +390,20 @@ class State:
             db.executemany("DELETE FROM removed WHERE content_sha256 = ?", [(sha,) for sha in shas])
 
     # -- calibrations (plan VA) -----------------------------------------------------------------------
-    def calibration(self, endpoint: str, model: str, suite: int) -> sqlite3.Row | None:
-        return self.db.execute("SELECT * FROM calibrations WHERE endpoint = ? AND model = ? AND suite = ?",
-                               (endpoint, model, suite)).fetchone()
+    def calibration(self, endpoint: str, model: str, suite: int, kind: str = "vision") -> sqlite3.Row | None:
+        return self.db.execute("SELECT * FROM calibrations WHERE endpoint = ? AND model = ? AND kind = ? AND suite = ?",
+                               (endpoint, model, kind, suite)).fetchone()
 
     def save_calibration(self, endpoint: str, model: str, suite: int, settings: dict[str, Any],
-                         summary: dict[str, Any], report: str) -> None:
-        self.db.execute("INSERT OR REPLACE INTO calibrations (endpoint, model, suite, settings, summary, report, "
-                        "created) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        (endpoint, model, suite, json.dumps(settings), json.dumps(summary), report, utc_now()))
+                         summary: dict[str, Any], report: str, kind: str = "vision") -> None:
+        self.db.execute("INSERT OR REPLACE INTO calibrations (endpoint, model, kind, suite, settings, summary, report, "
+                        "created) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        (endpoint, model, kind, suite, json.dumps(settings), json.dumps(summary), report, utc_now()))
 
     def save_validation(self, endpoint: str, model: str, suite: int, summary: dict[str, Any]) -> None:
-        self.db.execute("UPDATE calibrations SET validation = ? WHERE endpoint = ? AND model = ? AND suite = ?",
-                        (json.dumps(summary), endpoint, model, suite))
+        """A vision calibration's validation on the tree's sketches (plan VA-05)."""
+        self.db.execute("UPDATE calibrations SET validation = ? WHERE endpoint = ? AND model = ? AND kind = 'vision' "
+                        "AND suite = ?", (json.dumps(summary), endpoint, model, suite))
 
     def calibrations(self) -> list[sqlite3.Row]:
         return self.db.execute("SELECT * FROM calibrations ORDER BY created DESC").fetchall()

@@ -30,3 +30,4 @@ supersedes it, and its status says so.
 | [0021](0021-exports-for-people-without-tools.md) | Exports for people without tools: a workbook and a self-contained page |
 | [0022](0022-retrieval-evaluated-by-construction.md) | Retrieval evaluated by construction, with paired comparisons |
 | [0023](0023-evaluation-as-library-code.md) | Evaluation code is library code; finished studies retire to a tag |
+| [0024](0024-text-calibration-guards-the-part-size.md) | The text model's calibration guards the part size; it never enlarges it |

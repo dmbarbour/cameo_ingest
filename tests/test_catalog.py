@@ -44,7 +44,7 @@ def test_catalog_records(fiction_tree):
 
 def test_catalog_summaries(tmp_path, fake_chat):
     """Generated text is in the catalog, with the model that wrote it."""
-    out = ingest(tmp_path, ("drone.mdzip", make_mdzip()), args=("--vision-model", "m", "--text-model", "m", "--no-preflight"))
+    out = ingest(tmp_path, ("drone.mdzip", make_mdzip()), args=("--vision-model", "m", "--text-model", "m", "--no-calibrate", "--no-preflight"))
     recs = [json.loads(line) for line in (project_dir(out) / "index" / "catalog.jsonl").open()]
     summaries = [r for r in recs if r["type"] == "summary"]
     assert summaries and all(r["model"] == "m" and r["text"] and r["of"][0] == r["key"] for r in summaries)

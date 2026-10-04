@@ -52,3 +52,75 @@ def test_summary_by_length():
     assert s["covered"] == [1, 0.5, 0.5, 0.5, 1] and s["middle_over_ends"] == 0.5
     assert s["named"] == [0.5, 0.25, 0.25, 0.25, 0.5]
     assert s["right"] == [1, 1, 0, 1, 1] and s["right_all"] == 0.8  # a card not asked isn't scored
+
+
+class TextReader:
+    """A text model that reads only the first `reach` characters of each input: it names a
+    reading card's groups, and answers its questions, from what it read. Other requests get a
+    fixed answer."""
+
+    replays = False
+
+    def __init__(self, reach: int):
+        self.reach, self.cards = reach, 0
+
+    def complete(self, model, messages, temperature):
+        text = messages[0]["content"]
+        if tc.PACKAGE not in text:
+            return "A package of blocks."
+        self.cards += 1
+        head, body = text.split("\n---\n", 1)
+        body = body[:self.reach]
+        if "Q1:" not in head:  # the summary probe
+            return "This part has the " + ", the ".join(re.findall(r"«Block» (\w+ Station)", body)) + "."
+        sections = {s.split("\n", 1)[0]: s for s in body.split("\n\n")}
+        answers = []
+        for i, attr, name in re.findall(r"^Q(\d): What is the (\w+) of the (.+)\?$", head, re.MULTILINE):
+            m = re.search(rf"Property {attr} = (.+)", sections.get(f"«Block» {name}", ""))
+            answers.append(f"Q{i}: {m.group(1) if m else 'not stated'}")
+        return "\n".join(answers)
+
+    def close(self):
+        pass
+
+
+def reading(monkeypatch, reach: int) -> list[TextReader]:
+    from cameo_ingest import llm
+
+    made: list[TextReader] = []
+    monkeypatch.setattr(llm, "OpenAIChat", lambda cfg: made.append(TextReader(reach)) or made[-1])
+    return made
+
+
+def test_a_run_guards_the_part_size(tmp_path, monkeypatch, capsys):
+    """A text model the tree has no calibration for is calibrated before building (plan TC-08):
+    one that reads every card keeps 12,000; one that loses the end of 12,000 characters gets
+    6,000, and its projects are made again; a rerun asks nothing."""
+    import json
+
+    from fixture_model import make_mdzip
+    from helpers import ingest
+
+    from cameo_ingest.cli import main
+
+    reading(monkeypatch, 10**9)
+    out = ingest(tmp_path, ("m.mdzip", make_mdzip()), args=("--text-model", "good", "--no-render", "--no-preflight"))
+    err = capsys.readouterr().err
+    assert "calibrating to good" in err and "calibrated to good: part_chars 12,000" in err
+    assert json.loads((out / "run.json").read_text())["options"]["part_chars"] == 12_000
+    report = next((out / "calibration").glob("good-text-*")) / "report.md"
+    assert "**Part size: 12,000 characters.**" in report.read_text()
+
+    readers = reading(monkeypatch, 9_000)
+    assert main(["run", "-o", str(out), "--text-model", "short"]) == 0
+    assert "calibrated to short: part_chars 6,000" in capsys.readouterr().err
+    run = json.loads((out / "run.json").read_text())
+    assert run["options"]["part_chars"] == 6_000 and run["projects"]["written"] == 1  # made again
+    assert sum(r.cards for r in readers) == 2 * tc.GUARD_CARDS * len(tc.GUARD_LENGTHS)
+
+    readers = reading(monkeypatch, 9_000)
+    assert main(["run", "-o", str(out)]) == 0
+    assert sum(r.cards for r in readers) == 0  # the record stands
+    assert main(["status", "-o", str(out)]) == 0
+    status = capsys.readouterr().out
+    assert "calibrated (text): short on " in status and "part_chars 6000" in status

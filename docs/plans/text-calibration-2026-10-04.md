@@ -1,6 +1,9 @@
 # Plan: inputs cut by us, and calibrating to the configured text model, 2026-10-04
 
-- **Status:** Active. CP1 done (0.15.3); CP2 measured, stopped for the maintainer's review.
+- **Status:** Active. CP1 done (0.15.3); CP2 done. The maintainer chose, on 2026-10-04, calibration
+  as a guard ("A is fine"): the part size stays 12,000 characters by default, and calibration only
+  shrinks it, for a model that reads 12,000 unevenly or an endpoint that cuts inputs. CP3
+  done (0.16.0); CP4 in progress.
 - **Step prefix:** `TC`, so steps are `TC-01`, `TC-02` and so on.
 - **Addresses:** the maintainer, 2026-10-04, on the roadmap's chunk splitting:
 
@@ -40,7 +43,11 @@ Between the two, nothing was measured.
 | TC-02 | **The release check:** the whole tree rebuilt from 0.15.2's store; the requests that change; the invariants; retrieval compared (`scripts/compare_retrieval.py`). Version 0.15.3. | Done: 546 new requests (517 parts, renumbered where a section was split, 16 of them pieces; 29 syntheses), none failed, none cut; the invariants hold; retrieval identical to 0.15.2's for every system |
 | TC-03 | **Reading cards,** in `textcal.py`, the counterpart of `eyechart.py`:<br>- synthetic package text in the format of real parts (`Section.text`): invented blocks, requirements and activities, with documentation, attributes and relationships;<br>- every name and figure invented and unique, so that a mention is an exact match, as in the fictional projects;<br>- lengths of 6,000, 12,000, 24,000, 48,000 and 96,000 characters;<br>- six cards per length, from fixed seeds.<br>**Two probes on each card:**<br>- **summary:** the real `module-summary` template, scored by the names it mentions in each fifth of the input;<br>- **facts:** five questions about facts planted in different fifths, in a calibration-only template, scored right or wrong.<br>**Tests:** the cards are deterministic, and the scoring is exact on canned answers. | Done, revised once: the first cards' elements were all alike, and a right summary of them names examples from the start. Cards now hold five groups, each with a hub of its own purpose, one a fifth; scored by groups covered. 8 cards a length, up to 192,000 characters |
 | TC-04 | **The measurement,** with gemma-4 and DeepSeek-V3.2, both on DeepInfra: about 60 requests a probe, roughly 280,000 input tokens a model. A research note: by length, the share of names from each fifth, facts found by position, and how the two probes agree. | Done: `docs/research/text-reading-2026-10-04.md`. Neither model loses its place on these cards up to 192,000 characters, and the probes agree; but the cards are easier than real packages, which lost their middle above 100,000 in one request |
-| TC-05 | **The rule,** drafted from TC-04: the longest length still read evenly, with a margin such as plan VA's `FLAT`, and which probe decides. | Waiting on the maintainer: the measure can't set a larger part size for strong models (it saturates), only guard against weak ones |
+| TC-05 | **The rule** (decided: a guard). Cards of 6,000, 12,000 and 24,000 characters, 5 of each, both probes: 30 requests. A length passes when at least 90% of groups are covered and 90% of facts are right, and no fifth falls below 60% in either probe (a fifth lost is an input cut short). The part size is 12,000 when 12,000 passes, else 6,000; when 6,000 fails too, 6,000 with a warning. 24,000 is reported, never used: calibration doesn't make parts larger. | Decided |
+| TC-06 | **The part size as an option:** the setting `part_chars` and `--part-chars N`. An explicit setting wins, then the text model's calibration, then 12,000. It sets the part's limit, and the size of a package summarized in one request (both 12,000 today). It is in each project's options, so every project's options hash changes once, and the tree rebuilds from the store. The prompts' slot descriptions say so, and no longer say that a long section is cut.<br>**Tests:** a smaller part size gives more parts; an explicit setting wins over a record. | Done: `part_chars` in settings and options, `--part-chars`; the enricher, the partition and the guard on parts take it; slot descriptions corrected |
+| TC-07 | **The calibration record:** schema 4 gives `calibrations` a `kind`, `vision` or `text`, in its key, since one model can be both (gemma-4 is). A tree of schema 3 is migrated in place.<br>**Tests:** a schema 3 tree migrates and keeps its vision record; a model's text and vision records coexist. | Done: schema 4, `kind` in the key; schema 3 trees rebuilt in place, their records kept as `vision` |
+| TC-08 | **Calibration in `run`:** in the hook where the vision model is calibrated, a text model with no record is calibrated first: about 30 requests, once per model and endpoint; the report is `calibration/<model>-text-<date>/report.md`. `--no-calibrate` skips both. An incomplete calibration isn't recorded, and the run uses the default with a warning. `status` lists both kinds.<br>**Tests,** with fake models: a model that reads well keeps 12,000; one that loses the end of 12,000-character cards gets 6,000, and its projects rebuild; a rerun asks nothing. | Done: `textcal.calibrate_text` in the run's hook, before the vision model's; `status` names each record's kind; tests with a model reading 9,000 characters of each input (it gets 6,000) and one reading all (12,000) |
+| TC-09 | **The release check:** the tree rebuilt (its options hash changes); gemma-4 calibrated; the invariants; retrieval compared. An ADR; the design docs and README; 0.16.0. | |
 
 ## Checkpoints
 
@@ -48,8 +55,8 @@ Between the two, nothing was measured.
 |---|---|---|
 | CP1: nothing cut | TC-01, TC-02 | 0.15.3: every section's text reaches the model |
 | CP2: the measurement | TC-03 to TC-05 | The research note and a proposed rule. **Then stop for the maintainer's review** |
-| CP3: calibration in `run` | Expanded after CP2 | As for vision: explicit setting, then the calibration record (per text model and endpoint), then the uncalibrated defaults. The part size is in each project's options, so a change rebuilds. `status` lists it |
-| CP4: the release check | Expanded after CP2 | A second model's calibration; an ADR; the design docs; a version |
+| CP3: calibration in `run` | TC-06 to TC-08 | The part size as an option, guarded per text model |
+| CP4: the release check | TC-09 | 0.16.0 |
 
 ## Results
 
