@@ -73,6 +73,13 @@ def test_diagram_broken_flows_notes_and_file_references(tmp_path):
     assert '- [4] Note: "first line second line"' in page, page
     assert "drone.mdzip#long1" not in page and "- [5] Class: [Gravity calibration" in page, page
 
+    # A note's text can be HTML, as Cameo writes rich text: it reads as text.
+    html = ("&lt;html&gt;&lt;head&gt;&lt;style&gt;p {padding:0px;}&lt;/style&gt;&lt;/head&gt;&lt;body&gt;"
+            "&lt;p&gt;Check the &lt;b&gt;battery&lt;/b&gt; first&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;")
+    out = run(tmp_path / "html", "drone.mdzip", make_mdzip(layout=LAYOUT_BROKEN.replace("first line\nsecond line", html)))
+    page = (project_dir(out) / "diagrams/Drone_BDD.md").read_text()
+    assert '- [4] Note: "Check the battery first"' in page and "padding" not in page, page
+
     # A flow whose element is in another project: Cameo's convention (a path's first end is
     # its target) gives the direction.
     out = run(tmp_path / "ext", "drone.mdzip", make_mdzip(layout=LAYOUT_BROKEN.replace(

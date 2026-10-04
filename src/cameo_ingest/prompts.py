@@ -351,7 +351,7 @@ MODULE_SUMMARY = Template(
              "name, stereotypes, requirement text, documentation, tagged values (long ones cut, FU-020), members, "
              f"relationships and diagrams. {PART_CHARS[0]:,} characters to the part size ({PART_CHARS[1]:,} unless "
              "calibration lowers it, plan TC) where the sections allow; a section longer than that goes in "
-             "pieces, each headed by its title and '(piece i of n)'."),
+             "pieces, each headed by its title and a line 'Piece: i of n'."),
     ),
     fragments=(("cut", "The text was cut at {limit:,} of its {length:,} characters, so its end is missing. "),),
 )

@@ -109,13 +109,14 @@ def package_parts(view: ProjectView, sections: list[Element], texts: list[str],
 
 def pieces(text: str, limit: int = PART_CHARS[1]) -> list[str]:
     """A section's text in pieces of at most `limit` characters, each headed by the section's
-    title (its first line) and which piece it is: cut between lines, or between words in a line
-    longer than a piece. A text that fits is one piece, as it is (plan TC-01)."""
+    title (its first line) and a field line saying which piece it is ("Piece: 2 of 3"; on the
+    title's line, a model took it for part of the name): cut between lines, or between words in a
+    line longer than a piece. A text that fits is one piece, as it is (plan TC-01)."""
     if len(text) <= limit:
         return [text]
     title, _, rest = text.partition("\n")
     title = title[:limit // 4]
-    room = limit - len(title) - len(" (piece 999 of 999)") - 1
+    room = limit - len(title) - len("\nPiece: 999 of 999") - 1
     bodies: list[list[str]] = [[]]
     size = 0
     for line in rest.split("\n"):
@@ -133,7 +134,7 @@ def pieces(text: str, limit: int = PART_CHARS[1]) -> list[str]:
             if not line:
                 break
     n = len(bodies)
-    return [f"{title} (piece {i} of {n})\n" + "\n".join(b) for i, b in enumerate(bodies, 1)]
+    return [f"{title}\nPiece: {i} of {n}\n" + "\n".join(b) for i, b in enumerate(bodies, 1)]
 
 
 def repack(part: list[Element], texts: list[str], limit: int = PART_CHARS[1]) -> list[tuple[list[Element], str]]:

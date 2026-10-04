@@ -8,10 +8,11 @@ tested offline and deterministically (BASE-022R5). Record again whenever a promp
 fixture model (tests/fixture_model.py) or the page text changes; the replay test then
 fails with a ReplayMiss.
 
-Recording runs without rendering (--no-render), so no request depends on how the installed
-Pillow draws diagram sketches. Package_Delivery_Drone is included when the sample is
-present (scripts/fetch_samples.py --small). The fixture keeps model names, request hashes
-and answers; endpoints are blanked, since replay ignores them.
+Recording runs without calibrating, as the replay tests do, and without rendering
+(--no-render), so that no request depends on how the installed Pillow draws diagram sketches.
+Package_Delivery_Drone is included when the sample is present (scripts/fetch_samples.py
+--small). The fixture keeps model names, request hashes and answers; endpoints are blanked,
+since replay ignores them.
 """
 
 from __future__ import annotations
@@ -44,7 +45,7 @@ def main() -> int:
         tmp = Path(tmp_dir)
         fixture = tmp / "drone.mdzip"
         fixture.write_bytes(make_mdzip())
-        common = ["--no-render", "--cache-dir", str(tmp / "store"), "--llm-concurrency", "4", "-v"]
+        common = ["--no-render", "--no-calibrate", "--cache-dir", str(tmp / "store"), "--llm-concurrency", "4", "-v"]
         common += ["--env", args.env] if args.env else []
         common += ["--text-model", args.model] if args.model else []
         for i, src in enumerate([fixture] + ([SAMPLE] if SAMPLE.exists() else [])):

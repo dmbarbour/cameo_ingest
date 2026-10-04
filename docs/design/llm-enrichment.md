@@ -48,7 +48,8 @@ calibration, then 12,000. It bounds a part, and a package summarized in one requ
 **Nothing is cut to fit a part** (plan TC-01, 0.15.3). A part over the size is repacked
 (`enrich.repack`): its sections, in order, in as few requests as fit. A section longer than a part
 goes in pieces (`enrich.pieces`), cut between lines (or words), each headed by its title and
-"(piece i of n)", each a part of its own.
+a line "Piece: i of n" (0.16.1; on the title's line, a model took it for part of a name), each
+a part of its own.
 
 ## Calibrating to the text model (`textcal.py`)
 
@@ -64,7 +65,8 @@ A guard, not a tuner (ADR-0024). The first run with a text model asks it to read
   - The part size stays 12,000 when 12,000 is even. Otherwise it is 6,000, with a warning when
     6,000 isn't even either. 24,000 is reported, never used.
 - **The record:** `calibrations`, kind `text`, per model and endpoint; an incomplete calibration
-  isn't recorded. The report is `calibration/<model>-text-<date>/report.md`.
+  isn't recorded. The report is `calibration/<model>-text-<date>/report.md`. `calibrate-text`
+  calibrates again on demand.
 
 **Why only a guard:** on these cards gemma-4 and DeepSeek-V3.2 read evenly to 192,000 characters,
 but the cards are easier than real packages. In one request, gemma-4 lost the middle of real

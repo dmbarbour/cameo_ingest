@@ -7,24 +7,17 @@ so that their history can be found. When an item becomes a plan, it moves to `do
 
 Ranked on 2026-10-04: easy and valuable first. The items are described in the sections below.
 
-**Quick wins** (hours each; no decision needed):
-1. **HTML in shapes' text:** convert it as documentation is converted, at the one place the
-   layout reader takes a shape's text (`layout.py`). Notes on diagrams, often rationale, become
-   readable in pages, chunks and legends. 41 pages; about 72 requests asked again.
-2. **The piece marker:** reword "(piece i of n)" so that it doesn't read as part of a name. Done
-   with item 1, the requests that change are asked again once.
-3. **`calibrate-text` on demand,** a copy of `calibrate-vision`'s command: recalibrate after a
-   host changes its limits without rebuilding a tree.
-4. **The upward-arrow spot check:** read the descriptions of diagrams with many upward arrows.
-   This is cheap, and decides whether the arrow items under "Sketches" are worth their cost.
+**Quick wins:** done on 2026-10-04 (0.16.1): HTML in shapes' text converted, the piece marker
+on a line of its own, and `calibrate-text`. Left: the upward-arrow spot check, which decides
+whether the arrow items under "Sketches" are worth their cost.
 
 **Larger, and worth it** (a day or more each):
-5. **Type hierarchies for search:** the maintainer asked for them. They are deterministic, with
+1. **Type hierarchies for search:** the maintainer asked for them. They are deterministic, with
    no LLM, and follow the pattern of the requirement threads.
-6. **What a drawn diagram shows inside shapes:** the data is already read (`usedObjects`).
+2. **What a drawn diagram shows inside shapes:** the data is already read (`usedObjects`).
    "Shown in diagrams" would also name compartment properties, ports and triggers. That changes
    many chunks, so it needs the maintainer's yes.
-7. **Requirement tables' cells:** the rows are now known, and the columns are configured. Each
+3. **Requirement tables' cells:** the rows are now known, and the columns are configured. Each
    cell comes from its row's properties.
 
 **Waiting on evidence:**
@@ -96,9 +89,6 @@ Ranked on 2026-10-04: easy and valuable first. The items are described in the se
     are, would be needed before letting any part grow (`docs/research/text-reading-2026-10-04.md`).
   - **The same guard for other limits:** `DIAGRAM_ITEMS` (150 shapes and connections per
     request) and `DIGEST_CHARS`.
-  - **`calibrate-text` on demand,** as `calibrate-vision` is; today only a run calibrates.
-  - **The piece marker:** one answer in 16 repeats "(piece 2 of 2)" as part of a name. Rewording
-    it changes those requests.
 - **Keyword search from the command line,** for when Python can run where the corpus is read.
 
 ## Sketches and the vision model
@@ -143,10 +133,6 @@ Ranked on 2026-10-04: easy and valuable first. The items are described in the se
 
 ## Known gaps and small fixes
 
-- **HTML in shapes' text:** a note's or text shape's text in the layout can be HTML (`<html>
-  <head> <style> p {padding:0px…`), and legends show it as written: 72 of 6,551 stored diagram and
-  module prompts, and 41 diagram pages, at 0.15.2. Documentation and tagged values are converted
-  (`richtext`); shapes' text isn't. Converting it changes those requests.
 - **Stale proxies:** a stale snapshot could name an element differently from Cameo. Nothing
   checks for this.
 - **`quality`** still cuts an answer out of the rendered page with a regex (AR-012R2, partial by

@@ -22,6 +22,8 @@ from typing import IO
 
 from lxml import etree
 
+from .richtext import to_text
+
 log = logging.getLogger(__name__)
 
 # Presentation-only helpers that carry no model meaning.
@@ -135,7 +137,7 @@ def parse_layout(stream: IO[bytes]) -> Layout:
                 elif tag == "geometry" and child.text:
                     view.rect, view.points = _geometry(child.text)
                 elif tag == "text" and child.text:
-                    view.text = child.text.strip()
+                    view.text = to_text(child.text)  # a note's or text box's text can be HTML, as documentation is
                 elif tag == "linkFirstEndID":
                     view.first = _idref(child)
                 elif tag == "linkSecondEndID":

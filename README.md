@@ -44,6 +44,7 @@ many files, bundles or names it turns up under.
 | `cameo-ingest remove -o OUT TOKEN... [--dry-run]` / `restore` | Removes projects from the tree, and keeps them out of later runs while their inputs remain; `restore` undoes it. |
 | `cameo-ingest export -o OUT [--workbook FILE] [--search-page FILE]` | Writes the catalog of the tree's models for people to search without tools: a workbook, a self-contained search page, or both (see "Searching without tools"). Apart from `run`, since it is a distribution step. |
 | `cameo-ingest calibrate-vision -o OUT [--suite quick\|standard]` | Calibrates the sketches to the tree's vision model on demand, as the first run with a model does on its own (see "Calibrating sketches to the vision model"). |
+| `cameo-ingest calibrate-text -o OUT` | Calibrates the part size to the tree's text model on demand, as the first run with a model does on its own (see "Calibrating the part size to the text model"). |
 
 - **Output directories.** A missing or empty directory starts a tree. A directory with
   `state.sqlite` is continued. Any other non-empty directory is refused.
@@ -149,12 +150,13 @@ explicitly; it is there for tuning, and the calibrated sizes should serve.
 A package whose text is over the part size (12,000 characters, unless the text model's
 calibration lowers it) is summarized in parts of 3,000 characters up to that size, grouped by
 nesting, relationships and order. A single element whose text is longer than a part goes in
-pieces, each headed by its title and "(piece i of n)": nothing is cut. The package is then summarized from
-its parts' summaries, through runs of at most 30 of them when there are more. A package
-made mostly of instance specifications (at least 80%, such as analysis results) is summarized
-instead in one request, from a digest of its instances by classifier and slot. Short parts
-keep each request well within what the model reads evenly; one long request loses the middle
-of a large package (`docs/research/sandwiching-2026-09-30.md`).
+pieces, each headed by its title and a line such as "Piece: 2 of 3": nothing is cut. The
+package is then summarized from its parts' summaries, through runs of at most 30 of them when
+there are more. A package made mostly of instance specifications (at least 80%, such as
+analysis results) is summarized instead in one request, from a digest of its instances by
+classifier and slot. Short parts keep each request well within what the model reads evenly;
+one long request loses the middle of a large package
+(`docs/research/sandwiching-2026-09-30.md`).
 
 ### Calibrating sketches to the vision model
 
@@ -263,7 +265,8 @@ The first run with a text model also checks that it reads a part evenly, start t
   read these cards evenly to 192,000 characters, but real packages are harder to summarize, and
   larger parts mean coarser part summaries.
 - **The report:** `OUT/calibration/<model>-text-<date>/report.md`. `--part-chars N` sets the size
-  by hand, and wins.
+  by hand, and wins. `cameo-ingest calibrate-text -o OUT` calibrates again on demand, after a host
+  changes its limits, say.
 
 ## Output
 

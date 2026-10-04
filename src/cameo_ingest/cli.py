@@ -13,6 +13,7 @@
     cameo-ingest restore -o OUT TOKEN...           undo `remove`; the next run builds them again
     cameo-ingest quality sample -o OUT [--n N]     draw a spot-check set of LLM requests and answers
     cameo-ingest calibrate-vision -o OUT [--suite S]   eye charts: the sketch settings for the vision model
+    cameo-ingest calibrate-text -o OUT             reading cards: the part size for the text model (a guard)
 """
 
 from __future__ import annotations
@@ -41,7 +42,7 @@ from .state import State, StateError
 log = logging.getLogger("cameo_ingest")
 
 COMMANDS = ("add", "run", "ingest", "status", "prune", "quality", "export", "scan", "projects", "groups", "remove",
-            "restore", "calibrate-vision")
+            "restore", "calibrate-vision", "calibrate-text")
 
 NO_MODEL = """error: no LLM model is configured. Either
   - pass --no-llm to ingest without LLM summaries and descriptions, or
@@ -253,6 +254,12 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--suite", choices=("quick", "standard"), default="standard",
                    help="quick: 11 eye charts, to check a model; standard: 80, and a trial of the image's place, to "
                         "calibrate it (the default)")
+    about = ("calibrate the part size to the tree's text model, as the first run with a model does on its own: "
+             "reading cards of 6,000 to 24,000 characters, 30 requests (see README, Calibrating the part size to the "
+             "text model). It only lowers the part size, for a model that reads 12,000 characters unevenly. The "
+             "calibration is recorded in the tree, and runs with that model use it, unless the tree sets "
+             "--part-chars itself")
+    sub.add_parser("calibrate-text", parents=[common, running], help=about, description=about)
     q = sub.add_parser("quality", help="measure the quality of LLM enrichment (see docs/design/llm-enrichment.md)")
     qs = q.add_subparsers(dest="action", required=True, metavar="ACTION")
     qsample = qs.add_parser("sample", parents=[common], help="draw a spot-check set of requests and answers")
@@ -672,6 +679,52 @@ def _sizes(t: TreeSettings) -> tuple[Any, ...]:
     return t.image_pixels or IMAGE_PIXELS, t.modules, t.sketch
 
 
+def calibrate_text(out: Path, args: argparse.Namespace) -> int:
+    """`calibrate-text` (plan TC): reading cards read by the tree's text model, and the part size
+    they call for, recorded for runs with that model."""
+    from . import textcal
+
+    stored = stored_settings(out)
+    settings = effective_settings(args, stored)
+    cfg = llm_config(settings)
+    if cfg is None:
+        return 2
+    cfg.vision_model = None  # text only
+    if settings.no_llm or not cfg.text_model:
+        print("error: calibrate-text needs a text model: --text-model, or CAMEO_INGEST_TEXT_MODEL (see `run`)",
+              file=sys.stderr)
+        return 2
+    llm = EnrichmentSession(cfg, Path(settings.cache_dir) if settings.cache_dir else out / ".cache",
+                            connect(cfg, args.llm_replay))
+    if not args.no_preflight and not check_endpoint(llm):
+        return 5
+    state = State(out)
+    try:
+        state.lock()
+        result = textcal.calibrate_text(out, state, llm, settings.llm_concurrency or 1,
+                                        Progress(heartbeat=args.heartbeat))
+    except KeyboardInterrupt:
+        print("interrupted; the answers so far are stored, so running again asks only for the rest", file=sys.stderr)
+        return 130
+    except StateError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    finally:
+        state.close()
+    own = TreeSettings.from_stored(stored).part_chars
+    print(f"part_chars: {result.part_chars:,}: the model {result.why}"
+          + (f"; the tree's own setting, {own:,}, overrides it" if own is not None else ""))
+    print(f"the measurements are in {result.dest / 'report.md'}")
+    if result.problem:
+        print(f"warning: {result.problem}; see the replies in {result.dest / 'results.json'}. Not recorded",
+              file=sys.stderr)
+        return 2
+    if result.warning:
+        print(f"warning: {result.warning}", file=sys.stderr)
+    print(f"recorded: runs with {cfg.text_model} use this part size, unless the tree sets it itself")
+    return 0
+
+
 def calibrate_vision(out: Path, args: argparse.Namespace) -> int:
     """`calibrate-vision` (plans VC, VA): eye charts read by the tree's vision model, the sketch
     settings they call for, and the standard suite's calibration recorded for runs with that model."""
@@ -785,7 +838,7 @@ def main(argv: list[str] | None = None) -> int:
     out: Path = args.out
     if not State.exists(out):
         if args.command in ("run", "status", "prune", "quality", "export", "scan", "projects", "groups", "remove",
-                            "restore", "calibrate-vision"):
+                            "restore", "calibrate-vision", "calibrate-text"):
             print(f"error: no output tree at {out}; start one with `add` or `ingest`", file=sys.stderr)
             return 2
         if out.exists() and any(p.name != ".cache" for p in out.iterdir()):
@@ -831,6 +884,8 @@ def main(argv: list[str] | None = None) -> int:
         return versions_command(out, args)
     if args.command == "calibrate-vision":
         return calibrate_vision(out, args)
+    if args.command == "calibrate-text":
+        return calibrate_text(out, args)
     if args.command == "prune":
         state = State(out)
         try:

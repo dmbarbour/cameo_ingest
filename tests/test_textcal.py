@@ -124,3 +124,30 @@ def test_a_run_guards_the_part_size(tmp_path, monkeypatch, capsys):
     assert main(["status", "-o", str(out)]) == 0
     status = capsys.readouterr().out
     assert "calibrated (text): short on " in status and "part_chars 6000" in status
+
+
+def test_calibrate_text_on_demand(tmp_path, monkeypatch, capsys):
+    """`calibrate-text` calibrates the tree's text model when asked, and records it; asked again,
+    it answers from the store."""
+    import json
+
+    from fixture_model import make_mdzip
+    from helpers import ingest
+
+    from cameo_ingest.cli import main
+    from cameo_ingest.state import State
+
+    out = ingest(tmp_path, ("m.mdzip", make_mdzip()))
+    assert main(["calibrate-text", "-o", str(out)]) == 2  # no text model
+    readers = reading(monkeypatch, 9_000)
+    assert main(["calibrate-text", "-o", str(out), "--text-model", "short", "--no-preflight"]) == 0
+    printed = capsys.readouterr().out
+    assert "part_chars: 6,000: the model reads 6,000-character inputs evenly, but not 12,000" in printed
+    assert "recorded: runs with short use this part size" in printed
+    st = State(out)
+    assert json.loads(st.calibration("", "short", tc.SUITE_VERSION, "text")["settings"]) == {"part_chars": 6000}
+    st.close()
+    assert sum(r.cards for r in readers) == 30
+    readers = reading(monkeypatch, 9_000)
+    assert main(["calibrate-text", "-o", str(out), "--text-model", "short", "--no-preflight"]) == 0
+    assert sum(r.cards for r in readers) == 0  # every card answered from the store
