@@ -9,7 +9,7 @@ plan yet is in `docs/roadmap.md`. When a plan is done, its content goes to `docs
 
 | Plan | Prefix | Status |
 |---|---|---|
-| [Cameo's tables, computed as Cameo shows them](cameo-tables-2026-10-04.md) | CT | CP1 in progress |
+| [Cameo's tables, computed as Cameo shows them](cameo-tables-2026-10-04.md) | CT | CP1 done (0.17.0); CP2 stopped: rows from scope can't be checked |
 
 ## Archived
 
