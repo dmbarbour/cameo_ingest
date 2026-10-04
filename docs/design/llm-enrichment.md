@@ -65,7 +65,8 @@ plans:
   `sketch.conventions`).
 - **Inputs are plain text** (`Section.text`), without link targets or trace lines. The prompt, and
   so the stored answer, depends only on the model's content, not on where it was found
-  (BASE-022R6, AR-018).
+  (BASE-022R6, AR-018). Diagram legends and connections are plain too, without Markdown's escapes
+  (`diagram_text.PLAIN`; AR-002, 0.15.2): `T/T < Threshold`, not `T/T \< Threshold`.
 
 Quality was lost "mostly in our input". The model invented no elements; its own faults were
 invented structure and Markdown. Residual: gemma calls «DeriveReqt» links "refinements", though it

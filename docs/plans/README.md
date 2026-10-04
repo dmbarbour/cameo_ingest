@@ -36,4 +36,4 @@ All closed and archived in `docs/archive/reviews/`:
 |---|---|---|
 | [Baseline](../archive/reviews/baseline-2026-09-29.md), closed 2026-09-30 | BASE | ADR-0001 to 0005, 0010; design/architecture, design/output-and-chunks |
 | [Follow-up](../archive/reviews/followup-2026-09-30.md), closed 2026-09-30 | FU | ADR-0011, 0012; design/llm-enrichment, design/diagrams |
-| [Architecture](../archive/reviews/architecture-2026-10-01.md), closed 2026-10-02 | AR | ADR-0008, 0009, 0023; design/architecture; roadmap (AR-002) |
+| [Architecture](../archive/reviews/architecture-2026-10-01.md), closed 2026-10-02 | AR | ADR-0008, 0009, 0023; design/architecture; AR-002's escapes fixed in 0.15.2 |

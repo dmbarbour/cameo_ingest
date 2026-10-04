@@ -107,7 +107,7 @@ def test_diagram_directions_item_flows_and_labels(tmp_path):
     from cameo_ingest import diagram_graph as dg
     from cameo_ingest.archive import discover
     from cameo_ingest.diagram_graph import shape_label
-    from cameo_ingest.diagram_text import Refs, describe
+    from cameo_ingest.diagram_text import describe, markdown
     from cameo_ingest.layout import View
     from cameo_ingest.pipeline import parse_project
 
@@ -137,14 +137,19 @@ def test_diagram_directions_item_flows_and_labels(tmp_path):
     g = dg.DiagramGraph()
     action = el("OpaqueAction", attrs={"body": "j = 1"})
     g.nodes.append(dg.Node(1, View("v1", "OpaqueAction", action), "j = 1", 0))
-    legend, _ = describe(ix, g, Refs(lambda e: f"page.md#{e}"))
+    legend, _ = describe(ix, g, markdown(lambda e: f"page.md#{e}"))
     assert legend == [f"- [1] OpaqueAction: [j = 1](page.md#{action})"], legend
     # A label that starts with a bracket is text, not a link, when there is no target (AR-002).
     pump = el("Class")
     ix.elements[pump].name = "[Deleted] Pump"
     g.nodes.append(dg.Node(2, View("v2", "Class", pump), "[Deleted] Pump", 0))
-    legend, _ = describe(ix, g)
+    legend, _ = describe(ix, g, markdown(lambda e: None))
     assert legend[1] == "- [2] Class: \\[Deleted\\] Pump", legend
+    # The LLM's request has the text as it is, without Markdown's escapes (AR-002).
+    ix.elements[pump].name = "T/T < Threshold [Deleted]"
+    g.nodes[1] = dg.Node(2, View("v2", "Class", pump), "T/T < Threshold [Deleted]", 0)
+    assert describe(ix, g)[0][1] == "- [2] Class: T/T < Threshold [Deleted]"
+    assert describe(ix, g, markdown(lambda e: None))[0][1] == "- [2] Class: T/T \\< Threshold \\[Deleted\\]"
 
 
 def large_layout() -> str:

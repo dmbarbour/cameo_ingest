@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from . import sections as sx
 from . import semantics as sem
-from .diagram_text import Refs
+from .diagram_text import Refs, markdown
 from .model import Element
 from .text import md_inline, slug
 
@@ -71,7 +71,7 @@ class FilePlan:
 
     def refs(self, from_file: str) -> Refs:
         """Links from `from_file` to the pages of elements that have one, for diagram lists."""
-        return Refs(lambda e: relpath(self.file_of[e], from_file) if self.file_of.get(e) else None)
+        return markdown(lambda e: relpath(self.file_of[e], from_file) if self.file_of.get(e) else None)
 
     def link(self, target_id: str, from_file: str, text: str | None = None) -> str:
         """A link to the element's page, labelled with `text` or the element's label; the label

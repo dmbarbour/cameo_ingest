@@ -98,8 +98,6 @@ so that their history can be found. When an item becomes a plan, it moves to `do
 
 ## Known gaps and small fixes
 
-- **Escapes in LLM legends** (AR-002): `describe` still applies `md_inline` to plain text, so a
-  legend sent to the model reads `T/T \< Threshold`. Fixing it changes request hashes.
 - **Stale proxies:** a stale snapshot could name an element differently from Cameo. Nothing
   checks for this.
 - **`quality`** still cuts an answer out of the rendered page with a regex (AR-012R2, partial by
