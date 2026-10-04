@@ -2,7 +2,7 @@
 
 - **Status:** Accepted, 2026-10-04 (plan TC; the maintainer: "A is fine").
 - **Sources:**
-  - `docs/plans/text-calibration-2026-10-04.md`;
+  - `docs/archive/plans/text-calibration-2026-10-04.md`;
   - `docs/research/text-reading-2026-10-04.md`;
   - `docs/research/sandwiching-2026-09-30.md`;
   - `docs/design/llm-enrichment.md`.

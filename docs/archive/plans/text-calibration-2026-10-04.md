@@ -1,9 +1,10 @@
 # Plan: inputs cut by us, and calibrating to the configured text model, 2026-10-04
 
-- **Status:** Active. CP1 done (0.15.3); CP2 done. The maintainer chose, on 2026-10-04, calibration
-  as a guard ("A is fine"): the part size stays 12,000 characters by default, and calibration only
-  shrinks it, for a model that reads 12,000 unevenly or an endpoint that cuts inputs. CP3
-  done (0.16.0); CP4 in progress.
+- **Status:** Done on 2026-10-04 (0.16.0). The maintainer chose calibration as a guard ("A is
+  fine"): the part size stays 12,000 characters by default, and calibration only lowers it, for a
+  model that reads 12,000 unevenly or an endpoint that cuts inputs. Retired to the archive that
+  day: its content is in `docs/design/llm-enrichment.md`, ADR-0024, the research note, and the
+  roadmap.
 - **Step prefix:** `TC`, so steps are `TC-01`, `TC-02` and so on.
 - **Addresses:** the maintainer, 2026-10-04, on the roadmap's chunk splitting:
 
@@ -47,7 +48,7 @@ Between the two, nothing was measured.
 | TC-06 | **The part size as an option:** the setting `part_chars` and `--part-chars N`. An explicit setting wins, then the text model's calibration, then 12,000. It sets the part's limit, and the size of a package summarized in one request (both 12,000 today). It is in each project's options, so every project's options hash changes once, and the tree rebuilds from the store. The prompts' slot descriptions say so, and no longer say that a long section is cut.<br>**Tests:** a smaller part size gives more parts; an explicit setting wins over a record. | Done: `part_chars` in settings and options, `--part-chars`; the enricher, the partition and the guard on parts take it; slot descriptions corrected |
 | TC-07 | **The calibration record:** schema 4 gives `calibrations` a `kind`, `vision` or `text`, in its key, since one model can be both (gemma-4 is). A tree of schema 3 is migrated in place.<br>**Tests:** a schema 3 tree migrates and keeps its vision record; a model's text and vision records coexist. | Done: schema 4, `kind` in the key; schema 3 trees rebuilt in place, their records kept as `vision` |
 | TC-08 | **Calibration in `run`:** in the hook where the vision model is calibrated, a text model with no record is calibrated first: about 30 requests, once per model and endpoint; the report is `calibration/<model>-text-<date>/report.md`. `--no-calibrate` skips both. An incomplete calibration isn't recorded, and the run uses the default with a warning. `status` lists both kinds.<br>**Tests,** with fake models: a model that reads well keeps 12,000; one that loses the end of 12,000-character cards gets 6,000, and its projects rebuild; a rerun asks nothing. | Done: `textcal.calibrate_text` in the run's hook, before the vision model's; `status` names each record's kind; tests with a model reading 9,000 characters of each input (it gets 6,000) and one reading all (12,000) |
-| TC-09 | **The release check:** the tree rebuilt (its options hash changes); gemma-4 calibrated; the invariants; retrieval compared. An ADR; the design docs and README; 0.16.0. | |
+| TC-09 | **The release check:** the tree rebuilt (its options hash changes); gemma-4 calibrated; the invariants; retrieval compared. An ADR; the design docs and README; 0.16.0. | Done: the tree rebuilt in 6 minutes; gemma-4's text calibration (30 requests) kept 12,000, reading 24,000 evenly too; its vision calibration from the store, as before; no other request new; `rag/` identical to 0.15.3's, so retrieval is too; the invariants hold. ADR-0024; design docs; README; 0.16.0 |
 
 ## Checkpoints
 
@@ -80,6 +81,17 @@ Between the two, nothing was measured.
   It can catch a model that reads worse, or a context window or endpoint that cuts inputs.
 - **The part size is also a choice about the summaries.** At 12,000 characters gemma-4's part
   summaries name 94% of the elements; at 48,000, 15%.
+
+**CP3 and CP4 (2026-10-04):**
+- **The run's calibration:** gemma-4 keeps 12,000 characters, reading the 24,000-character cards
+  evenly too. A fake model that reads only 9,000 characters of each input gets 6,000 (the tests).
+- **The release check:** every project rebuilt once, since its options gained the part size,
+  with no new enrichment request; `rag/` is identical to 0.15.3's.
+- **Left open (roadmap):**
+  - cards that reproduce how real packages are lost, before letting any part grow;
+  - the same guard for `DIAGRAM_ITEMS` and `DIGEST_CHARS`;
+  - a `calibrate-text` command on demand, as `calibrate-vision` is;
+  - the piece marker, repeated once in 16 answers as part of a name.
 
 ## When to stop and ask
 

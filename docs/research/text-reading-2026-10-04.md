@@ -4,7 +4,7 @@
 (`PART_CHARS`), a constant measured for gemma-4 at that one size. How long an input do text
 models read evenly, from start to end? Could calibration set the part size for whichever model
 is configured, as it sets the sketches for the vision model? This is plan TC-03 and TC-04
-(`docs/plans/text-calibration-2026-10-04.md`).
+(`docs/archive/plans/text-calibration-2026-10-04.md`).
 
 **Method.**
 - **Reading cards** (`textcal.py`): synthetic package text in the plain form of real parts,

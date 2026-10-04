@@ -51,8 +51,15 @@ so that their history can be found. When an item becomes a plan, it moves to `do
 
   Sequence diagrams also confuse validation and descriptions: messages join activations, while
   models name lifelines. Their lifelines, lines and activations repeat one name.
-- **Calibrating the text model's reading, and cutting its inputs ourselves:** now plan TC
-  (`docs/plans/text-calibration-2026-10-04.md`).
+- **After plan TC** (the text model's calibration, a guard; ADR-0024):
+  - **Cards that lose real packages:** the reading cards are read evenly by strong models to
+    192,000 characters, unlike real packages. Cards of long, unmarked lists, as real packages
+    are, would be needed before letting any part grow (`docs/research/text-reading-2026-10-04.md`).
+  - **The same guard for other limits:** `DIAGRAM_ITEMS` (150 shapes and connections per
+    request) and `DIGEST_CHARS`.
+  - **`calibrate-text` on demand,** as `calibrate-vision` is; today only a run calibrates.
+  - **The piece marker:** one answer in 16 repeats "(piece 2 of 2)" as part of a name. Rewording
+    it changes those requests.
 - **Keyword search from the command line,** for when Python can run where the corpus is read.
 
 ## Sketches and the vision model

@@ -7,13 +7,11 @@ plan yet is in `docs/roadmap.md`. When a plan is done, its content goes to `docs
 
 ## Active
 
-| Plan | Prefix | Status |
-|---|---|---|
-| [Inputs cut by us, and calibrating to the configured text model](text-calibration-2026-10-04.md) | TC | CP1 to CP3 done (0.16.0); CP4, the release check, in progress |
+None.
 
 ## Archived
 
-All retired on 2026-10-03.
+Retired on 2026-10-03, and TC on 2026-10-04.
 
 | Plan | Prefix | Done | Its content now |
 |---|---|---|---|
@@ -29,6 +27,7 @@ All retired on 2026-10-03.
 | [Calibrating sketches to the vision model](../archive/plans/vision-calibration-2026-10-03.md) | VC | 2026-10-03 (0.12.0) | ADR-0014, 0015; design/vision-calibration |
 | [Calibrating to the configured vision model, and validating](../archive/plans/vision-autocalibration-2026-10-03.md) | VA | 2026-10-03 (0.13.0) | ADR-0015, 0016; design/vision-calibration; roadmap |
 | [Sketches that read as drawn, and a release check](../archive/plans/sketch-ambiguities-2026-10-03.md) | SK | 2026-10-03 (0.14.1) | ADR-0017, 0018; design/diagrams, design/vision-calibration; roadmap |
+| [Inputs cut by us, and calibrating to the configured text model](../archive/plans/text-calibration-2026-10-04.md) | TC | 2026-10-04 (0.16.0) | ADR-0024; design/llm-enrichment; research/text-reading; roadmap |
 
 ## Reviews
 
