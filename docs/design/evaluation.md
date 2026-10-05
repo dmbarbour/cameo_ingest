@@ -8,9 +8,17 @@ full history.
 
 The maintainer's RAG stack isn't ours to control. It cuts text into 512-token windows with some
 overlap and retrieves densely, with no reranker assumed. The evaluation cuts windows of 512 tokens
-with 64 of overlap on e5-large's tokenizer (`windows.py`, counting 2 special tokens), over either:
-- `chunks.jsonl`, or
-- `rag/` as the stack reads it (`--rag`).
+with 64 of overlap on e5-large's tokenizer (`windows.py`, counting 2 special tokens), over:
+- `chunks.jsonl`;
+- `rag/` as the stack reads it (`--rag`);
+- the tree's Markdown pages, as a stack pointed at the tree would read them (`--pages`; with
+  `--rag` too, the whole tree's text; plan RM-05). Each file is cut across its sections, and a
+  window is credited to the element whose section it starts in: a section starts at an anchor,
+  and its trace line names the element. A project's README, ledger, threads and hierarchies are
+  its model's, and `CROSSREF.md` counts as `index:id`, as its chunks do.
+
+Kinds can be left out by glob (`--without ledger:* generated:*`, plan RM-01), with no rebuild:
+the embeddings are cached by text, so a variant costs only the reranking of new candidates.
 
 Every model runs on DeepInfra (embeddings, rerankers, judges); local runs are out on this machine.
 A model DeepInfra doesn't serve gets a stand-in, reported as such: `BAAI/bge-large-en-v1.5` for
@@ -21,7 +29,7 @@ the sha256 of the text as sent. Search is exact cosine in numpy.
 
 | Set | Questions | Graded by |
 |---|---|---|
-| Fictional projects (`scripts/make_fictional_projects.py`) | 254 now (`out/eval/fiction/questions.jsonl`); 210 without KOIS (`questions-ra.jsonl`, used for every comparison since plan RA); 8 about Port Calder's type hierarchy (`questions-th.jsonl`, plan TH); 8 that start from a diagram (`questions-is.jsonl`, plan IS) | Construction: rules `source`, `parts`, `fact` (only a window holding the fact gets a 2), `element` |
+| Fictional projects (`scripts/make_fictional_projects.py`) | 262 now (`out/eval/fiction/questions.jsonl`); 210 without KOIS (`questions-ra.jsonl`, used for every comparison since plan RA); 8 about Port Calder's type hierarchy (`questions-th.jsonl`, plan TH); 8 that start from a diagram (`questions-is.jsonl`, plan IS); 8 that ask for a list, what ledgers are for (`questions-rm.jsonl`, plan RM) | Construction: rules `source`, `parts`, `fact` (only a window holding the fact gets a 2), `element` |
 | Structural (`scripts/write_questions.py`) | 88 about the samples: by id, relationship, diagram, parameter | Construction; lexical-friendly, so for regressions, not model choice |
 | Natural | Two sets of 75, written by DeepSeek-V3.2 from Markdown and from plain chunks | The judges |
 

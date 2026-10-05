@@ -7,6 +7,7 @@ grade the same text under the same window ids, whatever sizes the run used.
 
 from __future__ import annotations
 
+import fnmatch
 import json
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
@@ -56,15 +57,22 @@ class Run:
     tokenizer: str = "intfloat/multilingual-e5-large"  # the tokens windows are cut on
     window: int = 512
     overlap: int = 64
+    without: tuple[str, ...] = ()  # kinds left out, as globs (`ledger:*`, `generated:*`; plan RM-01)
+    pages: bool = False  # the tree's Markdown pages, alone or (with `rag`) beside rag/'s files (plan RM-05)
 
     def units(self) -> list:
-        from .harness import chunk_units, rag_units
+        from .harness import chunk_units, page_units, rag_units
 
-        units = rag_units(Path(self.tree)) if self.rag else chunk_units(Path(self.tree))
+        tree = Path(self.tree)
+        units = page_units(tree, self.tokenizer, self.window, self.overlap) if self.pages else []
+        if self.rag or not self.pages:
+            units += rag_units(tree) if self.rag else chunk_units(tree)
         if self.project:
             units = [u for u in units if (u.element_id or "").startswith(self.project)]
         if self.without_details:
             units = [u for u in units if not u.kind.endswith(":details")]
+        if self.without:
+            units = [u for u in units if not any(fnmatch.fnmatchcase(u.kind, g) for g in self.without)]
         return units
 
     def windows(self, units: list | None = None) -> list:
@@ -78,4 +86,5 @@ class Run:
 
     @classmethod
     def read(cls, out: Path) -> Run:
-        return cls(**json.loads((out / RUN).read_text(encoding="utf-8")))
+        d = json.loads((out / RUN).read_text(encoding="utf-8"))
+        return cls(**{**d, "without": tuple(d.get("without", ()))})

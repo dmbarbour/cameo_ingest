@@ -306,3 +306,28 @@ def test_run_record(tmp_path, fiction_tree):
     assert set(chunks) == {u.id for u in units}
     for u in units:  # rag/'s files, as a RAG tool reads them: the chunk's text, then its source
         assert u.text.startswith(chunks[u.id]) and "\n\nSource: sha256:" in u.text, u.id
+
+    # Kinds left out by glob (plan RM-01), recorded so that the judges cut the same windows.
+    lean = Run(str(fiction_tree), "q", project="_abk_", without=("ledger:*", "generated:*"))
+    lean.write(tmp_path / "lean")
+    assert Run.read(tmp_path / "lean") == lean and hash(Run.read(tmp_path / "lean")) == hash(lean)
+    kinds = {u.kind for u in lean.units()}
+    assert kinds and not any(k.startswith(("ledger:", "generated:")) for k in kinds)
+    assert {u.id for u in lean.units()} == {u.id for u in units if not u.kind.startswith(("ledger:", "generated:"))}
+    assert any(u.kind.startswith("ledger:") for u in units)
+
+
+def test_page_units(fiction_tree):
+    """The pages as a stack pointed at the tree reads them (plan RM-05): each file cut into windows
+    across its sections, each window credited to the element whose section it starts in."""
+    from cameo_ingest.evaluation.records import Run
+
+    units = Run(str(fiction_tree), "q", pages=True, window=128, overlap=16).units()
+    page = [u for u in units if u.id.startswith("page:by-sha256/") and "Kiosk_Behavior.md" in u.id]
+    assert len(page) > 3 and page[0].element_id == "_abk_bh" and page[0].kind == "page:package"
+    assert any(u.element_id == "_abk_return" and "Detect Item at Slot" in u.text for u in page)
+    assert {u.element_id for u in units if "LEDGER.md" in u.id and u.project == page[0].project} == {"_abk_model"}
+    assert {u.kind for u in units if u.id.startswith("page:CROSSREF.md")} == {"index:id"}
+    assert not any(u.id.startswith(("page:rag/", "page:.")) for u in units)
+    both = Run(str(fiction_tree), "q", rag=True, pages=True).units()
+    assert any(u.id.startswith("page:") for u in both) and any(not u.id.startswith("page:") for u in both)

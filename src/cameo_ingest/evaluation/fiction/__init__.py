@@ -19,9 +19,9 @@ def is_fictional(element_id: str | None) -> bool:
 
 def ACROSS() -> list[dict]:
     """Questions with answers in parts: across the three Riverbend proposals (rwt, hal, aqu), along
-    derivations within a model, over a model's type hierarchy (plan TH), and over what a diagram's
-    blocks show (plan IS)."""
-    return rivals.across() + rivals.within() + traffic.kinds() + shown()
+    derivations within a model, over a model's type hierarchy (plan TH), over what a diagram's
+    blocks show (plan IS), and lists of what a package holds (plan RM)."""
+    return rivals.across() + rivals.within() + traffic.kinds() + shown() + lists()
 
 
 def shown() -> list[dict]:
@@ -49,3 +49,47 @@ def shown() -> list[dict]:
                         "group_elements": [[p.id(m.split("__")[0]), p.id(m), p.id(key)] for m in p.shown[key]],
                         "project_name": p.name})
     return out
+
+
+def lists() -> list[dict]:
+    """Questions that ask for a list, what ledgers are for (plan RM-03): a package's requirements
+    with what satisfies each, its needs, its instruments, its diagrams. One part per item, held by
+    the item's own chunk, or by a chunk that lists it with what the question asks of it."""
+    out = []
+
+    def ask(qid: str, prefix: str, literal: str, paraphrase: str, parts: list, elements: list) -> None:
+        for style, text in (("literal", literal), ("paraphrase", paraphrase)):
+            out.append({"id": f"list-{qid}-{style}", "rule": "parts", "fact": f"list-{qid}", "style": style,
+                        "category": "list", "difficulty": "hard" if len(parts) > 6 else "medium", "question": text,
+                        "answers": [], "related": [], "evidence": [], "evidence_groups": parts,
+                        "group_elements": elements, "project_name": PROJECTS[prefix]().name})
+
+    p = PROJECTS["abk"]()
+    reqs = [k for k in p.owned("rq") if k in p.rids]
+    satisfies = {t: s for rel, (s, t) in p.ends.items() if rel.startswith("satisfy__")}
+    # A requirement and what satisfies it: the requirement's chunk, the block's, or a ledger's line.
+    ask("l01", "abk", f"Which requirements does the {p.name} model state, and what satisfies each?",
+        "What must the library's returns kiosk do, and which of its parts sees to each?",
+        [[[p.rids[r], p.names[satisfies[r]]]] if r in satisfies else [[p.rids[r], p.names[r]]] for r in reqs],
+        [[p.id(r)] + ([p.id(satisfies[r])] if r in satisfies else []) for r in reqs])
+
+    p = PROJECTS["fvx"]()
+    needs = [k for k in p.owned("needs") if k in p.rids]
+    # By id and the start of its text: requirements derived from a need name it, but don't quote it.
+    ask("l02", "fvx", f"List the stakeholder needs recorded in the {p.name} model.",
+        "What did the people consulted about the Ferrous Valley crossing ask of it?",
+        [[[p.rids[k], p.texts[k][:40]]] for k in needs], [[p.id(k)] for k in needs])
+    diagrams = [k for k in p.diagram_owners if p.package_of(k) == "common"]
+    # By name and kind: the diagram's own heading, or a ledger's line (the package's text says
+    # "variants" too).
+    ask("l04", "fvx", f"Which diagrams does the {p.name} model's {p.names['common']} package hold?",
+        "What views of the Ferrous Valley crossing's shared design have been drawn?",
+        [[[p.names[k], p.diagram_owners[k][1], p.names["common"]]] for k in diagrams], [[p.id(k)] for k in diagrams])
+
+    p = PROJECTS["rwt"]()
+    blocks = [k for k in p.owned("inst") if p.kinds[k] == "Class"]
+    ask("l03", "rwt", f"Which instruments does the {p.name} model list in its {p.names['inst']} package?",
+        "What measuring devices are installed around the Riverbend treatment works?",
+        [[[p.names[k], p.names["inst"]]] for k in blocks], [[p.id(k)] for k in blocks])
+    return out
+

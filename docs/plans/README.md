@@ -7,7 +7,9 @@ plan yet is in `docs/roadmap.md`. When a plan is done, its content goes to `docs
 
 ## Active
 
-None.
+| Plan | Prefix | Status |
+|---|---|---|
+| [Retrieval's untested measures](retrieval-measures-2026-10-05.md) | RM | In progress: ledger and generated chunks measured (RE-08), stopped for the maintainer on generated chunks; windows over the pages next (RE-05) |
 
 ## Archived
 

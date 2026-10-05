@@ -104,6 +104,9 @@ class Project:
         self.flows: dict[str, list[tuple[str, str, str]]] = {}  # behavior -> [(edge key, source, target)]
         self.members: dict[str, list[str]] = {}  # behavior -> node or vertex keys
         self.layouts: dict[str, str] = {}
+        self.rids: dict[str, str] = {}  # requirement -> its id (lists, plan RM-03)
+        self.texts: dict[str, str] = {}  # requirement -> its text
+        self.diagram_owners: dict[str, tuple[str, str]] = {}  # diagram -> what owns it, and its kind
         self._questions: list[dict] = []
 
     # -- ids and the tree ------------------------------------------------------------------------
@@ -262,6 +265,19 @@ class Project:
             self.apply("sysml", "ItemFlow", fk, base="InformationFlow")
         return ck
 
+    def owned(self, pkg: str) -> list[str]:
+        """What a package owns directly, in the model's order."""
+        children = self.nodes[pkg].children
+        return sorted((k for k, n in self.nodes.items() if k != pkg and n in children),
+                      key=lambda k: next(i for i, c in enumerate(children) if c is self.nodes[k]))
+
+    def package_of(self, key: str) -> str:
+        """The package a diagram or element is in: the nearest package that owns it."""
+        k = self.diagram_owners[key][0] if key in self.diagram_owners else key
+        while self.kinds.get(k) not in ("Package", "Model"):
+            k = next(o for o, n in self.nodes.items() if self.nodes[k] in n.children)
+        return k
+
     def _owner_package(self, key: str) -> str:
         for k, node in self.nodes.items():
             if self.kinds.get(k) in ("Package", "Model") and self.nodes[key] in node.children:
@@ -311,6 +327,9 @@ class Project:
                   name or "", "Class")
         self._doc(key, doc)
         self.apply(profile, stereotype, key, Id=rid, Text=text, **tags)
+        if rid:
+            self.rids[key] = rid
+        self.texts[key] = text
         return key
 
     def relate(self, kind: str, source: str, target: str, pkg: str, name: str | None = None) -> str:
@@ -435,6 +454,7 @@ class Project:
             "</diagram:DiagramRepresentationObject></diagramRepresentation></xmi:Extension>"
             "</ownedDiagram></modelExtension></xmi:Extension>")
         self.names[key], self.kinds[key] = name, "Diagram"
+        self.diagram_owners[key] = (owner, kind)
         centre = {}
 
         def emit(s: _Shape, indent: str) -> list[str]:

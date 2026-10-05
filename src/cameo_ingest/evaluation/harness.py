@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import require
-from .windows import windows
+from .windows import spans_by_offsets, windows
 
 np = require("numpy")
 
@@ -52,6 +52,62 @@ def rag_units(tree: Path) -> list[Unit]:
         m = json.loads(meta.read_text(encoding="utf-8"))
         text = (tree / "rag" / "text" / meta.parent.name / m["file"]).read_text(encoding="utf-8")
         out.append(Unit(m["chunk_id"], text, m.get("element_id"), m["kind"], m.get("project_token")))
+    return out
+
+
+# What a page's windows count as, where it matters to grading: the index across models is graded
+# as its chunks are (`grading`, rule `fact`).
+PAGE_KINDS = {"crossref": "index:id", "hierarchies": "index:hierarchy", "threads": "trace:thread"}
+_ANCHOR = re.compile(r'<a id="[^"]*"></a>')
+_TRACE = re.compile(r"trace: `[^`#]*#([^@`]+)@L\d+`")
+
+
+def page_units(tree: Path, model_name: str, size: int = 512, overlap: int = 64) -> list[Unit]:
+    """The tree's Markdown pages as a RAG tool pointed at the tree reads them (plan RM-05): each
+    file cut into windows as the stack would cut it, across its sections. A window is credited to
+    the element whose section it starts in: a section starts at an anchor, and its trace line
+    names the element. A page without sections is its front matter's element; a project's README,
+    ledger, threads and hierarchies are its model's."""
+    from .embed import tokenizer
+
+    tok = tokenizer(model_name)
+    tok.no_truncation()
+    models = {}  # project directory -> its model's id: the package page with no "::" in its name
+    for page in tree.glob("by-sha256/*/packages/*.md"):
+        fm = _front_matter(page.read_text(encoding="utf-8"))
+        if "::" not in fm.get("qualified_name", "::") and fm.get("element_id"):
+            models[page.parent.parent.name] = fm["element_id"]
+    out = []
+    for page in sorted(tree.rglob("*.md")):
+        rel = page.relative_to(tree).as_posix()
+        if rel.startswith(("rag/", ".")):
+            continue
+        text = page.read_text(encoding="utf-8")
+        fm = _front_matter(text)
+        project = rel.split("/")[1] if rel.startswith("by-sha256/") else None
+        kind = PAGE_KINDS.get(fm.get("kind", ""), f"page:{fm.get('kind', 'other')}")
+        default = fm.get("element_id") or models.get(project or "")
+        starts = [m.start() for m in _ANCHOR.finditer(text)]
+        ends = [*starts[1:], len(text)] if starts else []
+        owners = [(0, default)] + [(a, (m.group(1) if (m := _TRACE.search(text, a, b)) else default))
+                                   for a, b in zip(starts, ends, strict=True)]
+        spans = spans_by_offsets(tok.encode(text, add_special_tokens=False).offsets, size, overlap) or [(0, len(text))]
+        for i, (a, b) in enumerate(spans):
+            element = next(e for start, e in reversed(owners) if start <= a)
+            out.append(Unit(f"page:{rel}" + (f"#w{i}" if len(spans) > 1 else ""), text[a:b], element, kind, project))
+    return out
+
+
+def _front_matter(text: str) -> dict[str, str]:
+    """A page's front matter, its string values only."""
+    if not text.startswith("---\n"):
+        return {}
+    end = text.find("\n---\n", 4)
+    out = {}
+    for line in text[4:end].splitlines():
+        key, _, value = line.partition(": ")
+        if value.startswith('"'):
+            out[key] = json.loads(value)
     return out
 
 

@@ -60,6 +60,11 @@ def main() -> int:
                          "chunks.jsonl holds them")
     ap.add_argument("--without-details", action="store_true",
                     help="leave the plain style's details chunks out of the index, as if they were in a file apart")
+    ap.add_argument("--pages", action="store_true",
+                    help="the tree's Markdown pages, cut into windows as a stack pointed at the tree would cut them; "
+                         "with --rag, beside rag/'s files, as a stack pointed at the whole tree reads its text (plan RM-05)")
+    ap.add_argument("--without", nargs="+", default=[], metavar="KIND",
+                    help="leave chunks of these kinds out of the index, as globs: ledger:* generated:* (plan RM-01)")
     ap.add_argument("--questions", required=True, help="structural, or a JSONL file of questions")
     ap.add_argument("--judgments", type=Path, help="the judge panel's grades (scripts/judge_pools.py), which override "
                                                    "construction")
@@ -70,10 +75,11 @@ def main() -> int:
     if args.env:
         load_env(args.env)
     run = records.Run(str(args.tree), args.questions, args.rag, args.project, args.without_details,
-                      args.window_tokenizer, args.window, args.overlap)
+                      args.window_tokenizer, args.window, args.overlap, tuple(args.without), args.pages)
     units = run.units()
     questions = records.questions(args.questions, args.tree)
-    print(f"{len(units):,} chunks from {args.tree}; {len(questions)} questions")
+    print(f"{len(units):,} chunks from {args.tree}" + (f", without {' '.join(run.without)}" if run.without else "")
+          + f"; {len(questions)} questions")
     judged = {}
     if args.judgments:
         judged = panel(records.read_jsonl(args.judgments), records.set_name(args.questions), tuple(args.judges),

@@ -11,16 +11,22 @@ def windows_by_offsets(text: str, offsets: list[tuple[int, int]], size: int = 51
     """`text` cut into windows of at most `size` tokens (special tokens included), each starting
     `overlap` tokens before the previous one ends. `offsets` are the character spans of the
     text's tokens, without special tokens."""
+    spans = spans_by_offsets(offsets, size, overlap)
+    return [text] if spans is None else [text[a:b] for a, b in spans]
+
+
+def spans_by_offsets(offsets: list[tuple[int, int]], size: int = 512, overlap: int = 64) -> list[tuple[int, int]] | None:
+    """The character spans of `windows_by_offsets`' windows; None when the text fits whole."""
     body = size - SPECIAL
     if not 0 <= overlap < body:
         raise ValueError(f"overlap {overlap} must be at least 0 and less than {body}")
     if len(offsets) <= body:
-        return [text]
+        return None
     out = []
     start = 0
     while True:
         end = min(len(offsets), start + body)
-        out.append(text[offsets[start][0]:offsets[end - 1][1]])
+        out.append((offsets[start][0], offsets[end - 1][1]))
         if end == len(offsets):
             return out
         start = end - overlap
