@@ -1,20 +1,48 @@
 # Design: LLM enrichment
 
 What the LLM is asked, how, and how its answers are kept and judged. Decisions: ADR-0005, 0009 to
-0011, 0013, 0017.
+0011, 0013, 0017, 0029.
 
 ## What is asked
 
 | Template (current) | For | Input | Words |
 |---|---|---|---|
-| `diagram-description@v6` | A diagram drawn whole | The sketch, the legend, the connections, a reading guide | 150 |
+| `diagram-description@v9` | A diagram drawn whole | The sketch, the legend, the connections, a reading guide; the context | 80 |
 | `module-description@v3` | A module of a large diagram | The module's sketch, legend, connections within and with other modules, a reading guide | 120 |
-| `diagram-synthesis@v2` | A large diagram as a whole | The overview sketch, the modules' descriptions, the connections between modules | 200 |
+| `diagram-synthesis@v5` | A large diagram as a whole | The overview sketch, the modules' descriptions, the connections between modules; the context | 80 |
 | `image-description@v2` | An embedded image | The image alone (its owner isn't linked yet) | 200 |
-| `package-summary@v4` | A package of up to the part size (12,000 characters by default) | Its sections as plain text | 150 |
-| `module-summary@v3` | A part of a large package | The part's sections | 120 |
-| `package-synthesis@v3` | A large package | Its parts' summaries, through runs of at most 30 | 200 |
-| `instances-summary@v2` | A package at least 80% instance specifications | A digest of its instances by classifier and slot | 150 |
+| `package-summary@v7` | A package of up to the part size (12,000 characters by default) | Its sections as plain text; the context | 80 |
+| `module-summary@v6` | A part of a large package | The part's sections; the context | 80 |
+| `package-synthesis@v6` | A large package | Its parts' answers, through runs of at most 30; the context | 80 |
+| `instances-summary@v5` | A package at least 80% instance specifications | A digest of its instances by classifier and slot; the context | 80 |
+
+**What packages and diagrams are asked** (0.20.0, plan GS, ADR-0029): what the package or diagram
+is about and what it is for, as someone searching for it would put it, in everyday words and the
+domain's common terms. Purpose may be inferred where the input implies it; nothing it doesn't
+support. No element names, identifiers or exact values: the chunk's heading names the package or
+diagram, and the extracted chunks hold the rest.
+- **A class first:** the answer starts with `Class: <class>` (packages: intent, structure,
+  register, requirements, behavior, library, results, sparse; diagrams: flow, states, structure,
+  interfaces, requirements, overview, sparse). `prompts.split_class` keeps it in the chunk's
+  metadata (`about_class`) and `rag/meta`, and the text without it; a missing or unknown class is
+  `unknown`. It is information only: no class is left out of `rag/`, since none sorted the
+  helpful from the crowding.
+- **The context** (`prompt_values.package_context`, `diagram_context`, added by
+  `enrich.with_context` to templates that take it):
+  - a package: the model and each package around it, with what their documentation says first,
+    and up to 10 documented elements outside it that its elements refer to most, with their first
+    sentence;
+  - a diagram: its context element, and each shape's element, by the first sentence of its
+    documentation and a state's entry, do and exit behaviors.
+
+  At most 3,000 characters (`CONTEXT_CHARS`).
+- **Why:** the requests before (package-summary v4, module-summary v3, package-synthesis v3,
+  instances-summary v2, diagram-description v6, diagram-synthesis v2) asked for "main elements and
+  how they relate" with the names as written, from inputs mostly undocumented; the answers were
+  inventories of names that crowded out answers in retrieval (ADR-0028). Measured in
+  `docs/research/generated-for-search-2026-10-05.md`. They remain as the `current/plain` variant
+  (`prompts.VARIANTS`), with `current/context` and `about/plain`; `scripts/build_variant.py`
+  builds a tree with any of them.
 
 - **Trivial diagrams get no request:** fewer than 3 shapes, unless 2 are connected
   (`skipped_trivial`).
@@ -57,8 +85,9 @@ A guard, not a tuner (ADR-0024). The first run with a text model asks it to read
 - **The cards:** synthetic package text in the plain form of parts, in five groups, one a fifth.
   Each group has a hub with a purpose of its own, and blocks and requirements that serve it.
   Every name is a made-up word, and every figure appears once.
-- **The probes:** the real part request, scored by the groups the summary covers; and five
-  questions, one about a figure in each fifth.
+- **The probes:** the part request as it was before 0.20.0 (`prompts.MODULE_SUMMARY`, v3), which
+  names what it covers, scored by the groups the summary covers (the request in use names nothing,
+  so it can't be scored); and five questions, one about a figure in each fifth.
 - **The guard:** 5 cards at each of 6,000, 12,000 and 24,000 characters, 30 requests.
   - A length is even when 90% of groups are covered and 90% of answers are right, and no fifth
     falls below 60%: a lost fifth is what an input cut short looks like.
@@ -80,9 +109,11 @@ The principles from the spot checks (`docs/archive/reviews/followup-2026-09-30.m
 plans:
 - **Ask for meaning, not a restated legend:** the legend and connections are "already recorded
   exactly" (ADR-0011).
+- **Ask for what search by meaning needs** (ADR-0029): what a package or diagram is about and for,
+  in other words than its names; the names, identifiers and values are in the extracted chunks.
 - **Plain prose:**
   - no headings, lists, bold or code;
-  - names exactly as written;
+  - names exactly as written, where a request asks for names (module and image descriptions);
   - group only as the diagram or package itself does.
 - **"When the diagram shows little, say little."**
 - **Put meaning in the data:** each dependency carries its verb, and directions come from the
@@ -123,7 +154,9 @@ ADR-0009.
   - a test pins each one's request by hash;
   - retired versions are at tag `studies-2026-10-02`.
 - **Outside `CURRENT`:** calibration (`eye-read`, `eye-arrows`) and validation (`eye-sketch`) have
-  their own templates, as do the evaluation's judge and question writer.
+  their own templates, as do the evaluation's judge and question writer. Text calibration probes
+  with the pre-0.20 part request, and plan GS's variants (`prompts.VARIANTS`) are pinned with the
+  templates in use.
 
 ## The endpoint, the store and the session
 

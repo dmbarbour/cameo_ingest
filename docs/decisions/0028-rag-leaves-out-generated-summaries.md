@@ -1,7 +1,8 @@
 # ADR-0028: `rag/` leaves out the LLM's summaries and diagram descriptions
 
 - **Status:** Accepted, 2026-10-05 (plan RM; the maintainer: "If generated chunks are a big loss,
-  then we must drop them as implemented").
+  then we must drop them as implemented"); superseded the same day by ADR-0029 (0.20.0), whose
+  requests' answers return to `rag/` (Changes, below).
 - **Sources:**
   - `docs/archive/plans/retrieval-measures-2026-10-05.md`;
   - `docs/research/ledgers-and-generated-2026-10-05.md`;
@@ -41,3 +42,8 @@
 
 - Requests that ask for something retrieval can use (what a package is for, in other words than
   its names) are worth testing; if their answers stop crowding, they can return to `rag/`.
+
+## Changes
+
+- 2026-10-05: superseded by ADR-0029: the requests ask what a package or diagram is about, and
+  `rag/` leaves nothing out again. Before: `80de425`.

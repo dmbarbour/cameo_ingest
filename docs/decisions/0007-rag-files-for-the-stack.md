@@ -17,8 +17,8 @@
 ## Decision
 
 - **One file per chunk:** `rag/text/<project>/<sha256 of the text>.txt`, ending with a source
-  line, and `rag/meta/<project>/<sha256>.json` beside it. The LLM's summaries and diagram
-  descriptions are left out (ADR-0028).
+  line, and `rag/meta/<project>/<sha256>.json` beside it. Every kind, since 0.20.0 (ADR-0029); 0.19.1
+  left out the LLM's summaries and diagram descriptions (ADR-0028).
 - **Sized to one window:** a file fits one 512-token window (`plain.WINDOW`, with 100 tokens kept
   for the source line), by an estimate fitted to e5's tokenizer.
 - **The source line:** `--rag-source trace` (the default) gives the project and trace locator;
@@ -37,3 +37,4 @@
 
 - 2026-10-05: `rag/` leaves out the LLM's summaries and diagram descriptions (ADR-0028). Before:
   `3c254db`.
+- 2026-10-05: every kind in `rag/` again, since 0.20.0 (ADR-0029). Before: `80de425`.

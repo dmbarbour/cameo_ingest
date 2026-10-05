@@ -102,6 +102,30 @@ beside its input, its context and the answer in use.
 - **Context:** the model's own documentation is sometimes noise (an ONVIF specification pasted
   into data types, a sentence in German); the answers ignore it.
 
+## The release check (GS-07, 0.20.0)
+
+The whole tree (the samples and the fiction) built with `about/context` (`out/v020/on`: 4,084 new
+answers, 59 minutes; the invariants hold; 5,349 summaries and descriptions, every one with a valid
+class: requirements 1,435, flow 1,303, structure 1,288, behavior 370, intent 257, interfaces 127,
+register 119, library 116, overview 109, results 107, states 106, sparse 12). Retrieval on the 246
+questions, MRR@10 for e5-large reranked / e5-large + BM25 reranked; \* significant against 0.19.1:
+
+| `rag/` | Where-is (12) | Lists (8) | Standing (226) |
+|---|---|---|---|
+| 0.19.1: no generated summaries or descriptions | 0.647 / 0.593 | 0.812 / 0.729 | 0.792 / 0.793 |
+| 0.19.0: the requests before | 0.760 / 0.719 | 0.906 / 0.792 | 0.753\* / 0.759\* |
+| 0.20.0: package summaries only | 0.649 / 0.653 | 0.792 / 0.698 | 0.787\* / 0.785\* |
+| 0.20.0: diagram descriptions only | 0.750 / 0.694\* | 0.938 / 0.854 | 0.783\* / 0.787\* |
+| 0.20.0: both | 0.790\* / 0.772\* | 0.917 / 0.781 | 0.778\* / 0.780\* |
+
+- **Against 0.19.0,** 0.20.0 is better wherever the change is significant: the standing questions
+  gain 0.025 / 0.021.
+- **Against 0.19.1,** the where-is questions gain greatly (hit@10 0.83 → 1.00 for the hybrid), and
+  the standing questions lose a little, significantly, on the whole tree (0.013 / 0.014; hit@10
+  0.942 → 0.934, not significant). On the fiction alone, the hybrid's loss wasn't significant.
+- **By kind,** each costs the standing questions a little and the costs add up; the where-is
+  gains are larger together than apart.
+
 ## Caveats
 
 - **12 where-is questions** are few; the gain is significant, its size uncertain.
@@ -111,5 +135,6 @@ beside its input, its context and the answer in use.
 ## Decision
 
 The maintainer, 2026-10-05: "Yes, about should replace summaries. Please proceed with the
-experiment." After the reading, `about/context` becomes the requests in use, on the pages and in
-`rag/`; the classes stay in the metadata, and no class is left out (plan GS-07).
+experiment." After the reading, `about/context` becomes the requests in use, on the pages; the
+classes stay in the metadata. Whether its answers enter `rag/`, given the release check's small
+cost to the standing questions, went back to the maintainer (plan GS, "When to stop and ask").

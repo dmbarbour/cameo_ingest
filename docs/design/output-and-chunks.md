@@ -136,10 +136,12 @@ ADR-0007.
 - **No paths:** chunk text names a project by its label ("TMT [9ffd7a2c]", `ContentInfo.label`, at
   most 32 characters), never by a path (ADR-0003).
 - **Fit:** 3 of 43,552 files in the samples' `rag/` exceed 512 tokens.
-- **What it leaves out** (ADR-0028, `exports.Assembly.rag_without`): the LLM's summaries, part
-  summaries and diagram descriptions, which crowd out answers; part descriptions and image
-  descriptions stay. The kinds left out are part of each project's stamp, so a change rewrites its
-  folder. `scripts/assemble_tree.py --rag-all` puts them back, to measure.
+- **What it leaves out:** nothing (ADR-0029). 0.19.1 left out the LLM's summaries and diagram
+  descriptions, which crowded out answers (ADR-0028); since 0.20.0 they say what a package or
+  diagram is about, and help questions about where something is described. The kinds left out
+  (`exports.Assembly.rag_without`) are part of each project's stamp, so a change rewrites its
+  folder; `scripts/assemble_tree.py --rag-without KIND…` leaves some out of a copy, to measure.
+- **A generated chunk's class** (`about_class`, plan GS) is in its metadata and `rag/meta`.
 - **Measured** (plan RM): the pages in place of `rag/` lose a lot (e5-large's MRR@10 0.74 →
   0.56), and beside it fill the top 10 with duplicates (`docs/research/windows-over-pages-2026-10-05.md`).
 
