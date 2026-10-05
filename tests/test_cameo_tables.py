@@ -125,3 +125,31 @@ def test_a_table_not_computed_says_why(tmp_path):
     assert any("not computed: rows from scope" in (row or []) for row in sheets["Diagrams"])
     assert "tables not computed 1" in str(sheets["Projects"])
     assert "Tables show their rows only where the model file lists them" in (tmp_path / "s.html").read_text()
+
+
+def test_a_matrix_described_not_computed():
+    """A matrix says what it relates, from its configuration alone: rows, columns, what a cell
+    marks and which way, and which rows and columns it shows (ADR-0025)."""
+    from cameo_ingest import cameo_tables as ct
+
+    criteria = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<callExpressionSpecification '
+                'xmlns="http://www.nomagic.com/schemas/MagicDraw/StructuredExpression/2013"><taggedValues><entry '
+                'key="name"><value>Satisfy</value></entry></taggedValues></callExpressionSpecification>')
+    config = ("<MagicDraw_Profile:DependencyMatrix xmi:id='st12' base_Diagram='d2' direction='Column to row' "
+              "showElements='With relations' rowScope='p2'>"
+              "<columnScope xmi:idref='p1'/><columnScope href='Lib.mdzip#_lib_root'/>"
+              "<rowElementType href='http://www.omg.org/spec/SysML/20181001/SysML.xmi#SysML.Requirement'/>"
+              "<columnElementType href='http://www.omg.org/spec/SysML/20181001/SysML.xmi#SysML.Block'/>"
+              f"<dependencyCriteria>{criteria.replace('<', '&lt;').replace('>', '&gt;')}</dependencyCriteria>"
+              "</MagicDraw_Profile:DependencyMatrix>\n")
+    start = MODEL.index(" <MagicDraw_Profile:DiagramTable xmi:id='st7'")
+    end = MODEL.index("</MagicDraw_Profile:DiagramTable>\n") + len("</MagicDraw_Profile:DiagramTable>\n")
+    model = (MODEL[:start] + config + MODEL[end:]).replace("type='Requirement Table'", "type='Dependency Matrix'")
+    from cameo_ingest.archive import discover
+    from cameo_ingest.pipeline import parse_project
+
+    ix = parse_project(next(discover(make_mdzip(model), "drone.mdzip")))
+    assert ct.describe_matrix(ix, "d2") == (
+        "Rows: Requirement in Model::Requirements. Columns: Block in Model::Structure; _lib_root (outside this "
+        "project). A cell marks Satisfy, from column to row. Only rows and columns with a marked cell are shown.")
+    assert ct.not_computed(ix, "d2")[0] == "a matrix" and ct.describe_matrix(ix, "d1") is None

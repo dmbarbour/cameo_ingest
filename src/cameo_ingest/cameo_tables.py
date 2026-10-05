@@ -20,6 +20,8 @@ from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from lxml import etree
+
 from . import semantics as sem
 from .model import Element, ModelIndex
 from .richtext import to_text
@@ -104,6 +106,63 @@ def not_computed(ix: ModelIndex, dia_id: str) -> tuple[str, str] | None:
         return ("rows from scope", ("Cameo finds this table's rows in its scope whenever it shows the table, and "
                                     "the model file doesn't store them, so its rows and cells aren't shown here."))
     return ("no rows", "The model file lists no rows for it, so its cells aren't shown here.")
+
+
+EXPRESSIONS = "{http://www.nomagic.com/schemas/MagicDraw/StructuredExpression/2013}"
+DIRECTIONS = {"Row to column": "from row to column", "Column to row": "from column to row", "Both": "either way"}
+
+
+def _criterion(xml: str) -> str | None:
+    """A dependency criterion's name, from Cameo's structured expression ("Allocate"), or None."""
+    try:
+        root = etree.fromstring(xml.encode())
+    except etree.XMLSyntaxError:
+        return None
+    for entry in root.findall(f"{EXPRESSIONS}taggedValues/{EXPRESSIONS}entry"):
+        if entry.get("key") == "name":
+            return entry.findtext(f"{EXPRESSIONS}value")
+    return None
+
+
+def _axis(ix: ModelIndex, tags: dict[str, list[str]], axis: str) -> str:
+    """What a matrix's rows (or columns) are, as its configuration says: element types, scope."""
+    types = [sem.label(ix, t) for t in tags.get(f"{axis}ElementType", [])]
+    what = ", ".join(types[:12]) + (f", and {len(types) - 12} more kinds" if len(types) > 12 else "") or "elements"
+    scope = tags.get(f"{axis}Scope", [])
+    if scope:
+        inside = [ix.qualified_name(s) for s in scope if s in ix.elements]
+        outside = [sem.label(ix, s) for s in scope if s not in ix.elements]
+        where = "; ".join(inside + [f"{o} (outside this project)" for o in outside])
+        what += f" in {where}"
+    elif (tags.get("takeWholeModelAsScope") or ["false"])[0] == "true":
+        what += " in the whole model"
+    if tags.get(f"{axis}Query"):
+        what += ", chosen by a query"
+    removed = len(tags.get(f"removed{axis.capitalize()}Elements", []))
+    if removed:
+        what += f", {removed} removed by hand"
+    return what
+
+
+def describe_matrix(ix: ModelIndex, dia_id: str) -> str | None:
+    """What a matrix relates, in words, from its configuration alone: its rows, its columns, what
+    a cell marks and which way. Nothing is computed (ADR-0025)."""
+    d = ix.diagrams.get(dia_id)
+    if d is None or "Matrix" not in (d.diagram_type or ""):
+        return None
+    tags = configuration(ix, dia_id)
+    criteria = list(dict.fromkeys(n for x in tags.get("dependencyCriteria", []) if (n := _criterion(x))))
+    marks = (", ".join(criteria[:-1]) + " or " + criteria[-1] if len(criteria) > 1 else criteria[0]) if criteria \
+        else "relations Cameo's criteria select"
+    way = DIRECTIONS.get((tags.get("direction") or [""])[0], "")
+    shown = (tags.get("showElements") or [""])[0]
+    out = [f"Rows: {_axis(ix, tags, 'row')}.", f"Columns: {_axis(ix, tags, 'column')}.",
+           f"A cell marks {marks}{', ' + way if way else ''}."]
+    if shown == "With relations":
+        out.append("Only rows and columns with a marked cell are shown.")
+    elif shown == "All":
+        out.append("All rows and columns are shown, marked or not.")
+    return " ".join(out)
 
 
 def configuration(ix: ModelIndex, dia_id: str) -> dict[str, list[str]]:

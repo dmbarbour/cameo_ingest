@@ -181,11 +181,16 @@ class PageWriter:
             blocks += self.table_blocks(computed)
         elif table:
             missing = ct.not_computed(ix, dia_id) if layout is None else None
+            relates = ct.describe_matrix(ix, dia_id)  # a matrix: what it relates, in words (ADR-0025)
             if missing is not None:  # what isn't shown, and why: said, not guessed at (plan CT)
-                blocks.append(sx.Block("Not computed", [sx.line(missing[1] + " Its configuration follows.")]))
-            blocks.append(sx.Block("Table / matrix configuration", tbl, form="list", label=(
-                "**Table / matrix configuration** (Cameo computes the rows and cells from it when it shows the "
-                "table):")))
+                follows = " What it relates follows." if relates else " Its configuration follows."
+                blocks.append(sx.Block("Not computed", [sx.line(missing[1] + follows)]))
+            if relates:
+                blocks.append(sx.Block("Matrix", [sx.line(relates)]))
+            else:
+                blocks.append(sx.Block("Table / matrix configuration", tbl, form="list", label=(
+                    "**Table / matrix configuration** (Cameo computes the rows and cells from it when it shows the "
+                    "table):")))
         else:
             blocks.append(sx.Block("Stereotypes and tagged values", tbl, form="list"))
         if d.shown and layout is None and computed is None:

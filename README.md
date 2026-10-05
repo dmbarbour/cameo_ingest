@@ -592,7 +592,9 @@ The documents for whoever maintains the tool are in `docs/` (`docs/README.md`):
     on its page, in `tables/diagram-tables/` and in chunks. A column only Cameo can compute (a
     custom expression, a property a profile derives) keeps its header, and the page names it.
   - **A table that finds its rows in a scope, a matrix, or a map** is shown without rows. Its page
-    says so and why, and keeps its configuration; the workbook and search page say so too.
+    says so and why, and the workbook and search page say so too. A matrix's page says in words
+    what it relates: its rows, its columns, what a cell marks and which way. A table's or map's
+    page keeps its configuration.
 - **Used projects** (`proxy.*` entries) aren't ingested as projects.
   - **References into them** read by the names in each model's cached copy of the used project.
   - **References to the standard UML and SysML libraries** read by their names (`String`,

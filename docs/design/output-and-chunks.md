@@ -56,8 +56,13 @@ stereotype's tags on the diagram) and, usually, the rows it lists (plan CT, ADR-
   - matrices and maps, which store nothing they show;
   - tables without columns.
 
-  Each one's page says what isn't shown and why (`cameo_tables.not_computed`), and keeps the
-  configuration. The catalog counts them per project (`tables`), the workbook's About, Projects
+  Each one's page says what isn't shown and why (`cameo_tables.not_computed`).
+  - **A matrix** then says what it relates, in words, from its configuration alone
+    (`describe_matrix`, 0.17.2): its rows and columns (element types, scopes, "outside this project",
+    "chosen by a query"), what a cell marks (the dependency criteria's names), which way, and
+    whether unmarked rows and columns are shown. This replaces the raw configuration and its XML
+    expressions.
+  - **A table or a map** keeps its configuration. The catalog counts them per project (`tables`), the workbook's About, Projects
   and Diagrams sheets report them, and the search page's footer says so. Rows weren't inferred
   from scope: no rule reproduced the listed rows of tables that have both.
 
