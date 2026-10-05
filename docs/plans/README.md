@@ -9,7 +9,7 @@ plan yet is in `docs/roadmap.md`. When a plan is done, its content goes to `docs
 
 | Plan | Prefix | Status |
 |---|---|---|
-| [What a drawn diagram shows inside its shapes](inside-shapes-2026-10-05.md) | IS | CP1 in progress |
+| [What a drawn diagram shows inside its shapes](inside-shapes-2026-10-05.md) | IS | CP1 done (0.19.0); CP2 in progress |
 
 ## Archived
 

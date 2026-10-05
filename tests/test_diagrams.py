@@ -354,3 +354,26 @@ def test_reading_guides():
     ix = parse_project(plain)
     view = ProjectView(ContentInfo(plain.sha256, "drone.mdzip"), plain, ix, layouts=load_layouts(plain, ix))
     assert pv.diagram_description(ix, view.graph("d1"), ix.diagrams["d1"]).values["GUIDE"].count("\n- ") == 2
+
+
+def test_what_shapes_hold(tmp_path):
+    """A drawn diagram's page says what its shapes show inside them (plan IS): the elements Cameo
+    lists as used but which have no shape, under the shape drawn for their owner, by kind; those
+    whose owner isn't drawn are counted; drawn elements aren't repeated."""
+    used = "".join(f"<usedObjects href='#{e}'/>" for e in ("b1", "b2", "a1", "op1", "r1"))
+    model = MODEL.replace(
+        "<diagramContents><binaryObject streamContentID='BINARY-1'/></diagramContents>",
+        f"<diagramContents><binaryObject streamContentID='BINARY-1'/>{used}</diagramContents>").replace(
+        "    <xmi:Extension extender='MagicDraw UML 2024x'><modelExtension>\n     <ownedDiagram xmi:type='uml:Diagram' xmi:id='d1'",
+        "    <ownedOperation xmi:type='uml:Operation' xmi:id='op1' name='charge'/>\n"
+        "    <xmi:Extension extender='MagicDraw UML 2024x'><modelExtension>\n     <ownedDiagram xmi:type='uml:Diagram' xmi:id='d1'")
+    assert model.count("usedObjects") == 5 and model.count("xmi:id='op1'") == 1
+    out = run(tmp_path, "drone.mdzip", make_mdzip(model))
+    page = (project_dir(out) / "diagrams/Drone_BDD.md").read_text()
+    block = page.split("**Shown inside its shapes:**\n", 1)[1].split("\n\n", 1)[0]
+    assert block.splitlines() == [
+        "- [1] «Block» Drone: properties battery; operations charge()",
+        "- and 1 more that Cameo lists as used, whose owners aren't drawn here"], block
+    chunks = [json.loads(line) for line in (project_dir(out) / "index/chunks.jsonl").open()]
+    assert any("- [1] «Block» Drone: properties battery; operations charge()" in c["text"]
+               for c in chunks if c["metadata"].get("element_id") == "d1")

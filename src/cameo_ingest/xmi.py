@@ -196,6 +196,8 @@ class _Parser:
                 ref = node.get("href")[1:]  # how Cameo writes them: href='#id' (BASE-013)
             if ref:
                 dia.shown.append(ref)
+                if local == "usedObjects":
+                    dia.used.append(ref)
             if local == "ownedComment" and xid:  # diagram documentation
                 self.stack.append(("element", self._element(node, xid, prefix, local, owner=el.id)))
                 el.children.append(xid)
@@ -311,3 +313,4 @@ def finalize(index: ModelIndex) -> None:
     index.external_refs = {r for r in index.external_refs if own(r) == r}
     for dia in index.diagrams.values():
         dia.shown = list(dict.fromkeys(s for s in dia.shown if s in ids))
+        dia.used = list(dict.fromkeys(s for s in dia.used if s in ids))

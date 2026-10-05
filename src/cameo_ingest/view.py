@@ -73,6 +73,42 @@ class ProjectView:
                 self._tables[dia_id] = ct.build(self.ix, self._columns, dia_id)
         return self._tables[dia_id]
 
+    def inside_shapes(self, dia_id: str) -> tuple[list[tuple[dg.Node | dg.Link, list[Element]]], int]:
+        """What a drawn diagram shows inside its shapes (plan IS): the elements it uses
+        (`usedObjects`) but doesn't draw, each under the shape or line drawn for its owner (or its
+        owner's owner, up to three levels): a block's properties and operations, a transition's
+        trigger, a state's regions. The holders in legend order, and how many used elements have
+        no owner drawn, which are only counted."""
+        g, d = self.graph(dia_id), self.ix.diagrams.get(dia_id)
+        layout = self.layouts.get(dia_id)
+        if g is None or d is None or layout is None:
+            return [], 0
+        holders: dict[str, dg.Node | dg.Link] = {}
+        for n in g.nodes:
+            if n.view.element:
+                holders.setdefault(n.view.element, n)
+        for lk in g.links:
+            if lk.view.element:
+                holders.setdefault(lk.view.element, lk)
+        drawn = set(layout.elements())
+        held: dict[int, list[Element]] = defaultdict(list)
+        unchecked = 0
+        for e in d.used:
+            if e in drawn:
+                continue
+            owner, holder = self.ix.elements[e].owner, None
+            for _ in range(3):
+                if not owner or owner in holders:
+                    holder = holders.get(owner or "")
+                    break
+                owner = self.ix.elements[owner].owner if owner in self.ix.elements else None
+            if holder is None:
+                unchecked += 1
+            else:
+                held[id(holder)].append(self.ix.elements[e])
+        order = [*g.nodes, *g.links]
+        return [(h, held[id(h)]) for h in order if id(h) in held], unchecked
+
     def graph(self, dia_id: str) -> dg.DiagramGraph | None:
         """The diagram's shapes and connections, numbered (built once)."""
         layout = self.layouts.get(dia_id)

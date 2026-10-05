@@ -3,12 +3,14 @@ embedded images (plan RA-13, AR-007R1)."""
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
 from . import cameo_tables as ct
 from . import crossref, hierarchies
+from . import diagram_graph as dg
 from . import diagram_text as dt
 from . import sections as sx
 from . import semantics as sem
@@ -174,6 +176,9 @@ class PageWriter:
             blocks.append(sx.Block(shapes, [sx.markdown_line(n) for n in nodes], form="list"))
             blocks.append(sx.Block("Connections", [sx.markdown_line(e) for e in edges], form="list",
                                    label=f"**Connections ({len(edges)}):**"))
+            inside = self.inside_block(dia_id, graph)
+            if inside is not None:
+                blocks.append(inside)
         tbl = [sx.line(t) for t in self.view.table_config(el)]
         table = ct.computed_kind(d.diagram_type)  # a table, a matrix or a map
         computed = self.view.table(dia_id)
@@ -221,6 +226,39 @@ class PageWriter:
             "provenance": self.view.file_provenance(trace=tr.to_dict(), layout_streams=d.streams),
         })
         self.write_text(rel, fm + text)
+
+    def inside_block(self, dia_id: str, graph: dg.DiagramGraph) -> sx.Block | None:
+        """What the diagram shows inside its shapes (plan IS): under each shape's (or line's) legend
+        number, what it holds, by kind; then how many more Cameo lists as used without an owner
+        drawn here, counted, not shown."""
+        ix = self.view.ix
+        inside, unchecked = self.view.inside_shapes(dia_id)
+        if not inside and not unchecked:
+            return None
+
+        def name(e: Element) -> str:
+            if e.kind == "Trigger":
+                return sem.trigger_text(ix, e) or sem.label(ix, e.id)
+            return sem.label(ix, e.id) + ("()" if e.kind == "Operation" else "")
+
+        lines = []
+        for holder, els in inside:
+            if isinstance(holder, dg.Node):
+                head: list[sx.Span | str] = [f"[{holder.num}] ", sx.name(holder.label)]
+            else:
+                ends = [graph.node_of.get(v.view_id or "") if v is not None else None
+                        for v in (holder.source, holder.target)]
+                head = [f"{holder.view.cls} " + " → ".join(f"[{n.num}]" if n else "?" for n in ends)]
+            groups: dict[str, list[str]] = {}
+            for e in els:
+                groups.setdefault(kinds_word(e.kind), []).append(name(e))
+            spans: list[sx.Span | str] = ["- ", *head, ": "]
+            for k, (kind, names) in enumerate(groups.items()):
+                spans += ["; " if k else "", f"{kind} ", sx.name(", ".join(dict.fromkeys(names)))]
+            lines.append(sx.line(*spans))
+        if unchecked:
+            lines.append(sx.line(f"- and {unchecked} more that Cameo lists as used, whose owners aren't drawn here"))
+        return sx.Block("Shown inside its shapes", lines, form="list", detail=True)
 
     def table_blocks(self, t: ct.Table) -> list[sx.Block]:
         """A computed table: what it shows, in a sentence or two, then its rows (plan CT)."""
@@ -350,3 +388,13 @@ class PageWriter:
         fm = front_matter({"title": f"Cameo project {self.view.content.name}", "kind": "project",
                            "provenance": self.view.file_provenance(trace=tr.to_dict())})
         self.write_text("README.md", fm + text)
+
+
+def kinds_word(kind: str) -> str:
+    """A metaclass as a plural, for a list of them: "Property" → "properties", "ConnectorEnd" →
+    "connector ends"."""
+    words = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", kind).lower().split()
+    last = words[-1]
+    last = last[:-1] + "ies" if last.endswith("y") and last[-2:-1] not in "aeiou" else \
+        last + "es" if last.endswith(("s", "x", "ch")) else last + "s"
+    return " ".join([*words[:-1], last])

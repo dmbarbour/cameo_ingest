@@ -1,7 +1,7 @@
 # Design: architecture
 
 How cameo-ingest is put together, and the rules that keep it so. The decisions behind it are in
-`docs/decisions/`; this describes what holds now (0.18.0).
+`docs/decisions/`; this describes what holds now (0.19.0).
 
 ## The pipeline
 

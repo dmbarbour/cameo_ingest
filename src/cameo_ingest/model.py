@@ -50,6 +50,7 @@ class Diagram:
     uml_type: str | None  # e.g. "Class Diagram"
     streams: list[str] = field(default_factory=list)  # archive entries holding layout
     shown: list[str] = field(default_factory=list)  # ids of the elements drawn; without a layout, `usedObjects`
+    used: list[str] = field(default_factory=list)  # `usedObjects`, as Cameo saved them (plan IS)
     entry: str = ""
     line: int | None = None
 
