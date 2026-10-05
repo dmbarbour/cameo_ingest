@@ -11,6 +11,7 @@ from __future__ import annotations
 import functools
 import hashlib
 import threading
+from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -137,10 +138,27 @@ class Embedder:
         return [d.embedding for d in sorted(r.data, key=lambda d: d.index)]
 
     def embed(self, texts: list[str], role: Role = "passage") -> np.ndarray:
-        """One row per text, normalized to length 1."""
+        """One row per text, normalized to length 1. The rows are filled into one matrix as they
+        come, from the cache a slice at a time, so that a large corpus is held once (plan RM-06)."""
         keys = [text_key(self.model.prefixed(t, role)) for t in texts]  # with and without a prefix differ
-        known = self.cache.get(self.model, role, list(dict.fromkeys(keys)))
-        todo = list(dict.fromkeys(k for k in keys if k not in known))
+        rows: dict[str, list[int]] = {}
+        for i, k in enumerate(keys):
+            rows.setdefault(k, []).append(i)
+        out: np.ndarray | None = None
+        placed: set[str] = set()
+
+        def place(items: Iterable[tuple[str, np.ndarray]]) -> None:
+            nonlocal out
+            for k, v in items:
+                if out is None:
+                    out = np.empty((len(keys), len(v)), dtype=np.float32)
+                out[rows[k]] = v
+                placed.add(k)
+
+        unique = list(rows)
+        for i in range(0, len(unique), 5000):
+            place(self.cache.get(self.model, role, unique[i:i + 5000]).items())
+        todo = [k for k in unique if k not in placed]
         if todo:
             text_of = dict(zip(keys, texts, strict=True))
             batches = [todo[i:i + self.model.batch] for i in range(0, len(todo), self.model.batch)]
@@ -152,10 +170,13 @@ class Embedder:
                 vectors = self._post(sent)
                 items = [(k, np.asarray(v, dtype=np.float32)) for k, v in zip(batch, vectors, strict=True)]
                 self.cache.put(self.model, role, items)
-                known.update(items)
+                with self._lock:
+                    place(items)
 
             with ThreadPoolExecutor(self.concurrency) as pool:
                 list(pool.map(run, batches))
-        out = np.stack([known[k] for k in keys]) if keys else np.zeros((0, 1), dtype=np.float32)
+        if out is None:
+            return np.zeros((0, 1), dtype=np.float32)
         norms = np.linalg.norm(out, axis=1, keepdims=True)
-        return out / np.where(norms == 0, 1, norms)
+        out /= np.where(norms == 0, 1, norms)
+        return out

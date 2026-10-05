@@ -361,7 +361,13 @@ filterable fields.
 
 **If your RAG tool reads files rather than JSONL,** point it at `rag/text/` alone, not at the
 whole tree: the tree also holds Markdown pages, JSON indexes and CSV tables, which would be
-ingested beside the chunks.
+ingested beside the chunks. Measured on the fictional questions
+(`docs/research/windows-over-pages-2026-10-05.md`):
+- **the pages alone** found answers far less often: e5-large's MRR@10 fell from 0.74 to 0.56, and
+  reranked, from 0.76 to 0.66. Nearly half their text is links, front matter and trace lines, and
+  a window cut from a page's middle doesn't say whose text it is;
+- **the pages beside `rag/text/`** filled the top 10 with the same facts again (nDCG@10 down by
+  0.06 to 0.12).
 - **Folders:** one per project (`TMT-9ffd7a2c`, its name and the start of its token), and
   `_tree` for the projects ledger.
 - **Files:** one `.txt` file per chunk, named by the sha256 of its text, so names never clash

@@ -329,5 +329,7 @@ def test_page_units(fiction_tree):
     assert {u.element_id for u in units if "LEDGER.md" in u.id and u.project == page[0].project} == {"_abk_model"}
     assert {u.kind for u in units if u.id.startswith("page:CROSSREF.md")} == {"index:id"}
     assert not any(u.id.startswith(("page:rag/", "page:.")) for u in units)
+    run = Run(str(fiction_tree), "q", pages=True, window=128, overlap=16)
+    assert [w.id for w in run.windows(units)] == [u.id for u in units]  # cut once, as the stack cuts a file
     both = Run(str(fiction_tree), "q", rag=True, pages=True).units()
     assert any(u.id.startswith("page:") for u in both) and any(not u.id.startswith("page:") for u in both)

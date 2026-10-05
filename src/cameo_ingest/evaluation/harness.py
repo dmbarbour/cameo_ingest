@@ -15,6 +15,7 @@ import json
 import math
 import random
 import re
+from array import array
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -112,9 +113,14 @@ def _front_matter(text: str) -> dict[str, str]:
 
 
 def windowed(units: list[Unit], model_name: str, size: int = 512, overlap: int = 64) -> list[Unit]:
-    """Each unit cut into windows; a unit that fits keeps its id."""
+    """Each unit cut into windows; a unit that fits keeps its id. A page's windows are cut already,
+    as the stack cuts a file (`page_units`): cut again on their own, some would gain a token at
+    their ends and split."""
     out = []
     for u in units:
+        if u.id.startswith("page:"):
+            out.append(u)
+            continue
         parts = windows(u.text, model_name, size, overlap)
         if len(parts) == 1:
             out.append(u)
@@ -136,8 +142,9 @@ class BM25:
 
     def __init__(self, texts: list[str], k1: float = 1.2, b: float = 0.75):
         self.k1, self.b = k1, b
-        ids: dict[str, list[int]] = defaultdict(list)
-        tfs: dict[str, list[int]] = defaultdict(list)
+        # Typed arrays while building: a large corpus makes tens of millions of postings (plan RM-06).
+        ids: dict[str, array] = defaultdict(lambda: array("i"))
+        tfs: dict[str, array] = defaultdict(lambda: array("f"))
         self.lengths = np.zeros(len(texts), dtype=np.float32)
         for i, t in enumerate(texts):
             counts = Counter(words(t))

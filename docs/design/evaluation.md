@@ -106,3 +106,5 @@ the sha256 of the text as sent. Search is exact cosine in numpy.
 | Embeddings rarely find a requirement by its id; keyword search does | `docs/research/retrieval-baseline-2026-10-01.md` |
 | Plan SK's descriptions and sketches: no significant change (the questions ask for facts the deterministic text carries) | `docs/research/sketch-ambiguities-2026-10-03.md` |
 | 0.15.2's tables' rows, resolved self-references and plain legends: no significant change | `docs/research/used-objects-2026-10-03.md` |
+| Generated chunks crowd out answers to fact questions (reranked MRR@10 +0.026 to +0.038 without them); ledgers answer lists | `docs/research/ledgers-and-generated-2026-10-05.md` |
+| The pages alone, in place of `rag/`, lose a lot (e5-large's MRR@10 0.74 → 0.56); beside it, they fill the top 10 with duplicates | `docs/research/windows-over-pages-2026-10-05.md` |
