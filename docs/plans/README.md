@@ -7,7 +7,9 @@ plan yet is in `docs/roadmap.md`. When a plan is done, its content goes to `docs
 
 ## Active
 
-None.
+| Plan | Prefix | Status |
+|---|---|---|
+| [Generated text that serves search](generated-for-search-2026-10-05.md) | GS | In progress: requests for aboutness, classified, with more context (CP1) |
 
 ## Archived
 
