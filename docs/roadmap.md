@@ -17,12 +17,15 @@ Ranked on 2026-10-04: easy and valuable first. The items are described in the se
 **Larger, and worth it** (a day or more each):
 1. **Type hierarchies for search:** done (plan TH, 0.18.0).
 2. **What a drawn diagram shows inside shapes:** the data is already read (`usedObjects`).
-   "Shown in diagrams" would also name compartment properties, ports and triggers. That changes
-   many chunks, so it needs the maintainer's yes.
-3. **Tables and matrices:** done as far as the file allows (plan CT, 0.17): tables that list
-   their rows are computed, and matrices described in words. Computing more waits on feedback.
+   "Shown in diagrams" would also name compartment properties, ports and triggers. 78% of them
+   have their owner drawn on the diagram. That changes many chunks, so it needs the maintainer's
+   yes.
 
 **Waiting on evidence:**
+- **Tables and matrices:** done as far as the file allows (plan CT, 0.17): tables that list their
+  rows are computed, and matrices described in words. Computing tables that find their rows in a
+  scope, or matrices, waits on evidence of what Cameo shows: a saved table, or a matrix exported
+  from Cameo, to test a rule against.
 - **Attachments:** the public samples hold 20 images and 1 PDF in all. Whether the maintainer's
   models have more decides this.
 - **Better module boundaries, and lines between undrawn ends:** each costs a redraw and new
