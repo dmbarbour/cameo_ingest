@@ -16,6 +16,11 @@ if TYPE_CHECKING:
     from .view import ProjectView
 
 
+
+def about(a: Annotation) -> dict[str, str] | None:
+    """A generated chunk's class, when its request gave one (plan GS)."""
+    return {"about_class": a.about_class} if a.about_class else None
+
 class ChunkSink:
     def __init__(self, view: ProjectView):
         self.view = view
@@ -97,4 +102,4 @@ class ChunkSink:
             what = f"{el.kind} {self.view.ix.qualified_name(el.id)}"
             text = f"{self.generated_heading(a, el, kind_word)}\n\n{a.text}"
             self.chunk(kind=a.kind.chunk if a.kind else "generated:annotation", title=f"{a.label}: {what}",
-                       text=text, file=file, el=el, trace=a.trace, salt=str(i))
+                       text=text, file=file, el=el, trace=a.trace, salt=str(i), extra=about(a))

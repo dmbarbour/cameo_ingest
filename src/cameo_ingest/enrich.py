@@ -29,7 +29,7 @@ from .model import Element
 from .partition import Partition, sequence_partition
 from .progress import Progress
 from .prompt_values import Level
-from .prompts import CURRENT, MAX_SUMMARIES, PART_CHARS, Template
+from .prompts import CURRENT, MAX_SUMMARIES, PART_CHARS, Template, split_class
 from .provenance import Derivation, Trace
 from .view import ProjectView
 from .vision import fit_image
@@ -159,6 +159,13 @@ def repack(part: list[Element], texts: list[str], limit: int = PART_CHARS[1]) ->
     return out
 
 
+def with_context(template: Template, values: dict[str, str], context: Callable[[], str]) -> dict[str, str]:
+    """`values`, with the context (plan GS) when the template in use takes it."""
+    if any(s.name == "CONTEXT" for s in template.slots):
+        return {**values, "CONTEXT": context()}
+    return values
+
+
 class Enricher:
     """A project's LLM requests, and their answers as annotations (the view's, by element) and
     image descriptions (`images`, by archive entry)."""
@@ -194,7 +201,9 @@ class Enricher:
         if v.cut:
             self.truncated += 1
             llm.truncated(view.trace(el).locator(), v.cut)
-        call = partial(_ask_with_image, llm, CURRENT["diagram-description"], v.values, self.root, rel, "image/png",
+        t = CURRENT["diagram-description"]
+        values = with_context(t, v.values, lambda: pv.diagram_context(ix, graph, ix.diagrams[dia_id]))
+        call = partial(_ask_with_image, llm, t, values, self.root, rel, "image/png",
                        project=self.content.token, inputs=(view.trace(el).locator(), tr.locator()), notes=v.notes)
         self._first.append(Request(an.DIAGRAM, dia_id, tr, call))
 
@@ -239,14 +248,17 @@ class Enricher:
             tr = view.trace(pkg)
             text = "\n\n".join([own, *texts])
             ask = partial(llm.ask, project=self.content.token, inputs=(tr.locator(),))
+            context = partial(pv.package_context, ix, pkg_id)
             if len(text) <= self.part_chars:
+                t = CURRENT["package-summary"]
                 self._first.append(Request(an.SUMMARY, pkg_id, tr, partial(
-                    ask, CURRENT["package-summary"], pv.package_summary(text).values)))
+                    ask, t, with_context(t, pv.package_summary(text).values, context))))
                 continue
             if sum(e.kind == "InstanceSpecification" for e in sections) >= INSTANCE_SHARE * len(sections):
                 v = pv.instances_summary(ix, ix.qualified_name(pkg_id), own, sections, texts)
+                t = CURRENT["instances-summary"]
                 self._first.append(Request(an.SUMMARY, pkg_id, tr, partial(
-                    ask, CURRENT["instances-summary"], v.values, notes=v.notes)))
+                    ask, t, with_context(t, v.values, context), notes=v.notes)))
                 continue
             requests = [r for g in package_parts(view, sections, texts, self.part_chars)
                         for r in repack([sections[i] for i in g], [texts[i] for i in g], self.part_chars)]
@@ -258,8 +270,9 @@ class Enricher:
                 if v.cut:  # repack keeps parts within the limit: this would be a fault
                     self.truncated += 1
                     llm.truncated(tr.locator(), v.cut)
+                t = CURRENT["module-summary"]
                 self._first.append(Request(an.PART, pkg_id, tr, partial(
-                    ask, CURRENT["module-summary"], v.values, notes=v.notes), module=k))
+                    ask, t, with_context(t, v.values, context), notes=v.notes), module=k))
 
     # -- rounds ---------------------------------------------------------------------------------
     def run(self, progress: Progress, name: str, concurrency: int) -> None:
@@ -286,15 +299,17 @@ class Enricher:
             if res is None or (self._round > 1 and req.kind is not an.DIAGRAM):
                 continue  # no answer; or a package's synthesis, folded by its level below
             text, deriv = res
+            cls, text = split_class(deriv.template, text)  # a candidate's class (plan GS)
             tr = req.trace.with_(derivation=deriv)
             if req.kind is an.IMAGE:
                 self.images[req.key] = res
             elif req.kind in (an.MODULE, an.PART):
                 self.annotations.setdefault(req.key, []).append(
-                    Annotation(req.kind.label, text, tr, module=req.module, kind=req.kind))
+                    Annotation(req.kind.label, text, tr, module=req.module, kind=req.kind, about_class=cls))
                 self._described[(req.key, req.module)] = text  # type: ignore[index]
             else:  # a diagram, a large one as a whole, or a package's summary
-                self.annotations.setdefault(req.key, []).append(Annotation(req.kind.label, text, tr, kind=req.kind))
+                self.annotations.setdefault(req.key, []).append(
+                    Annotation(req.kind.label, text, tr, kind=req.kind, about_class=cls))
         if self._round == 1:  # each large package's current level: ((first part, last part), summary or None)
             self._levels = {pkg_id: [((k, k), self._described.get((pkg_id, k))) for k in range(1, len(parts) + 1)]
                             for pkg_id, _, parts, _ in self._large_packages}
@@ -307,14 +322,15 @@ class Enricher:
                     level += run
                     continue
                 res = results[id(req)]
+                cls, text = split_class(res[1].template, res[0]) if res else (None, None)
                 if req.kind is an.RUN:
                     assert req.parts is not None
-                    level.append((req.parts, res[0] if res else None))
+                    level.append((req.parts, text))
                 if res is not None:
                     label = an.SUMMARY.label if req.kind is an.SUMMARY else \
                         f"{an.RUN.label} {req.parts[0]} to {req.parts[1]}"  # type: ignore[index]
-                    self.annotations[pkg_id].append(Annotation(label, res[0], req.trace.with_(derivation=res[1]),
-                                                               parts=req.parts, kind=req.kind))
+                    self.annotations[pkg_id].append(Annotation(label, text, req.trace.with_(derivation=res[1]),
+                                                               parts=req.parts, kind=req.kind, about_class=cls))
             self._levels[pkg_id] = level  # empty once the whole package is summarized
 
     def _wholes(self) -> list[Request]:
@@ -326,7 +342,9 @@ class Enricher:
                 continue  # the module requests got no answer: nor would this one
             el = self.ix.elements[dia_id]
             v = pv.diagram_synthesis(self.ix, part, self.ix.diagrams[dia_id], texts)  # type: ignore[arg-type]
-            call = partial(_ask_with_image, self.llm, CURRENT["diagram-synthesis"], v.values, self.root, rel,
+            t = CURRENT["diagram-synthesis"]
+            values = with_context(t, v.values, partial(pv.diagram_context, self.ix, part.graph, self.ix.diagrams[dia_id]))
+            call = partial(_ask_with_image, self.llm, t, values, self.root, rel,
                            "image/png", project=self.content.token,
                            inputs=(self.view.trace(el).locator(), tr.locator()), notes=v.notes)
             out.append(Request(an.DIAGRAM, dia_id, tr, call))
@@ -347,7 +365,9 @@ class Enricher:
                 out.append((run, None))
                 continue
             v = pv.package_synthesis(self.ix.qualified_name(pkg_id), [len(p) for p in parts], own, run, whole)
-            call = partial(self.llm.ask, CURRENT["package-synthesis"], v.values, project=self.content.token,
+            t = CURRENT["package-synthesis"]
+            values = with_context(t, v.values, partial(pv.package_context, self.ix, pkg_id))
+            call = partial(self.llm.ask, t, values, project=self.content.token,
                            inputs=(tr.locator(),), notes=v.notes)
             out.append((run, Request(an.SUMMARY, pkg_id, tr, call) if whole else
                         Request(an.RUN, pkg_id, tr, call, parts=(a, b))))

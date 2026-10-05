@@ -14,7 +14,7 @@ use are kept here. The older ones were retired (plan RA-03); they are in the com
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 _SLOT = re.compile(r"\{\{([A-Z_]+)\}\}")
 
@@ -26,6 +26,7 @@ PART_CHARS = (3_000, 12_000)  # a large package's parts: the smallest worth its 
 OWN_CHARS = 6_000  # a large package's own section, sent with its parts' summaries
 MAX_SUMMARIES = 30  # summaries per synthesis request; more are summarized in runs first
 DIGEST_CHARS = (8_000, 4_000)  # an instances digest, and the text of the package's other elements
+CONTEXT_CHARS = (400, 200, 3_000)  # context (plan GS): a package's, each shape's first sentence, a diagram's in all
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,7 @@ class Template:
     # Sentences a request may add, as format strings: they belong to the version, as its text does
     # (AR-009), so that no wording reaches the model outside a version.
     fragments: tuple[tuple[str, str], ...] = ()
+    classes: tuple[str, ...] = ()  # an answer starts with 'Class: <one of these>' (plan GS)
 
     @property
     def key(self) -> str:
@@ -432,3 +434,151 @@ _IN_USE = (DIAGRAM_DESCRIPTION, MODULE_DESCRIPTION, DIAGRAM_SYNTHESIS, IMAGE_DES
 CURRENT = {t.id: t for t in _IN_USE}  # by id
 TEMPLATES = {t.key: t for t in _IN_USE}  # by key, as the request log names them
 assert len(CURRENT) == len(_IN_USE), "two versions of one template"
+
+
+# -- Candidates (plan GS): requests for what search by meaning needs ----------------------------
+# Not in use: a variant swaps them into CURRENT for an experiment (scripts/build_variant.py), and
+# one that wins becomes the version in use. Their versions follow the one in use: +1, the request
+# as in use, with context; +2, the `about` request; +3, the `about` request with context.
+
+PACKAGE_CLASSES = (
+    ("intent", "it states purposes, rationale or how things are meant to work"),
+    ("structure", "parts, types and relationships, with little stated purpose"),
+    ("register", "many like items told apart by names and values, such as sites, instruments or test runs"),
+    ("requirements", "requirement statements"),
+    ("behavior", "activities, states or sequences"),
+    ("library", "types, units or stereotypes for reuse"),
+    ("results", "the recorded values of an analysis or a configuration"),
+    ("sparse", "too little to say anything"),
+)
+DIAGRAM_CLASSES = (
+    ("flow", "an activity or process: what is done, and in what order"),
+    ("states", "modes or states, and what changes them"),
+    ("structure", "parts and types, and how they are composed"),
+    ("interfaces", "what passes between parts, through ports and connectors"),
+    ("requirements", "requirements, and what satisfies, verifies or derives them"),
+    ("overview", "a context or summary picture of a system and its surroundings"),
+    ("sparse", "too little to say anything"),
+)
+_SEARCH = ("You are helping people find things in a systems engineering model (UML/SysML, authored in Cameo) by "
+           "searching in their own words. ")
+_PLAIN_PROSE = ("Don't use the elements' names, identifiers or exact values: the index has them already. Write plain "
+                "prose, without headings, lists, bold or code formatting, at most 80 words.")
+
+
+def _classify(what: str, classes: tuple[tuple[str, str], ...]) -> str:
+    listed = "; ".join(f"{c} ({d})" for c, d in classes)
+    return f"First, on a line of its own, classify {what}: 'Class: <class>', where <class> is one of: {listed}. "
+
+
+def _about_package(what: str, scope: str) -> str:
+    return (_classify(what, PACKAGE_CLASSES)
+            + f"Then say what {scope} is about and what it is for, as someone searching for it would put it: the "
+            "concerns it addresses, the purposes it serves and the kinds of things it covers, in everyday words and "
+            "the domain's common terms. Infer the purpose where the text implies it, and say nothing it doesn't "
+            "support. " + _PLAIN_PROSE)
+
+
+def _about_diagram(what: str, scope: str) -> str:
+    return (_classify(what, DIAGRAM_CLASSES)
+            + f"Then say what {scope} is about and what it is for, as someone searching for it would put it: what it "
+            "shows the system doing or being made of, and why that matters, in everyday words and the domain's "
+            "common terms. Infer the purpose where the text and the sketch imply it, and say nothing they don't "
+            "support. " + _PLAIN_PROSE)
+
+
+_CONTEXT_PACKAGE = ("\n\nFor context only (not to be summarized), where the package sits in the model, and what it "
+                    "refers to outside itself:\n{{CONTEXT}}")
+_CONTEXT_DIAGRAM = ("\n\nFor context only, what the diagram's context and its shapes are, from the model's "
+                    "documentation and behaviors:\n{{CONTEXT}}")
+_CONTEXT_SLOTS = {
+    "package": Slot("CONTEXT", "text",
+                    "'The model <name>: <documentation>', then 'Within <name>: <documentation>' for each package "
+                    "around it, outermost first, each cut at 400 characters; then 'It refers to:' and up to 10 "
+                    "lines '- <kind> <name>: <first sentence>' for the documented elements outside the package that "
+                    "its elements refer to most. At most 3,000 characters; '(none)'."),
+    "diagram": Slot("CONTEXT", "text",
+                    "'Context, <kind> <name>: <first sentence>' for the diagram's context element, then one line per "
+                    "shape whose element is documented or has behaviors, '- [<number>] <label>: <first sentence of "
+                    "its documentation>', with '; entry/do/exit: <behavior>' for a state's behaviors. At most 3,000 "
+                    "characters; '(none)'."),
+}
+# Where each template's input begins: the context goes just before it.
+_BODIES = {
+    "package-summary": "\n\n---\n{{PACKAGE_TEXT}}",
+    "module-summary": "\n\nPackage: {{PACKAGE}}\nPart: {{PART}}",
+    "package-synthesis": "\n\nPackage: {{PACKAGE}}\n---\n{{PACKAGE_TEXT}}",
+    "instances-summary": "\n\nPackage: {{PACKAGE}}\n---\n{{PACKAGE_TEXT}}",
+    "diagram-description": "\n\nDiagram: {{DIAGRAM}}\nLegend:",
+    "diagram-synthesis": "\n\nDiagram: {{DIAGRAM}}\nModules:",
+}
+_ABOUT_TEXTS = {
+    "package-summary": (
+        _SEARCH + "Below is the extracted text of one package: the package's own description and members, then a "
+        "section for each element in it. " + _about_package("the package", "this package")),
+    "module-summary": (
+        _SEARCH + f"{_PARTS} Below is the extracted text of one part's elements. {{{{CUT_NOTE}}}}"
+        + _about_package("this part", "this part of the package")),
+    "package-synthesis": (
+        _SEARCH + f"{_PARTS} Each part has been described on its own. Below are the package's own section (its "
+        "description and members) and the descriptions of {{SCOPE}}, in the package's order. {{CUT_NOTE}}"
+        + _about_package("{{SCOPE}} as a whole", "{{SCOPE}}") + " Relate the parts; don't repeat their descriptions."),
+    "instances-summary": (
+        _SEARCH + "The package below is made mostly of instance specifications, such as the recorded results of an "
+        "analysis or simulation, or a configuration of parts. Instead of every instance, you are given the "
+        "package's own section, a digest of its instances (how many there are of each classifier, which features "
+        "their slots set, with some values, and some of their names), and its other elements. "
+        + _about_package("the package", "this package")),
+    "diagram-description": (
+        _SEARCH + "The image above is a sketch redrawn from one diagram's layout; below is the diagram's content as "
+        f"text. {_NOTATION} {_DEPENDENCIES}{{{{GUIDE}}}}\n\n" + _about_diagram("the diagram", "this diagram")),
+    "diagram-synthesis": (
+        _SEARCH + f"{_MODULES} The image above is the whole diagram, redrawn from its layout, with each module's "
+        "shapes tinted and outlined and labelled M1, M2 and so on. Below are each module's description, written "
+        "from a closer view of it, and the connections between modules, whose shapes carry the numbers in the "
+        "image. Connections read '[a] source →[kind: name]→ [b] target' for directed relationships and "
+        "'[a] —[kind]— [b]' for undirected ones.\n\n" + _about_diagram("the whole diagram", "the whole diagram")
+        + " Relate the modules; don't repeat their descriptions or refer to them by label (M1, M2...)."),
+}
+
+
+def _candidate(base: Template, about: bool, context: bool) -> Template:
+    body = _BODIES[base.id]
+    kind = "diagram" if base.id.startswith("diagram") else "package"
+    head, sep, tail = base.text.partition(body)
+    assert sep, f"{base.key}: no body marker"
+    if about:
+        head = _ABOUT_TEXTS[base.id]
+    extra = (_CONTEXT_DIAGRAM if kind == "diagram" else _CONTEXT_PACKAGE) if context else ""
+    classes = tuple(c for c, _ in (DIAGRAM_CLASSES if kind == "diagram" else PACKAGE_CLASSES)) if about else ()
+    return replace(base, version=base.version + (3 if about and context else 2 if about else 1),
+                   text=head + extra + sep + tail, classes=classes,
+                   slots=base.slots + ((_CONTEXT_SLOTS[kind],) if context else ()),
+                   purpose=base.purpose + (" Plan GS candidate: " + ", ".join(
+                       x for x, on in (("about", about), ("with context", context)) if on) + "."))
+
+
+_VARIED = (PACKAGE_SUMMARY, MODULE_SUMMARY, PACKAGE_SYNTHESIS, INSTANCES_SUMMARY, DIAGRAM_DESCRIPTION, DIAGRAM_SYNTHESIS)
+VARIANTS = {  # name -> the templates it puts in CURRENT, by id
+    "current/context": {t.id: _candidate(t, False, True) for t in _VARIED},
+    "about/plain": {t.id: _candidate(t, True, False) for t in _VARIED},
+    "about/context": {t.id: _candidate(t, True, True) for t in _VARIED},
+}
+_ALL = {t.key: t for t in (*_IN_USE, *(t for v in VARIANTS.values() for t in v.values()))}
+assert len(_ALL) == len(_IN_USE) + 3 * len(_VARIED), "two candidates share a version"
+
+
+def split_class(key: str | None, answer: str) -> tuple[str | None, str]:
+    """An answer's class and text (plan GS): for a template that classifies, the class from a
+    first line 'Class: <class>', or 'unknown' when it's missing or not one of the template's;
+    for one that doesn't, (None, the answer)."""
+    t = _ALL.get(key or "")
+    if t is None or not t.classes:
+        return None, answer
+    first, _, rest = answer.strip().partition("\n")
+    m = re.fullmatch(r"[*_#\s]*class[*_\s]*:[*_\s]*([a-z]+)[*_.\s]*", first, re.IGNORECASE)
+    if m is None:
+        return "unknown", answer.strip()
+    found = m.group(1).lower()
+    return (found if found in t.classes else "unknown"), rest.strip()
+

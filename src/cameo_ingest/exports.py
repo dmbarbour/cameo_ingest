@@ -292,7 +292,7 @@ def rag_meta(chunk: dict[str, Any], file: str, project: RagProject | None) -> di
         "derivation": d.get("method"), "generated_by": d.get("model"), "tool": d.get("tool"),
         "found_with": (project.found_with or None) if project else None,
     }
-    for k in ("part", "parts", "piece", "pieces", "diagram_type"):
+    for k in ("part", "parts", "piece", "pieces", "diagram_type", "about_class"):
         if isinstance(m.get(k), (str, int)):
             out[k] = m[k]
     return {k: v for k, v in out.items() if v is not None}

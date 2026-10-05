@@ -6,6 +6,7 @@ from its template's fragments, so that no wording reaches the model outside a ve
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any
@@ -15,7 +16,7 @@ from . import semantics as sem
 from .diagram_graph import DiagramGraph
 from .model import Diagram, Element, ModelIndex
 from .partition import Partition
-from .prompts import CURRENT, DIAGRAM_ITEMS, DIGEST_CHARS, GUIDE, OWN_CHARS, PART_CHARS, Template
+from .prompts import CONTEXT_CHARS, CURRENT, DIAGRAM_ITEMS, DIGEST_CHARS, GUIDE, OWN_CHARS, PART_CHARS, Template
 from .sketch import conventions
 from .text import one_line, plural
 
@@ -161,3 +162,85 @@ def instances_summary(ix: ModelIndex, package: str, own: str, sections: list[Ele
     return Values({"PACKAGE": package, "PACKAGE_TEXT": own[:OWN_CHARS], "DIGEST": digest,
                    "OTHERS": others[:DIGEST_CHARS[1]] or "(none)"},
                   {"digest": {"instances": len(instances), "elements": len(sections)}})
+
+
+# -- Context (plan GS): what the model says around a package or a diagram ----------------------
+def _cut(text: str, limit: int) -> str:
+    text = one_line(text)
+    return text if len(text) <= limit else text[:limit - 1].rsplit(" ", 1)[0] + "…"
+
+
+def _first_sentence(text: str, limit: int) -> str:
+    text = one_line(text)
+    m = re.search(r"(?<=[.!?])\s", text)
+    return _cut(text[:m.start()] if m else text, limit)
+
+
+def package_context(ix: ModelIndex, pkg_id: str) -> str:
+    """Where the package sits, and what it refers to: the model and each package around it, with
+    what their documentation says first; then the documented elements outside it that its
+    elements refer to most, with the first sentence of theirs."""
+    chain = []
+    el = ix.elements[pkg_id]
+    while el.owner in ix.elements:
+        el = ix.elements[el.owner]  # type: ignore[index]
+        chain.append(el)
+    lines = []
+    for el in reversed(chain):
+        doc = _cut(sem.documentation(ix, el), CONTEXT_CHARS[0])
+        lines.append(f"{'The model' if el is chain[-1] else 'Within'} {el.name or '(unnamed)'}" + (f": {doc}" if doc else ""))
+    inside: set[str] = set()
+    todo = [pkg_id]
+    while todo:
+        e = ix.elements[todo.pop()]
+        inside.add(e.id)
+        todo += [c for c in e.children if c in ix.elements]
+    cited: defaultdict[str, int] = defaultdict(int)
+    for e in inside:
+        for _, target in ix.elements[e].refs:
+            if target in ix.elements and target not in inside:
+                cited[target] += 1
+    refs = []
+    for target, _ in sorted(cited.items(), key=lambda kv: (-kv[1], kv[0])):
+        t = ix.elements[target]
+        doc = _first_sentence(sem.documentation(ix, t), CONTEXT_CHARS[1])
+        if doc and t.name:
+            refs.append(f"- {t.kind} {t.name}: {doc}")
+        if len(refs) == 10:
+            break
+    if refs:
+        lines += ["It refers to:", *refs]
+    return _lines(lines, CONTEXT_CHARS[2]) or "(none)"
+
+
+def _lines(lines: list[str], limit: int) -> str:
+    """As many whole lines as fit in `limit` characters."""
+    out, size = [], 0
+    for line in lines:
+        if size + len(line) + 1 > limit:
+            break
+        out.append(line)
+        size += len(line) + 1
+    return "\n".join(out)
+
+
+def diagram_context(ix: ModelIndex, g: DiagramGraph | None, d: Diagram) -> str:
+    """The diagram's context element, and each shape's element, by what the model says of them:
+    the first sentence of its documentation, and a state's entry, do and exit behaviors."""
+    lines = []
+    ctx = ix.elements.get(d.owner or "")
+    if ctx is not None:
+        doc = _first_sentence(sem.documentation(ix, ctx), CONTEXT_CHARS[1])
+        lines.append(f"Context, {ctx.kind} {ctx.name or '(unnamed)'}" + (f": {doc}" if doc else ""))
+    for n in g.nodes if g is not None else []:
+        el = ix.elements.get(n.view.element or "")
+        if el is None:
+            continue
+        doc = _first_sentence(sem.documentation(ix, el), CONTEXT_CHARS[1])
+        behaviors = [f"{role.removesuffix('Activity')}: {b.name}" for role in ("entry", "doActivity", "exit")
+                     for b in sem.children(ix, el, role) if b.name]
+        if doc or behaviors:
+            lines.append(f"- [{n.num}] {one_line(n.label)}" + (f": {doc}" if doc else "")
+                         + "".join(f"; {b}" for b in behaviors))
+    return _lines(lines, CONTEXT_CHARS[2]) or "(none)"
+

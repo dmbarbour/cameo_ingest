@@ -20,7 +20,7 @@ from .files import FilePlan, relpath
 from .model import Element
 from .partition import Partition
 from .provenance import Derivation, Trace, generated_by
-from .sink import ChunkSink
+from .sink import ChunkSink, about
 from .text import front_matter, md_inline, plural, tidy
 from .view import ProjectView
 
@@ -139,7 +139,7 @@ class PageWriter:
                                              [sem.label(ix, e) for e in ids])
             covers = {"number": first, "last": last, "of": len(parts), "anchor": f"{rel}#{anchor}", "elements": ids}
             self.sink.chunk(kind="generated:module_summary", title=f"{title}: {what}", text=f"{heading}\n\n{a.text}",
-                       file=rel, el=pkg, trace=a.trace, salt=anchor, extra={"covers": covers})
+                       file=rel, el=pkg, trace=a.trace, salt=anchor, extra={"covers": covers, **(about(a) or {})})
             lines += [f"<sub>trace: `{a.trace.locator()}`</sub>", ""]
         return lines
 

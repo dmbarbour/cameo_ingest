@@ -36,8 +36,9 @@ a person would use.
     the package or diagram, and the extracted chunks hold the rest. At most 80 words.
 - **The context** (`plain` or `context`):
   - `plain`: as now.
-  - `context`: for a package, what the model and the package's owner say of themselves (their
-    documentation, cut). For a diagram, each shown element's documentation (its first sentence),
+  - `context`: for a package, where it sits (the model, and each package around it, with what
+    their documentation says first) and the documented elements outside it that its elements
+    refer to most, with their first sentence. For a diagram, each shown element's documentation (its first sentence),
     a state's entry, do and exit behaviors, and the documentation of the diagram's context
     element.
 
@@ -74,9 +75,9 @@ of each project's options, so the projects it touches are written again). No use
 
 | Step | What | Status |
 |---|---|---|
-| GS-01 | **The `about` templates** for package summaries, part summaries, syntheses and diagram descriptions, with the class line; not in use by default. The class is parsed from the answer and carried to the chunk's metadata and `rag/meta`; an answer without a valid class line is kept, with the class `unknown`. Tests with a fake model. | |
-| GS-02 | **Context slots,** filled by `prompt_values` for every request, used only by the `context` templates (packages: the model's and the owner's documentation, cut; diagrams: shown elements' first sentences, states' behaviors, the context element's documentation). Tests. | |
-| GS-03 | **The variant builder,** `scripts/build_variant.py`: a tree built with a variant's templates. Measured on a copy of a store. | |
+| GS-01 | **The `about` templates** for package summaries, part summaries, syntheses and diagram descriptions, with the class line; not in use by default. The class is parsed from the answer and carried to the chunk's metadata and `rag/meta`; an answer without a valid class line is kept, with the class `unknown`. Tests with a fake model. | Done: `prompts.VARIANTS` (each varied template's next versions: +1 with context, +2 `about`, +3 both), `prompts.split_class`, `Annotation.about_class`, carried to the chunk's metadata and `rag/meta`; `tests/test_llm.py::test_a_candidate_request_classifies_its_answer` |
+| GS-02 | **Context slots,** filled by `prompt_values` for every request, used only by the `context` templates (packages: the model's and the owner's documentation, cut; diagrams: shown elements' first sentences, states' behaviors, the context element's documentation). Tests. | Done: `prompt_values.package_context`, `diagram_context`, filled only when the template in use takes them (`enrich.with_context`). The fiction's models and most owners are undocumented, so packages are told more: each package around them, outermost first, and the documented elements outside them that their elements refer to most; `tests/test_llm.py::test_package_context` |
+| GS-03 | **The variant builder,** `scripts/build_variant.py`: a tree built with a variant's templates. Measured on a copy of a store. | Done: the variant's templates replace those in use for the run, then `cameo-ingest` runs with the rest of the arguments; tested with the candidate test |
 | GS-04 | **Questions about where something is described,** in the fiction: six, each literal and as a paraphrase, graded by element. A test that each answer's element exists and has a chunk. | |
 | GS-05 | **Screening on the fiction:** a tree of the fiction alone for each variant (about 150 requests each); retrieval with each variant's chunks in `rag/` against without, on the 234 questions and GS-04's, and by class. | |
 | GS-06 | **A reading on real models:** each variant on two sample projects (the drone and a SAF model): 20 package answers and 20 diagram answers each, read for faithfulness and for what they add; the classes' spread. | |

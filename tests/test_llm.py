@@ -460,3 +460,66 @@ def test_every_template_filled_by_its_builder():
         "cut", limit=PART_CHARS[1], length=PART_CHARS[1] + 1) and filled["module-summary"].cut
     assert filled["diagram-description"].values["DIAGRAM"].endswith(")") and "(None)" not in filled[
         "diagram-description"].values["DIAGRAM"]
+
+
+def test_a_candidate_request_classifies_its_answer(tmp_path, monkeypatch):
+    """A plan GS variant asks what a package or diagram is about, with context; its answer's first
+    line is its class, which the chunk's metadata keeps, and the text goes on without it."""
+    from cameo_ingest import llm, prompts
+
+    class Classifying(FakeChat):
+        def complete(self, model, messages, temperature):
+            super().complete(model, messages, temperature)
+            asks = "on a line of its own, classify" in json.dumps(messages)
+            return "**Class:** Structure\n\nWhat the drone is made of." if asks else "A diagram."
+
+    import importlib.util
+
+    made: list[FakeChat] = []
+    monkeypatch.setattr(llm, "OpenAIChat", lambda cfg: made.append(Classifying(cfg)) or made[-1])
+    for key in prompts.VARIANTS["about/context"]:  # the templates in use come back after the test
+        monkeypatch.setitem(prompts.CURRENT, key, prompts.CURRENT[key])
+    spec = importlib.util.spec_from_file_location("build_variant",
+                                                  Path(__file__).parent.parent / "scripts" / "build_variant.py")
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
+    src = tmp_path / "drone.mdzip"
+    src.write_bytes(make_mdzip())
+    out = tmp_path / "out"
+    assert script.main(["about/context", str(src), "-o", str(out), "--text-model", "m", "--vision-model", "m",
+                        "--no-calibrate", "--no-preflight"]) == 0
+    assert prompts.CURRENT["package-summary"].key == "package-summary@v7"
+    texts = [json.dumps(m) for _, m in made[0].enrichment()]
+    diagram = next(t for t in texts if "classify the diagram" in t)
+    assert "For context only, what the diagram's context and its shapes are" in diagram and "- [1] " in diagram
+    chunks = [json.loads(line) for line in (out / "chunks.jsonl").open()]
+    dia = next(c for c in chunks if c["metadata"]["kind"] == "generated:diagram_description")
+    assert dia["metadata"]["about_class"] == "structure" and "Class" not in dia["text"]
+    assert dia["text"].endswith("What the drone is made of.")
+    assert all("about_class" not in c["metadata"] for c in chunks if not c["metadata"]["kind"].startswith("generated:"))
+
+
+def test_package_context():
+    """What a package's request may be told of its place (plan GS): the packages around it,
+    outermost first, and the documented elements outside it that its elements refer to most."""
+    import io
+
+    from cameo_ingest import prompt_values as pv
+    from cameo_ingest.evaluation.fiction import PROJECTS
+    from cameo_ingest.model import ModelIndex
+    from cameo_ingest.xmi import finalize, parse_into
+
+    p = PROJECTS["pct"]()
+    ix = ModelIndex()
+    parse_into(ix, io.BytesIO(p.xmi().encode()), "com.nomagic.magicdraw.uml_model.model")
+    finalize(ix)
+    corridor = next(e.id for e in ix.elements.values() if e.name == "Corridor Harbour Road")
+    lines = pv.package_context(ix, corridor).splitlines()
+    assert lines[:4] == [
+        "The model Port Calder Traffic Signal System",
+        ("Within Port Calder Signals: The city of Port Calder's traffic signals: field equipment, corridors and the "
+         "central system."),
+        "Within Signal Network: The six signal corridors and their intersections.",
+        "It refers to:"]
+    assert "- Class Meridian ATC-5: The current standard controller, with an Ethernet uplink to the ATMS." in lines
+    assert pv.package_context(ix, next(e.id for e in ix.elements.values() if e.kind == "Model")) == "(none)"

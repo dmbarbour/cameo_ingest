@@ -33,3 +33,4 @@ class Annotation:
     module: int | None = None  # about this module of a large diagram, or part of a large package (plan DV)
     parts: tuple[int, int] | None = None  # about this run of a large package's parts
     kind: AnnotationKind | None = None  # generated text's kind; None for a sketch
+    about_class: str | None = None  # the class a candidate request's answer gave itself (plan GS)
