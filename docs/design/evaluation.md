@@ -86,6 +86,12 @@ the sha256 of the text as sent. Search is exact cosine in numpy.
   and left out. It also names the questions that only one run found in its top 10.
 - **Noise:** with 75 to 88 questions, MRR differences under about 0.07 are noise; 210 questions
   narrow that.
+- **Report hit@K beside MRR** (the maintainer, 2026-10-05: "for search, a human will definitely
+  be looking at K>1"). MRR@10 weighs the first useful result most, so an answer moved from first
+  to second counts as a loss of half. hit@1, hit@5 and hit@10 say whether a person scanning the
+  results would find it. Every comparison reports both: in plan GS, MRR@10 showed a small,
+  significant loss on fact questions (0.79 → 0.78), while hit@1, hit@5 and hit@10 didn't change
+  significantly, and the where-is gain held at every depth (hit@5 0.68 → 0.81).
 - **The commands for a release check:** retrieval on the new tree, then the comparison with the
   reference run, which exits 1 when a measure changed significantly.
 
