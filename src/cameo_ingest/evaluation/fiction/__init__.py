@@ -20,8 +20,45 @@ def is_fictional(element_id: str | None) -> bool:
 def ACROSS() -> list[dict]:
     """Questions with answers in parts: across the three Riverbend proposals (rwt, hal, aqu), along
     derivations within a model, over a model's type hierarchy (plan TH), over what a diagram's
-    blocks show (plan IS), and lists of what a package holds (plan RM)."""
+    blocks show (plan IS), and lists of what a package holds (plan RM). Questions about where
+    something is described (`where`, plan GS) are graded by element, and kept apart."""
     return rivals.across() + rivals.within() + traffic.kinds() + shown() + lists()
+
+
+def where() -> list[dict]:
+    """Questions about where something is described (plan GS-04): what search by meaning is for.
+    Graded by element: a window of the behavior or package that answers, or of its diagram,
+    answers; one of what sits beside it relates. The literal question uses the model's words;
+    the paraphrase, a person's."""
+    rows = [
+        ("w01", "abk", ["return", "d_return"], ["bh", "modes"],
+         "Where does the Ashgrove kiosk model describe the steps of returning an item?",
+         "Where can I read what the library's after-hours drop box does with each book it takes in?"),
+        ("w02", "rwt", ["bwseq", "d_bw"], ["fsm", "d_fsm"],
+         "Which part of the Riverbend model sets out how a filter is backwashed?",
+         "Where is the procedure for washing out a dirty filter at the water works?"),
+        ("w03", "fvx", ["faultresp", "d_fault"], ["seq", "d_seq"],
+         "Which part of the Ferrous Valley model covers the response to a barrier fault?",
+         "Where is it written what the level crossing does when a gate gets stuck?"),
+        ("w04", "pct", ["eq", "d_eq"], ["sys"],
+         "Which part of the Port Calder model catalogues the approved field equipment?",
+         "Where would I find which kinds of traffic-light hardware the city allows?"),
+        ("w05", "pct", ["cor_hr", "d_cor_hr"], ["net", "d_network"],
+         "Which part of the Port Calder model covers the signalised intersections along Harbour Road?",
+         "Where are the traffic lights on the road leading out from the harbour described?"),
+        ("w06", "rwt", ["modes", "d_modes"], ["chem"],
+         "Which part of the Riverbend model describes the works' operating modes?",
+         "Where does it say how the treatment plant is run differently in a cold season or after heavy rain?"),
+    ]
+    out = []
+    for qid, prefix, answers, related, literal, paraphrase in rows:
+        p = PROJECTS[prefix]()
+        for style, text in (("literal", literal), ("paraphrase", paraphrase)):
+            out.append({"id": f"where-{qid}-{style}", "rule": "element", "fact": f"where-{qid}", "style": style,
+                        "category": "where", "difficulty": "medium", "question": text,
+                        "answers": [p.id(k) for k in answers], "related": [p.id(k) for k in related],
+                        "evidence": [], "prefix": f"_{prefix}_", "project_name": p.name})
+    return out
 
 
 def shown() -> list[dict]:

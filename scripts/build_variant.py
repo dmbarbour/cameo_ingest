@@ -9,6 +9,10 @@ VARIANT is one of `prompts.VARIANTS` (`current/context`, `about/plain`, `about/c
 templates replace those in use for this run: their keys are part of each project's options, so
 the projects they touch are written again, and their answers are cached as any others. Users
 don't choose requests (ADR-0027); this script is for measuring them.
+
+Build a variant on a copy of a calibrated tree (`run -o COPY`): text calibration probes with the
+module-summary template in use, and would probe with the variant's, whose answers it can't score.
+A calibrated tree keeps its calibration.
 """
 
 from __future__ import annotations

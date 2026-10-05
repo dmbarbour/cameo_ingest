@@ -40,8 +40,14 @@ def chunk_units(tree: Path) -> list[Unit]:
     for line in (tree / "chunks.jsonl").open(encoding="utf-8"):
         c = json.loads(line)
         m = c["metadata"]
-        out.append(Unit(c["id"], c["text"], m.get("element_id"), m["kind"], m.get("content")))
+        out.append(Unit(c["id"], c["text"], m.get("element_id"), classed(m), m.get("content")))
     return out
+
+
+def classed(m: dict) -> str:
+    """A unit's kind, with the class its generated text gave itself (plan GS), so that a glob can
+    leave a class out: `generated:summary#register`."""
+    return m["kind"] + (f"#{m['about_class']}" if m.get("about_class") else "")
 
 
 def rag_units(tree: Path) -> list[Unit]:
@@ -52,7 +58,7 @@ def rag_units(tree: Path) -> list[Unit]:
     for meta in sorted((tree / "rag" / "meta").glob("*/*.json")):
         m = json.loads(meta.read_text(encoding="utf-8"))
         text = (tree / "rag" / "text" / meta.parent.name / m["file"]).read_text(encoding="utf-8")
-        out.append(Unit(m["chunk_id"], text, m.get("element_id"), m["kind"], m.get("project_token")))
+        out.append(Unit(m["chunk_id"], text, m.get("element_id"), classed(m), m.get("project_token")))
     return out
 
 

@@ -123,3 +123,19 @@ def test_threads_live_with_their_project(fiction_tree):
     for c in parts:
         body = c["text"].split("\n\n", 1)[1]
         assert body.startswith("- ") and body.splitlines()[0].endswith(" (continued)"), body[:200]
+
+
+def test_where_questions(fiction_tree):
+    """Each question about where something is described (plan GS-04) is answered by chunks of
+    its behavior or package and its diagram, which grading credits, and by nothing else."""
+    from cameo_ingest.evaluation.fiction import where
+
+    chunks = chunks_of(fiction_tree)
+    windows = [W(c) for c in chunks]
+    corpus = Corpus(windows)
+    questions = where()
+    assert len({q["id"] for q in questions}) == len(questions) == 12
+    for q in questions:
+        grades = Question.of(q).grades(corpus)
+        assert {windows[i].element_id for i, g in grades.items() if g == 2} == set(q["answers"]), q["id"]
+        assert {windows[i].element_id for i, g in grades.items() if g == 1} == set(q["related"]), q["id"]

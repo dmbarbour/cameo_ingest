@@ -317,6 +317,14 @@ def test_run_record(tmp_path, fiction_tree):
     assert any(u.kind.startswith("ledger:") for u in units)
 
 
+def test_a_class_joins_the_kind():
+    """A generated unit's class (plan GS) joins its kind, so that a glob can leave a class out."""
+    from cameo_ingest.evaluation.harness import classed
+
+    assert classed({"kind": "generated:summary", "about_class": "register"}) == "generated:summary#register"
+    assert classed({"kind": "element"}) == "element"
+
+
 def test_page_units(fiction_tree):
     """The pages as a stack pointed at the tree reads them (plan RM-05): each file cut into windows
     across its sections, each window credited to the element whose section it starts in."""
