@@ -103,13 +103,15 @@ class TableWriter:
                            [[ct.text_of(c) for c in cells] + [r, self.view.trace(ix.elements[r]).locator()]
                             for r, cells in zip(t.rows, t.cells, strict=True)])
 
-    def write_indices(self, threads: list[dict[str, Any]]) -> None:
+    def write_indices(self, threads: list[dict[str, Any]], kinds: list[dict[str, Any]] = ()) -> None:
         ix = self.view.ix
-        p = self.root / "index/threads.jsonl"  # derivation trees, which the tree's chunks include or not
-        p.parent.mkdir(parents=True, exist_ok=True)
-        with p.open("w", encoding="utf-8") as f:
-            for t in threads:
-                f.write(json.dumps(t, ensure_ascii=False) + "\n")
+        # Derivation trees and type hierarchies, which the tree's chunks include or not (plans RF, TH)
+        for name, records in (("threads", threads), ("hierarchies", kinds)):
+            p = self.root / f"index/{name}.jsonl"
+            p.parent.mkdir(parents=True, exist_ok=True)
+            with p.open("w", encoding="utf-8") as f:
+                for t in records:
+                    f.write(json.dumps(t, ensure_ascii=False) + "\n")
         p = self.root / "index/ids.jsonl"  # identifiers, for the index across models (AR-012R1)
         p.parent.mkdir(parents=True, exist_ok=True)
         with p.open("w", encoding="utf-8") as f:

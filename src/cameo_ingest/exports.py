@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from . import chunks, crossref
+from . import chunks, crossref, hierarchies
 from . import plain as pl
 from .config import TreeSettings
 from .ledger import MAX_ROWS
@@ -89,6 +89,8 @@ def rebuild(state: State, out: Path) -> None:
     index_rows = write_index_page(tree)
     tree_chunks = projects_ledger(index_rows) + cross_index(tree)
     threads = thread_chunks(tree)
+    for sha, cs in hierarchy_chunks(tree).items():  # assembled as threads are (plan TH)
+        threads[sha] = threads.get(sha, []) + cs
     write_chunks(tree, threads, tree_chunks)
     if tree.settings.rag_files:
         projects = [RagProject(sha, p["name"], _merged_metadata(tree.seen[sha]),
@@ -176,6 +178,19 @@ def thread_chunks(tree: Tree) -> dict[str, list[dict[str, Any]]]:
         records = [json.loads(line) for line in path.open(encoding="utf-8")] if path.is_file() else []
         out[sha] = crossref.thread_chunks(records, ContentInfo(sha, p["name"]),
                                           refs=tree.settings.line_refs)
+    return out
+
+
+def hierarchy_chunks(tree: Tree) -> dict[str, list[dict[str, Any]]]:
+    """Each project's type hierarchies (plan TH), as chunks, by content sha256: made at build time
+    with the project, included when the tree's setting is on."""
+    if not tree.settings.hierarchies:
+        return {}
+    out = {}
+    for sha, p in tree.written.items():
+        path = tree.out / PROJECTS / sha / "index" / "hierarchies.jsonl"
+        records = [json.loads(line) for line in path.open(encoding="utf-8")] if path.is_file() else []
+        out[sha] = hierarchies.hierarchy_chunks(records, ContentInfo(sha, p["name"]), refs=tree.settings.line_refs)
     return out
 
 

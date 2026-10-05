@@ -1,6 +1,6 @@
 # Plan: type hierarchies for search, 2026-10-04
 
-- **Status:** Active; CP1 in progress. The maintainer asked for it on 2026-10-03 ("seems we may
+- **Status:** Active; CP1 done (0.18.0), CP2 in progress. The maintainer asked for it on 2026-10-03 ("seems we may
   need to be drawing some generalization trees, too? … esp. for search"), and on 2026-10-04:
   "please proceed with type hierarchies for search".
 - **Step prefix:** `TH`, so steps are `TH-01`, `TH-02` and so on.
@@ -51,9 +51,9 @@ Surveyed on every `.mdzip` in `samples/`:
 
 | Step | What | Status |
 |---|---|---|
-| TH-01 | **Hierarchies** (`hierarchies.py`): roots, lines, multiple generals, outside generals, depth; the records of `index/hierarchies.jsonl`; `HIERARCHIES.md`. | |
-| TH-02 | **Chunks** in the tree, as threads are (`exports.py`); the switch; `status` and README. | |
-| TH-03 | **Tests:** a fixture with a hierarchy of 3 levels, a kind with two generals, and a general outside the project; the switch off leaves no chunk. **The samples:** counts, and NIST's large hierarchy read in parts. | |
+| TH-01 | **Hierarchies** (`hierarchies.py`): roots, lines, multiple generals, outside generals, depth; the records of `index/hierarchies.jsonl`; `HIERARCHIES.md`. | Done (0.18.0), with alike leaves on one line ("10 kinds of this name": TMT's runs of one analysis); a kind under two roots appears in both |
+| TH-02 | **Chunks** in the tree, as threads are (`exports.py`); the switch; `status` and README. | Done (0.18.0): `exports.hierarchy_chunks`, `--hierarchies` (tree-wide, on); README and design docs at TH-06 |
+| TH-03 | **Tests:** a fixture with a hierarchy of 3 levels, a kind with two generals, and a general outside the project; the switch off leaves no chunk. **The samples:** counts, and NIST's large hierarchy read in parts. | Done: `tests/test_hierarchies.py`. On SAF_Profile, NIST_M-SysML and TMT: 17, 2 and 23 hierarchies, 185 chunks; NIST's 1,005 kinds in 75 parts, each restating its ancestors |
 | TH-04 | **The fiction:** a type hierarchy in Port Calder (field equipment: detectors, signal heads, controllers, 3 levels, with documentation), and questions about it, graded by construction: "what kinds of …" (every kind, in parts), "what is X a kind of" (one), "which kinds of … do Y" (some). | |
 | TH-05 | **Measured:** retrieval on the hierarchy questions with and without hierarchy chunks (coverage@10 and complete@10, as plan RF measured threads), and the 210 questions unchanged; a research note. | |
 | TH-06 | **The release check;** docs: design, README, an ADR; a version. | |

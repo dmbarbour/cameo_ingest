@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from . import cameo_tables as ct
-from . import crossref
+from . import crossref, hierarchies
 from . import diagram_text as dt
 from . import sections as sx
 from . import semantics as sem
@@ -291,6 +291,13 @@ class PageWriter:
             fm = front_matter({"title": f"Threads in {self.view.content.name}", "kind": "threads",
                                "provenance": self.view.file_provenance(trace=self.view.trace().to_dict())})
             self.write_text(crossref.THREADS, fm + crossref.threads_page(threads, self.view.content))
+
+    def write_hierarchies(self, kinds: list[dict[str, Any]]) -> None:
+        """HIERARCHIES.md: the project's type hierarchies, when it has any (plan TH)."""
+        if kinds:
+            fm = front_matter({"title": f"Hierarchies in {self.view.content.name}", "kind": "hierarchies",
+                               "provenance": self.view.file_provenance(trace=self.view.trace().to_dict())})
+            self.write_text(hierarchies.FILE, fm + hierarchies.hierarchies_page(kinds, self.view.content))
 
     def write_readme(self) -> None:
         ix = self.view.ix

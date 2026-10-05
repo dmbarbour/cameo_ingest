@@ -9,7 +9,7 @@ plan yet is in `docs/roadmap.md`. When a plan is done, its content goes to `docs
 
 | Plan | Prefix | Status |
 |---|---|---|
-| [Type hierarchies for search](type-hierarchies-2026-10-04.md) | TH | CP1 in progress |
+| [Type hierarchies for search](type-hierarchies-2026-10-04.md) | TH | CP1 done (0.18.0); CP2 in progress |
 
 ## Archived
 

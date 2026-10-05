@@ -179,6 +179,9 @@ def build_parser() -> argparse.ArgumentParser:
               default=True)
     flag_pair(g, "cross-index", "index identifiers across every model in the tree: CROSSREF.md and index:id chunks",
               "no index across the models", default=True)
+    flag_pair(g, "hierarchies", "include each model's type hierarchies: every kind of a general, level by level "
+              "(HIERARCHIES.md and index/hierarchies.jsonl have them either way)",
+              "leave the hierarchies out of the tree's chunks", default=True)
     flag_pair(g, "threads", "include each model's derivation trees of requirements, with what satisfies and "
               "verifies them, in the tree's chunks and rag/, as trace:thread chunks (each project's THREADS.md "
               "has them either way)", "leave the threads out of the tree's chunks", default=True)

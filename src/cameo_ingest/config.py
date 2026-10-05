@@ -60,6 +60,7 @@ class TreeSettings:
     rag_source: str = "trace"  # or "id"
     cross_index: bool = True
     threads: bool = True
+    hierarchies: bool = True  # type hierarchies in the tree's chunks (plan TH)
     line_refs: bool = False
 
     @classmethod
