@@ -16,10 +16,9 @@ Ranked on 2026-10-04: easy and valuable first. The items are described in the se
 
 **Larger, and worth it** (a day or more each):
 1. **Type hierarchies for search:** done (plan TH, 0.18.0).
-2. **What a drawn diagram shows inside shapes:** the data is already read (`usedObjects`).
-   "Shown in diagrams" would also name compartment properties, ports and triggers. 78% of them
-   have their owner drawn on the diagram. That changes many chunks, so it needs the maintainer's
-   yes.
+2. **What a drawn diagram shows inside shapes:** plan IS (`docs/plans/inside-shapes-2026-10-05.md`),
+   on the diagram's page and chunk (option A). The elements' "Shown in diagrams" (B) waits on its
+   measurement.
 
 **Waiting on evidence:**
 - **Tables and matrices:** done as far as the file allows (plan CT, 0.17): tables that list their
@@ -103,6 +102,14 @@ Ranked on 2026-10-04: easy and valuable first. The items are described in the se
 
 - **More cases where knowing Cameo helps a model read an image** (the maintainer's invitation,
   ADR-0017). Only embedded images (above) and module sketches have been examined.
+- **Compartments in the legends** (plan IS's option C). Telling the vision model what each block's
+  compartments hold "could improve feedback; on the other, it could overly bias the vision model"
+  (the maintainer, 2026-10-05). Two ways to find out first:
+  - **calibrate and test it,** with tricky cards: legends that list elements the image doesn't show,
+    and descriptions scored for repeating them, as validation scores invented connections;
+  - **progressive disclosure:** let the model ask for a shape's contents (a tool call) when it needs
+    them, in place of putting them all in the legend. This needs an endpoint and model that support
+    tool calls.
 - **Lines between undrawn ends:** some connections end at views that aren't drawn as shapes (TMT's
   collaborator views), and invite invented connections.
 - **Arrows, deferred** (`docs/research/upward-arrows-2026-10-04.md`). Descriptions take each
