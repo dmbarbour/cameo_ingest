@@ -1,9 +1,11 @@
 # Plan: what a drawn diagram shows inside its shapes, 2026-10-05
 
-- **Status:** Active; CP1 done (0.19.0); CP2 measured, stopped for the maintainer (IS-05). The maintainer, 2026-10-05: "That seems a good plan"
-  (option A, on the diagram). Option C, compartments in the vision legends, stays out: "it could
-  improve feedback; on the other, it could overly bias the vision model" (the roadmap has the
-  maintainer's alternatives).
+- **Status:** Done on 2026-10-05 (0.19.0), and retired to the archive that day.
+  - **Approved:** "That seems a good plan" (option A, on the diagram).
+  - **Option C,** compartments in the vision legends, stays out: "it could improve feedback; on the
+    other, it could overly bias the vision model". The roadmap has the maintainer's alternatives.
+  - **After IS-05's measurement,** the maintainer kept it as it is, with no switch: "A … asking
+    users to control them independently would be a recipe for confusion" (ADR-0027).
 - **Step prefix:** `IS`, so steps are `IS-01`, `IS-02` and so on.
 - **Builds on:** `docs/research/used-objects-2026-10-03.md` (BASE-013): Cameo saves a diagram's
   `usedObjects`, the elements it uses, and the tool reads them only for diagrams without a layout.
@@ -49,7 +51,7 @@ diagrams.
 | IS-03 | **Tests:** a fixture whose diagram uses a drawn block's property and operation, a drawn transition's trigger, and an element whose owner isn't drawn (counted). **The samples:** counts by kind; a reading of TMT's and the drone's. | Done: `tests/test_diagrams.py::test_what_shapes_hold`. On the drone and TMT, 241 diagrams gain the block: TMT's classes list their properties and operations, its states their do-activities and triggers |
 | IS-04 | **The fiction** writes `usedObjects` as Cameo does: what is drawn, and the drawn blocks' members. **Questions** that start from a diagram ("which values does the Riverbend Overview show for its pumps?"), graded in parts, one per member shown. | Done: the fiction writes `usedObjects`; `fiction.shown()`, 4 questions, 8 with paraphrases (`questions-is.jsonl`); 254 fictional questions |
 | IS-05 | **Measured** with and without, as plan TH measured hierarchies (a switch for the measurement, or two builds); the 210 standing questions too; a research note. | Measured: `docs/research/inside-shapes-2026-10-05.md`. The diagram questions gain greatly and significantly (coverage@10 from 0.03–0.25 to 0.77–1.00); the 210 lose a little, significantly (nDCG@10 −0.003 to −0.010; one paraphrase out of the top 10 for three systems). Stopped for the maintainer, as the plan says |
-| IS-06 | **The release check;** docs (design, README, an ADR if a decision is made); a version. | |
+| IS-06 | **The release check;** docs (design, README, an ADR if a decision is made); a version. | Done: the maintainer chose to keep it, with no switch (ADR-0027). The 0.19.0 tree (`out/v019/on`): 670 diagrams say what their shapes hold; the invariants hold; no LLM request changed. Docs: design/diagrams, README |
 
 ## Checkpoints
 

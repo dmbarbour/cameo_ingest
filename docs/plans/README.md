@@ -7,13 +7,11 @@ plan yet is in `docs/roadmap.md`. When a plan is done, its content goes to `docs
 
 ## Active
 
-| Plan | Prefix | Status |
-|---|---|---|
-| [What a drawn diagram shows inside its shapes](inside-shapes-2026-10-05.md) | IS | CP1 done (0.19.0); CP2 measured, waiting on the maintainer |
+None.
 
 ## Archived
 
-Retired on 2026-10-03, and TC, CT and TH on 2026-10-04.
+Retired on 2026-10-03; TC, CT and TH on 2026-10-04; IS on 2026-10-05.
 
 | Plan | Prefix | Done | Its content now |
 |---|---|---|---|
@@ -32,6 +30,7 @@ Retired on 2026-10-03, and TC, CT and TH on 2026-10-04.
 | [Inputs cut by us, and calibrating to the configured text model](../archive/plans/text-calibration-2026-10-04.md) | TC | 2026-10-04 (0.16.0) | ADR-0024; design/llm-enrichment; research/text-reading; roadmap |
 | [Cameo's tables, computed as Cameo shows them](../archive/plans/cameo-tables-2026-10-04.md) | CT | 2026-10-04 (0.17.1); rows from scope not inferred | ADR-0025; design/output-and-chunks; research/cameo-tables; roadmap |
 | [Type hierarchies for search](../archive/plans/type-hierarchies-2026-10-04.md) | TH | 2026-10-04 (0.18.0) | ADR-0026; design/output-and-chunks; research/type-hierarchies; roadmap |
+| [What a drawn diagram shows inside its shapes](../archive/plans/inside-shapes-2026-10-05.md) | IS | 2026-10-05 (0.19.0); kept, with no switch | ADR-0027; design/diagrams; research/inside-shapes; roadmap |
 
 ## Reviews
 

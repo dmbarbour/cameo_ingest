@@ -302,7 +302,8 @@ out/
     diagrams/<name>.md   diagram type, author and dates, a numbered legend of the shapes (by
                          nesting), connections from source to target, with the items they carry
                          and, for dependencies, how they read ("is derived from", "satisfies"),
-                         and the table/matrix configuration
+                         what the shapes show inside them (a block's properties and operations,
+                         a transition's trigger), and a table's rows or a matrix's description
     diagrams/<name>.png  a sketch redrawn from the layout data to the model's pixel budget: shapes
                          tagged with their legend numbers, arrows at the target, generalizations
                          drawn as Cameo's trees with one head at the parent; not a Cameo
@@ -649,7 +650,7 @@ uv run python -m cameo_ingest.treediff BEFORE AFTER   # what a change did to an 
 - **Port Calder Traffic Signal System:** about 5,100 XMI ids, 150 intersections with
   near-duplicate names, and a type hierarchy of its equipment, three levels deep.
 
-Each comes with questions whose answers are known by construction (246 in all, tagged by
+Each comes with questions whose answers are known by construction (254 in all, tagged by
 difficulty; 210 without Kestrel, in `questions-ra.jsonl`, the set every comparison since
 2026-10-02 uses), for the retrieval evaluation (`scripts/retrieval_eval.py --questions
 out/eval/fiction/questions.jsonl`; `docs/design/evaluation.md`). The tests ingest every project and check that each answer

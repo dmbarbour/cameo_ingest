@@ -33,3 +33,4 @@ supersedes it, and its status says so.
 | [0024](0024-text-calibration-guards-the-part-size.md) | The text model's calibration guards the part size; it never enlarges it |
 | [0025](0025-tables-computed-from-what-the-file-lists.md) | Tables are computed from what the file lists; what Cameo infers is reported, not guessed |
 | [0026](0026-type-hierarchies-as-assembled-chunks.md) | Type hierarchies as assembled chunks, beside threads |
+| [0027](0027-heuristics-are-defaults-not-switches.md) | Heuristics are defaults, not switches; what shapes hold is shown |

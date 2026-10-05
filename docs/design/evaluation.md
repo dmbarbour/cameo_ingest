@@ -21,7 +21,7 @@ the sha256 of the text as sent. Search is exact cosine in numpy.
 
 | Set | Questions | Graded by |
 |---|---|---|
-| Fictional projects (`scripts/make_fictional_projects.py`) | 246 now (`out/eval/fiction/questions.jsonl`); 210 without KOIS (`questions-ra.jsonl`, used for every comparison since plan RA); 8 about Port Calder's type hierarchy (`questions-th.jsonl`, plan TH) | Construction: rules `source`, `parts`, `fact` (only a window holding the fact gets a 2), `element` |
+| Fictional projects (`scripts/make_fictional_projects.py`) | 254 now (`out/eval/fiction/questions.jsonl`); 210 without KOIS (`questions-ra.jsonl`, used for every comparison since plan RA); 8 about Port Calder's type hierarchy (`questions-th.jsonl`, plan TH); 8 that start from a diagram (`questions-is.jsonl`, plan IS) | Construction: rules `source`, `parts`, `fact` (only a window holding the fact gets a 2), `element` |
 | Structural (`scripts/write_questions.py`) | 88 about the samples: by id, relationship, diagram, parameter | Construction; lexical-friendly, so for regressions, not model choice |
 | Natural | Two sets of 75, written by DeepSeek-V3.2 from Markdown and from plain chunks | The judges |
 

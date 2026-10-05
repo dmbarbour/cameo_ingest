@@ -1,6 +1,6 @@
 # Research: does saying what shapes hold help retrieval? 2026-10-05
 
-**Question.** Plan IS (`docs/plans/inside-shapes-2026-10-05.md`) adds to each drawn diagram's
+**Question.** Plan IS (`docs/archive/plans/inside-shapes-2026-10-05.md`) adds to each drawn diagram's
 page and details chunk what its shapes show inside them: a block's properties, operations and
 ports; a transition's trigger; a state's regions. Does it help questions that start from a
 diagram, and does it hurt others?
@@ -53,7 +53,8 @@ with their properties (site id, cabinet, ward…), so a question that names an i
 can people cross diagonally at Cormorant Road and Bramble Walk?") meets a diagram chunk naming it
 too. The answer is then ranked lower, and for one question it falls out of the top 10.
 
-## Open
+## Decision
 
-The plan stops here for the maintainer: the block helps the questions it is for, a great deal, and
-costs the others a little.
+Kept, as it is, with no switch (the maintainer, 2026-10-05; ADR-0027). The block helps the
+questions it is for a great deal, and costs the others a little. A switch for a heuristic would ask
+users to judge what they can't.

@@ -37,8 +37,24 @@ tables:
   `href='#id'`. For a table, these are its rows when last saved, and its page lists them as
   "Elements shown when last saved".
 
-A drawn diagram's `usedObjects` also name what is shown inside shapes (compartments, triggers),
-so they aren't used there (`docs/research/used-objects-2026-10-03.md`).
+A drawn diagram's `usedObjects` also name what is shown inside shapes (compartments, triggers).
+They aren't elements shown, but the diagram says what its shapes hold (below).
+
+**Shown inside its shapes** (`view.inside_shapes`, plan IS, ADR-0027, 0.19.0):
+- **What:** each element a drawn diagram uses (`Diagram.used`, `usedObjects` as saved) but doesn't
+  draw.
+- **Placed:** under the shape or line drawn for its owner, or its owner's owner, up to three
+  levels. That covers a block's properties, operations and ports, a transition's trigger, and a
+  state's regions and do-activities.
+- **Its line:** the holder's legend number and label, then what it holds by kind: "[1] «Block»
+  Drone: properties battery; operations charge()".
+- **Not checked:** elements whose owner isn't drawn (mostly an internal block diagram's
+  connectors, whose owner is the frame) are counted, not listed.
+- **Where:** on the page and in the diagram's details chunk. No LLM request reads it.
+- **Measured:** questions that start from a diagram gain greatly (coverage@10 from 0.03–0.25 to
+  0.77–1.00), and the 210 standing questions lose a little (nDCG@10 −0.003 to −0.010), mostly to
+  Port Calder's corridor diagrams naming every intersection
+  (`docs/research/inside-shapes-2026-10-05.md`). Kept, with no switch.
 
 ## The graph and the text
 

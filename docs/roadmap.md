@@ -16,9 +16,9 @@ Ranked on 2026-10-04: easy and valuable first. The items are described in the se
 
 **Larger, and worth it** (a day or more each):
 1. **Type hierarchies for search:** done (plan TH, 0.18.0).
-2. **What a drawn diagram shows inside shapes:** plan IS (`docs/plans/inside-shapes-2026-10-05.md`),
-   on the diagram's page and chunk (option A). The elements' "Shown in diagrams" (B) waits on its
-   measurement.
+2. **What a drawn diagram shows inside shapes:** done (plan IS, 0.19.0, ADR-0027), on the
+   diagram's page and chunk. The elements' "Shown in diagrams" (option B) isn't needed for the
+   questions measured: the diagram's chunk answers them.
 
 **Waiting on evidence:**
 - **Tables and matrices:** done as far as the file allows (plan CT, 0.17): tables that list their
@@ -30,6 +30,10 @@ Ranked on 2026-10-04: easy and valuable first. The items are described in the se
 - **Better module boundaries, and lines between undrawn ends:** each costs a redraw and new
   descriptions. A reading of descriptions where they apply (sequence diagrams, TMT's collaborator
   views) would show whether they matter.
+
+**Review (ADR-0027):** the switches for heuristics that predate the decision that heuristics are
+defaults, not switches: `--threads`, `--hierarchies`, `--cross-index` and `--line-refs`. Each could
+become a fixed, measured default.
 
 **Later:**
 - the judge panel and ratings;
