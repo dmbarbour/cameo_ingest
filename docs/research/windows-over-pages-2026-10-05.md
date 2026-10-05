@@ -1,6 +1,6 @@
 # Research: the pages, or the whole tree, in place of `rag/`? 2026-10-05
 
-**Question.** Plan RM (`docs/plans/retrieval-measures-2026-10-05.md`, RE-05 of plan RE). The
+**Question.** Plan RM (`docs/archive/plans/retrieval-measures-2026-10-05.md`, RE-05 of plan RE). The
 README says to point a RAG tool that reads files at `rag/text/` alone. What does it cost if the
 stack is pointed at the Markdown pages instead, or at the whole tree?
 

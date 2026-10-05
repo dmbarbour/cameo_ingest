@@ -10,17 +10,15 @@ its record is the archived plan, the ADRs and the design documents.
 Ranked on 2026-10-05, among the items that can progress now, without the maintainer or new
 evidence. Everything ranked on 2026-10-04 is done: the quick wins (0.16.1), type hierarchies
 (plan TH, 0.18.0), what shapes hold (plan IS, 0.19.0) and the review of the switches (ADR-0027).
+Retrieval's untested measures are done too (plan RM, ADR-0028), and generated text that serves
+search is a plan of its own (`docs/plans/`).
 
-1. **Retrieval's untested measures** (Retrieval evaluation, below): windows over the pages, and
-   ledger and generated chunks in or out. The tools are in place (`retrieval_eval.py`,
-   `compare_retrieval.py`, `assemble_tree.py`), and a result could change what the tree's chunks
-   hold for every question.
-2. **Compartments in the legends, tested first** (Sketches and the vision model): cards whose
+1. **Compartments in the legends, tested first** (Sketches and the vision model): cards whose
    legends list elements the image doesn't show, to learn whether telling the model what shapes
    hold helps or biases it.
-3. **The text guard for other limits** (The text model): `DIAGRAM_ITEMS` and `DIGEST_CHARS`,
+2. **The text guard for other limits** (The text model): `DIAGRAM_ITEMS` and `DIGEST_CHARS`,
    guarded as the part size is. The calibration's machinery exists.
-4. **Kinds of a shared library type across models** (Related facts): an index across models, as
+3. **Kinds of a shared library type across models** (Related facts): an index across models, as
    for identifiers.
 
 Larger, or of less certain reward: better module boundaries (a reading of the descriptions
@@ -129,7 +127,6 @@ After plan TC (the text model's calibration, a guard; ADR-0024):
 
 ## Retrieval evaluation
 
-- **Windows over the pages** (RE-05), and generated and ledger chunks in or out (RE-08): untested.
 - **TMT-2024x as a test of confusion between versions.**
 - **A stricter judge prompt** (v2), and the Kimi tie-breaker on the plain pools
   (`out/eval/judge-plain2/run.sh`).

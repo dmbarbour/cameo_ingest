@@ -21,6 +21,7 @@ Only provenance.jsonl and rag/meta name local paths; the others name inputs by f
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import re
 import shutil
@@ -77,6 +78,9 @@ class Assembly:
     threads: bool = True  # requirement threads (plan RF, ADR-0019)
     hierarchies: bool = True  # type hierarchies (plan TH, ADR-0026)
     line_refs: bool = False  # a chunk reference on each line: it costs completeness (plan RF)
+    # Kinds that stay out of rag/, as globs: the LLM's summaries and diagram descriptions crowd out
+    # answers (plan RM, ADR-0028). The pages and chunks.jsonl keep them.
+    rag_without: tuple[str, ...] = ("generated:summary", "generated:diagram_description", "generated:module_summary")
 
 
 @dataclass
@@ -111,7 +115,7 @@ def rebuild(state: State, out: Path, assembly: Assembly | None = None) -> None:
                                [_file_ref(s) for s in tree.seen[sha] if not s["missing"]]
                                or [_file_ref(s) for s in tree.seen[sha]])
                     for sha, p in tree.written.items()]
-        write_rag(out, projects, tree_chunks, tree.settings.rag_source, threads)
+        write_rag(out, projects, tree_chunks, tree.settings.rag_source, threads, tree.assembly.rag_without)
     elif (out / RAG).exists():
         shutil.rmtree(out / RAG)
 
@@ -317,14 +321,14 @@ def _write_files(folder: str, root: Path, chunks: list[dict[str, Any]], project:
 
 
 def write_rag(out: Path, projects: list[RagProject], tree_chunks: list[dict[str, Any]], form: str = "trace",
-              threads: dict[str, list[dict[str, Any]]] | None = None) -> None:
+              threads: dict[str, list[dict[str, Any]]] | None = None, without: tuple[str, ...] = ()) -> None:
     """rag/: the chunks as files, for RAG tools that read files. Under text/, a folder per
     project (its name and short id, `TMT-9ffd7a2c`) of files named by the sha256 of their text;
     under meta/, the same folders, with each file's metadata as `<sha256>.json`, and
     `_sources.json`, which resolves each project's short id to the files it was found in; the
-    projects ledger in `_tree`. Point a RAG tool at text/ alone. A project's files are written
-    again only when its chunks, sources or --meta values change; folders of projects no longer in
-    the tree go."""
+    projects ledger in `_tree`. Point a RAG tool at text/ alone. Chunks of the kinds `without`
+    (globs) are left out. A project's files are written again only when its chunks, sources,
+    --meta values or the kinds left out change; folders of projects no longer in the tree go."""
     root = out / RAG
     for d in (root, root / "text", root / "meta"):
         d.mkdir(exist_ok=True)
@@ -336,7 +340,7 @@ def write_rag(out: Path, projects: list[RagProject], tree_chunks: list[dict[str,
         src = out / PROJECTS / p.sha / "index" / "chunks.jsonl"
         extra = (threads or {}).get(p.sha, [])  # the project's threads, when the tree includes them
         stamp = json.dumps([sha256_bytes(src.read_bytes()), p.found_with, p.files, ".txt", form, TOOL,
-                            sha256_bytes(json.dumps(extra, sort_keys=True).encode())])
+                            sha256_bytes(json.dumps(extra, sort_keys=True).encode()), list(without)])
         folder = f"{_safe(PurePosixPath(p.name).stem, 40)}-{p.id}"
         keep.add(folder)
         sources[p.id] = {"project": p.name, "token": f"sha256:{p.sha}", "folder": folder, "files": p.files,
@@ -345,7 +349,8 @@ def write_rag(out: Path, projects: list[RagProject], tree_chunks: list[dict[str,
         if marker.is_file() and marker.read_text(encoding="utf-8") == stamp and (root / "text" / folder).is_dir():
             continue
         with src.open(encoding="utf-8") as f:
-            _write_files(folder, root, [json.loads(line) for line in f] + extra, p, form)
+            cs = [c for c in map(json.loads, f) if not any(fnmatch.fnmatchcase(c["metadata"]["kind"], g) for g in without)]
+        _write_files(folder, root, cs + extra, p, form)
         marker.write_text(stamp, encoding="utf-8")
     for top in (root / "text", root / "meta"):
         for old in top.iterdir():

@@ -1,6 +1,6 @@
 # ADR-0007: `rag/` files sized to one window, with sources by label
 
-- **Status:** Accepted, 2026-10-01 (RE-11, RF-01).
+- **Status:** Accepted, 2026-10-01 (RE-11, RF-01); updated on 2026-10-05 (Changes, below).
 - **Sources:**
   - plan RE's decision 14 (`docs/archive/plans/retrieval-evaluation-2026-09-30.md`);
   - plan RF's RF-01 and the maintainer's answers;
@@ -17,7 +17,8 @@
 ## Decision
 
 - **One file per chunk:** `rag/text/<project>/<sha256 of the text>.txt`, ending with a source
-  line, and `rag/meta/<project>/<sha256>.json` beside it.
+  line, and `rag/meta/<project>/<sha256>.json` beside it. The LLM's summaries and diagram
+  descriptions are left out (ADR-0028).
 - **Sized to one window:** a file fits one 512-token window (`plain.WINDOW`, with 100 tokens kept
   for the source line), by an estimate fitted to e5's tokenizer.
 - **The source line:** `--rag-source trace` (the default) gives the project and trace locator;
@@ -31,3 +32,8 @@
 - **Fit:** 3 of 43,552 files in `rag/` exceed 512 tokens, against 9% of chunks before.
 - **Retrieval:** MRR changed by −0.02 to +0.02, within noise.
 - **Smaller limits:** a model with a smaller limit (MiniLM's 256) sees only the start of each file.
+
+## Changes
+
+- 2026-10-05: `rag/` leaves out the LLM's summaries and diagram descriptions (ADR-0028). Before:
+  `3c254db`.

@@ -7,13 +7,11 @@ plan yet is in `docs/roadmap.md`. When a plan is done, its content goes to `docs
 
 ## Active
 
-| Plan | Prefix | Status |
-|---|---|---|
-| [Retrieval's untested measures](retrieval-measures-2026-10-05.md) | RM | In progress: ledger and generated chunks measured (RE-08), stopped for the maintainer on generated chunks; windows over the pages measured (RE-05) |
+None.
 
 ## Archived
 
-Retired on 2026-10-03; TC, CT and TH on 2026-10-04; IS on 2026-10-05.
+Retired on 2026-10-03; TC, CT and TH on 2026-10-04; IS and RM on 2026-10-05.
 
 | Plan | Prefix | Done | Its content now |
 |---|---|---|---|
@@ -33,6 +31,7 @@ Retired on 2026-10-03; TC, CT and TH on 2026-10-04; IS on 2026-10-05.
 | [Cameo's tables, computed as Cameo shows them](../archive/plans/cameo-tables-2026-10-04.md) | CT | 2026-10-04 (0.17.1); rows from scope not inferred | ADR-0025; design/output-and-chunks; research/cameo-tables; roadmap |
 | [Type hierarchies for search](../archive/plans/type-hierarchies-2026-10-04.md) | TH | 2026-10-04 (0.18.0) | ADR-0026; design/output-and-chunks; research/type-hierarchies; roadmap |
 | [What a drawn diagram shows inside its shapes](../archive/plans/inside-shapes-2026-10-05.md) | IS | 2026-10-05 (0.19.0); kept, with no switch | ADR-0027; design/diagrams; research/inside-shapes; roadmap |
+| [Retrieval's untested measures](../archive/plans/retrieval-measures-2026-10-05.md) | RM | 2026-10-05; generated summaries out of `rag/` | ADR-0028; design/evaluation, design/output-and-chunks; research/ledgers-and-generated, research/windows-over-pages; README |
 
 ## Reviews
 

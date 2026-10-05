@@ -35,3 +35,4 @@ date, what changed, and a commit that holds the text before (conventions in `doc
 | [0025](0025-tables-computed-from-what-the-file-lists.md) | Tables are computed from what the file lists; what Cameo infers is reported, not guessed |
 | [0026](0026-type-hierarchies-as-assembled-chunks.md) | Type hierarchies as assembled chunks, beside threads |
 | [0027](0027-heuristics-are-defaults-not-switches.md) | Heuristics are defaults, not switches; what shapes hold is shown |
+| [0028](0028-rag-leaves-out-generated-summaries.md) | `rag/` leaves out the LLM's summaries and diagram descriptions |

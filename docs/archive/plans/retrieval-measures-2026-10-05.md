@@ -1,7 +1,11 @@
 # Plan: retrieval's untested measures, 2026-10-05
 
-- **Status:** In progress, started on 2026-10-05 ("Please proceed with retrieval's untested
-  measures"). CP1 to CP3 measured; stopped for the maintainer on generated chunks (RM-04).
+- **Status:** Done on 2026-10-05, and retired to the archive that day.
+  - **Started:** "Please proceed with retrieval's untested measures".
+  - **RM-04, generated chunks:** option A, "If generated chunks are a big loss, then we must drop
+    them as implemented" (ADR-0028). The maintainer then asked for requests that serve
+    "aboutness" and paraphrased search, classified so that some classes can be kept out of
+    `rag/`, and for more context: a plan of its own.
 - **Step prefix:** `RM`, so steps are `RM-01`, `RM-02` and so on.
 - **Addresses:** the roadmap's first item, left open by plan RE
   (`docs/archive/plans/retrieval-evaluation-2026-09-30.md`):
@@ -51,10 +55,10 @@ question now is what it costs if the stack is pointed at the pages, or at the wh
 | RM-01 | **Leaving kinds out:** `--without GLOB…` in `retrieval_eval.py`, matched on each unit's kind (`ledger:*`, `generated:*`), recorded in `run.json` so that the judges see the same windows. `--without-details` stays, as `*:details`. A test. | Done: `records.Run.without`, `--without`; `tests/test_evaluation.py::test_run_record` |
 | RM-02 | **The standing questions,** without `ledger:*`, without `generated:*`, and without both, each compared with the reference. | Measured (`out/rm/without-*`): without generated chunks, every reranked system gains significantly (MRR@10 +0.026 to +0.038); without both, more (MRR@10 +0.045 to +0.056, nDCG@10 +0.048 to +0.058); without ledgers alone, little (e5-large's MRR@10 −0.013, the only significant change). Of the 39 questions where a generated window outranked the first answer (hybrid, reranked), 5 were answered by it in other words, which grading can't credit; the other 34 were not answered by it. Each generated kind measured alone as well |
 | RM-03 | **List questions,** what ledgers are for. Four, each literal and as a paraphrase, graded in parts, one part per item: a model's requirements with what satisfies each, a package's diagrams, a package's elements of one kind. A test that each part is where its key says. Measured with and without ledgers. | Done: `fiction.lists()` (the builder records requirement ids and texts, and diagrams' owners and kinds; the fiction's bytes are unchanged), `questions-rm.jsonl`; 262 fictional questions. Without ledgers, every system loses coverage and completeness on lists (the best: coverage@10 0.906 → 0.771, MRR@10 0.906 → 0.698, both significant); without generated chunks, lists barely change |
-| RM-04 | **A research note** (`docs/research/ledgers-and-generated-2026-10-05.md`), and the decision (When to stop, below). | Note written. No single generated kind accounts for the gain: they stand in for each other. All but the part descriptions out gives the whole gain. Stopped for the maintainer: generated chunks serve questions the fiction can't grade |
+| RM-04 | **A research note** (`docs/research/ledgers-and-generated-2026-10-05.md`), and the decision (When to stop, below). | Note written. No single generated kind accounts for the gain: they stand in for each other. All but the part descriptions out gives the whole gain. Stopped for the maintainer: generated chunks serve questions the fiction can't grade. Decided: option A (ADR-0028): `exports.Assembly.rag_without`, `assemble_tree.py --rag-all` |
 | RM-05 | **Pages as units:** every Markdown file in the tree, cut into windows as the stack would cut a file. Each window is credited to the element whose section it starts in, by the page's anchors and trace lines. `CROSSREF.md`'s windows count as `index:id`, as its chunks do. Windows are cut a page at a time, under the memory cap. A test on the fixture. | Done: `harness.page_units`, `--pages` (with `--rag`, the whole tree's text); `tests/test_evaluation.py::test_page_units` |
 | RM-06 | **Pages measured:** the pages alone, and the pages with `rag/text/`, against `rag/text/` alone, on the questions of RM-02 and RM-03. About 36M tokens to embed (98 MB of pages), some two hours on DeepInfra. A research note; the README's advice gets its numbers. | Measured (`docs/research/windows-over-pages-2026-10-05.md`; about 54M tokens embedded, in 32 minutes over both runs): the pages alone lose a lot (e5-large's MRR@10 0.740 → 0.560; reranked 0.76 → 0.66), nearly half their text being apparatus; beside `rag/`, they push nDCG@10 down by 0.06 to 0.12. The whole tree first exceeded the 3 GB cap: the harness now holds vectors once and builds BM25 in typed arrays, with byte-identical rankings. A first pages run cut windows twice (about 0.03 worse); rerun. The README's advice has its numbers |
-| RM-07 | **Docs:** design/evaluation's findings, the README if a default changes, an ADR if a decision is made, the roadmap; the plan retired. | |
+| RM-07 | **Docs:** design/evaluation's findings, the README if a default changes, an ADR if a decision is made, the roadmap; the plan retired. | Done: ADR-0028, ADR-0007 updated; design/evaluation, design/output-and-chunks, README; the roadmap; retired |
 
 ## Checkpoints
 

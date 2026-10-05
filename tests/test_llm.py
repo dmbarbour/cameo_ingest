@@ -44,6 +44,9 @@ def test_llm_enrichment_is_labelled(tmp_path, fake_chat):
     ids = {c["id"] for c in extracted}
     dia_chunk = next(c for c in gen if c["metadata"]["kind"] == "generated:diagram_description")
     assert dia_chunk["metadata"]["primary_chunk"] in ids and dia_chunk["metadata"]["annotation"] == dia_chunk["id"]
+    # rag/ leaves out what crowds out answers, and keeps what no other text holds (ADR-0028).
+    rag = {json.loads(m.read_text())["kind"] for m in (out / "rag" / "meta").glob("*/*.json")}
+    assert "generated:image_description" in rag and "generated:diagram_description" not in rag
 
 
 def large_package_model() -> str:

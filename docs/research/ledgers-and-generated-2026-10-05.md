@@ -1,6 +1,6 @@
 # Research: ledger and generated chunks, in or out of retrieval? 2026-10-05
 
-**Question.** Plan RM (`docs/plans/retrieval-measures-2026-10-05.md`, RE-08 of plan RE). Ledger
+**Question.** Plan RM (`docs/archive/plans/retrieval-measures-2026-10-05.md`, RE-08 of plan RE). Ledger
 chunks list a package's items; generated chunks are the LLM's summaries and descriptions. Do they
 help retrieval, or only crowd it? The maintainer's stack reads files, so it can't filter by kind:
 what `rag/` holds is what it searches.
@@ -102,12 +102,22 @@ does: what the vision model read in an image.
 
 ## Decision
 
-Pending the maintainer (plan RM, "When to stop and ask"). Generated chunks are for questions the
-fiction can't grade (what a package or diagram is about); on the questions it can, they crowd out
-answers. The options put to the maintainer:
-- **A.** Leave summaries, diagram descriptions and part summaries out of `rag/`; keep part
-  descriptions and image descriptions. The pages and `chunks.jsonl` keep them all, by kind.
-- **B.** Leave every generated kind out of `rag/`.
-- **C.** Keep them all, as now.
+Option A (the maintainer, 2026-10-05: "If generated chunks are a big loss, then we must drop them
+as implemented"; ADR-0028): summaries, diagram descriptions and part summaries leave `rag/`; part
+descriptions and image descriptions stay. The pages and `chunks.jsonl` keep them all, by kind.
+The options were A, B (every generated kind out) and C (all kept).
 
-Ledgers stay either way: they answer lists, and cost the other questions little.
+Ledgers stay: they answer lists, and cost the other questions little.
+
+**Why the summaries crowd,** from their requests (the 0.19.0 store): they ask for a package's
+"purpose, main elements, and how they relate", with the names as written, and 73% of the
+package-summary inputs on the samples (85% of part summaries') hold no documentation at all, only
+names and structure. The answers are inventories of names ("These sites include Harbour Road &
+Abbot Lane, Harbour Road & Brindle Street, …"). Diagram descriptions get the legend and the
+connections, names and arrows only, and narrate them. Requests that ask for what retrieval can
+use are a next experiment.
+
+## Changes
+
+- 2026-10-05: the decision (option A, ADR-0028), in place of "pending the maintainer", and why
+  the summaries crowd. Before: `2ba3394`.
