@@ -205,11 +205,13 @@ def test_large_diagram_modules(tmp_path, fake_chat):
     assert sum(len(c["metadata"]["covers"]["shapes"]) for c in mods) == 32
     assert "module m1 of 2, showing" in mods[0]["text"]
     whole = [c for c in chunks if c["metadata"]["kind"] == "generated:diagram_description"]
-    assert [c["metadata"]["provenance"]["derivation"]["template"] for c in whole] == ["diagram-synthesis@v2"]
+    from cameo_ingest.prompts import CURRENT
+
+    assert [c["metadata"]["provenance"]["derivation"]["template"] for c in whole] == [CURRENT["diagram-synthesis"].key]
     db = sqlite3.connect(out / ".cache/llm.sqlite")
     rows = db.execute("SELECT template, prompt, image_path FROM requests WHERE template LIKE 'module%' "
                       "OR template LIKE 'diagram%' ORDER BY rowid").fetchall()
-    assert [r[0] for r in rows] == ["module-description@v3"] * 2 + ["diagram-synthesis@v2"]
+    assert [r[0] for r in rows] == ["module-description@v3"] * 2 + [CURRENT["diagram-synthesis"].key]
     assert "Module: M2 of 2" in rows[1][1] and "(in M" in rows[1][1]
     assert rows[2][1].count("A block definition diagram showing Drone") == 2 and rows[2][2] == "diagrams/Drone_BDD.png"
 

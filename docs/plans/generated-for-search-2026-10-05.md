@@ -1,7 +1,7 @@
 # Plan: generated text that serves search, 2026-10-05
 
-- **Status:** In progress, started on 2026-10-05. CP1 and CP2 done; stopped for the maintainer
-  after the screening (GS-05).
+- **Status:** In progress, started on 2026-10-05. CP1 to CP3 done. The maintainer: "Yes, about
+  should replace summaries. Please proceed with the experiment." GS-07 next.
 - **Step prefix:** `GS`, so steps are `GS-01`, `GS-02` and so on.
 - **Addresses:** the maintainer, 2026-10-05, after ADR-0028 left the LLM's summaries and diagram
   descriptions out of `rag/`:
@@ -81,7 +81,7 @@ of each project's options, so the projects it touches are written again). No use
 | GS-03 | **The variant builder,** `scripts/build_variant.py`: a tree built with a variant's templates. Measured on a copy of a store. | Done: the variant's templates replace those in use for the run, then `cameo-ingest` runs with the rest of the arguments; tested with the candidate test |
 | GS-04 | **Questions about where something is described,** in the fiction: six, each literal and as a paraphrase, graded by element. A test that each answer's element exists and has a chunk. | Done: `fiction.where()`, `questions-gs.jsonl`; `tests/test_fiction.py::test_where_questions`. A unit's kind carries its class (`generated:summary#register`), so that a glob leaves a class out |
 | GS-05 | **Screening on the fiction** (each variant's tree a copy of `current/plain`'s, so that its calibration stays: text calibration probes with the module-summary template in use, and scores the names its answer covers, which an `about` answer leaves out by design; if one is adopted, the probe must change): a tree of the fiction alone for each variant (about 150 requests each); retrieval with each variant's chunks in `rag/` against without, on the 234 questions and GS-04's, and by class. | Measured (`docs/research/generated-for-search-2026-10-05.md`): `about/context` helps where-is questions most (hybrid reranked MRR@10 0.583 → 0.814, significant) and costs the standing questions least (0.791 → 0.783, not significant; e5-large reranked 0.798 → 0.785, significant). Classes don't sort helpful from crowding: leaving any out costs the where-is gain more than it saves. Stopped for the maintainer |
-| GS-06 | **A reading on real models:** each variant on two sample projects (the drone and a SAF model): 20 package answers and 20 diagram answers each, read for faithfulness and for what they add; the classes' spread. | |
+| GS-06 | **A reading on real models:** each variant on two sample projects (the drone and a SAF model): 20 package answers and 20 diagram answers each, read for faithfulness and for what they add; the classes' spread. | Done for `about/context` (the maintainer: "about should replace summaries"): 20 of 20 package answers faithful; 19 of 20 diagram answers faithful in substance, one misreading a swimlane, several ending with a generic purpose the input doesn't state |
 | GS-07 | **The decision and a release check:** the variant and the classes that enter `rag/`; the whole tree built with them (about 5,700 requests), compared with the default; an ADR, the docs, a version. | |
 
 ## Checkpoints

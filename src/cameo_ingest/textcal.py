@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .progress import QUIET, Progress
-from .prompts import CURRENT, PART_CHARS, Slot, Template
+from .prompts import MODULE_SUMMARY, PART_CHARS, Slot, Template
 
 if TYPE_CHECKING:
     from .llm import EnrichmentSession
@@ -230,7 +230,9 @@ def score_facts(c: Card, answer: str | None) -> dict[str, Any]:
 def ask(llm: EnrichmentSession, cs: list[Card], concurrency: int = 4, progress: Progress = QUIET) -> list[dict[str, Any]]:
     """Both probes on each card, asked through the session's store, and scored."""
     def one(c: Card, probe: str) -> dict[str, Any]:
-        template, values = ((CURRENT["module-summary"], summary_values(c)) if probe == "summary"
+        # The part request as it was before 0.20.0, which names what it covers, so that coverage can
+        # be scored; the request in use says what a part is about, without names (plan GS).
+        template, values = ((MODULE_SUMMARY, summary_values(c)) if probe == "summary"
                             else (FACTS, facts_values(c)))
         res = llm.ask(template, values, project="calibration:text", inputs=(f"{c.id}:{probe}",))
         reply = res[0] if res else None

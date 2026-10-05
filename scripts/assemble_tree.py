@@ -7,8 +7,7 @@ to one of the defaults (ADR-0027).
 
 TREE is an output tree as a run left it: `chunks.jsonl`, `CROSSREF.md` and `rag/` are rebuilt from
 its state, with the index across models, the threads or the hierarchies left out, with line
-references added, or with every kind in `rag/` (`--rag-all`: the generated summaries and diagram
-descriptions too, ADR-0028). Work on a copy: the next run of the tree puts the defaults back.
+references added, or with kinds left out of `rag/` (`--rag-without generated:summary`). Work on a copy: the next run of the tree puts the defaults back.
 Users don't set these; they are measured defaults (`exports.Assembly`), and this script holds the
 arguments.
 """
@@ -31,13 +30,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--without", nargs="+", choices=PARTS, default=[], help="leave these out of the tree's chunks")
     ap.add_argument("--line-refs", action="store_true",
                     help="end each line of an assembled chunk with its source chunk, [project:chunk]")
-    ap.add_argument("--rag-all", action="store_true",
-                    help="every kind in rag/, the generated summaries and diagram descriptions too (ADR-0028)")
+    ap.add_argument("--rag-without", nargs="+", default=[], metavar="KIND",
+                    help="leave chunks of these kinds out of rag/, as globs (ADR-0028, ADR-0029)")
     args = ap.parse_args(argv)
     if not State.exists(args.tree):
         ap.error(f"{args.tree} is not an output tree")
     assembly = exports.Assembly(**{p.replace("-", "_"): False for p in args.without}, line_refs=args.line_refs,
-                                **({"rag_without": ()} if args.rag_all else {}))
+                                rag_without=tuple(args.rag_without))
     state = State(args.tree)
     try:
         state.lock()

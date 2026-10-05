@@ -18,6 +18,7 @@ from helpers import (
 )
 
 from cameo_ingest.cli import main
+from cameo_ingest.prompts import CURRENT
 
 
 def test_llm_enrichment_is_labelled(tmp_path, fake_chat):
@@ -44,9 +45,9 @@ def test_llm_enrichment_is_labelled(tmp_path, fake_chat):
     ids = {c["id"] for c in extracted}
     dia_chunk = next(c for c in gen if c["metadata"]["kind"] == "generated:diagram_description")
     assert dia_chunk["metadata"]["primary_chunk"] in ids and dia_chunk["metadata"]["annotation"] == dia_chunk["id"]
-    # rag/ leaves out what crowds out answers, and keeps what no other text holds (ADR-0028).
+    # rag/ holds the generated text too, since it says what a diagram is about (ADR-0029).
     rag = {json.loads(m.read_text())["kind"] for m in (out / "rag" / "meta").glob("*/*.json")}
-    assert "generated:image_description" in rag and "generated:diagram_description" not in rag
+    assert {"generated:image_description", "generated:diagram_description"} <= rag
 
 
 def large_package_model() -> str:
@@ -154,12 +155,13 @@ def test_large_package_parts(tmp_path, fake_chat, monkeypatch):
     assert pl.tokens(heading) <= pl.HEADING
     summary = [c for c in chunks if c["metadata"]["kind"] == "generated:summary" and c["metadata"]["element_id"] == "bigp"]
     assert summary[0]["text"].startswith("Summary of Package Big in Model (project drone [")
-    assert [c["metadata"]["provenance"]["derivation"]["template"] for c in summary] == ["package-synthesis@v3"]
+    assert [c["metadata"]["provenance"]["derivation"]["template"] for c in summary] == [CURRENT["package-synthesis"].key]
     db = sqlite3.connect(out / ".cache/llm.sqlite")
     used = Counter(r[0] for r in db.execute("SELECT template FROM requests WHERE item LIKE '%bigp%'"))
-    assert used["module-summary@v3"] == n and used["package-synthesis@v3"] == len(parts) - n + 1
-    prompt = db.execute("SELECT prompt FROM requests WHERE template = 'package-synthesis@v3' ORDER BY rowid DESC").fetchone()[0]
-    assert "summaries of the whole package" in prompt and re.search(r"\nParts \d+ to \d+: ", prompt)
+    synthesis = CURRENT["package-synthesis"].key
+    assert used[CURRENT["module-summary"].key] == n and used[synthesis] == len(parts) - n + 1
+    prompt = db.execute("SELECT prompt FROM requests WHERE template = ? ORDER BY rowid DESC", (synthesis,)).fetchone()[0]
+    assert "descriptions of the whole package" in prompt and re.search(r"\nParts \d+ to \d+: ", prompt)
 
 
 def instances_model() -> str:
@@ -193,7 +195,7 @@ def test_instance_packages_summarized_from_a_digest(tmp_path, fake_chat):
     assert "- **Classifier:** [Battery]" in page and "## Parts, summarized" not in page
     db = sqlite3.connect(out / ".cache/llm.sqlite")
     rows = db.execute("SELECT template, prompt FROM requests WHERE item LIKE '%resp%'").fetchall()
-    assert [r[0] for r in rows] == ["instances-summary@v2"]
+    assert [r[0] for r in rows] == [CURRENT["instances-summary"].key]
     prompt = rows[0][1]
     assert "61 instance specifications of 2 classifiers." in prompt
     # The run's slot refers to cell 0 only, so the other cells are top-level too.
@@ -204,24 +206,46 @@ def test_instance_packages_summarized_from_a_digest(tmp_path, fake_chat):
 
 
 def test_current_templates_pinned():
-    """A current template's request never changes under its key: a new text, or a new fragment, is
-    a new version, so that projects written with the old one are written again (FU-014). Pinned
-    by hash (plan RA-03)."""
-    from cameo_ingest.prompts import CURRENT
+    """A template's request never changes under its key: a new text, or a new fragment, is a new
+    version, so that projects written with the old one are written again (FU-014). Pinned by hash
+    (plan RA-03): those in use, and plan GS's variants, which text calibration and experiments
+    still send."""
+    from cameo_ingest import prompts
 
     def pin(t) -> str:  # its text and, when it has them, its fragments (AR-009)
         return hashlib.sha256(f"{t.image_first}|{t.text}{f'|{t.fragments}' if t.fragments else ''}".encode()).hexdigest()[:16]
 
-    assert {t.key: pin(t) for t in CURRENT.values()} == {
+    assert {k: pin(t) for k, t in prompts._ALL.items()} == {
         "diagram-description@v6": "febe4654a66e0acc",
+        "diagram-description@v7": "eda9cbc23f3d6076",
+        "diagram-description@v8": "727eda672139d095",
+        "diagram-description@v9": "7a3b7d8fb1309b8c",
         "diagram-synthesis@v2": "864e9e9b3a1a3ce1",
+        "diagram-synthesis@v3": "e3e5efa10ac930fb",
+        "diagram-synthesis@v4": "78c4657b315768f0",
+        "diagram-synthesis@v5": "563eca6d82c882e5",
         "image-description@v2": "abc49bf5c21deb2c",
         "instances-summary@v2": "7efe4dab7b5f2f97",
+        "instances-summary@v3": "2f2a19338fa7efed",
+        "instances-summary@v4": "bb81e109c4617ae0",
+        "instances-summary@v5": "b3c3c19aabf41561",
         "module-description@v3": "5d339bf2c19fb77b",
         "module-summary@v3": "adb1988426c52a72",
+        "module-summary@v4": "246b48d1906dfed5",
+        "module-summary@v5": "2c6c7cfc573083ef",
+        "module-summary@v6": "45a0ce417b32b23f",
         "package-summary@v4": "9b211fbe74c3e128",
+        "package-summary@v5": "797d166274e7554b",
+        "package-summary@v6": "d19378ed521bd633",
+        "package-summary@v7": "fb8e71f9c2eec229",
         "package-synthesis@v3": "ffde10093ba92d11",
+        "package-synthesis@v4": "8bb6fce095e9c98c",
+        "package-synthesis@v5": "5f617d45cf432a5f",
+        "package-synthesis@v6": "f1da2b0e496fe805",
     }
+    assert sorted(t.key for t in prompts.CURRENT.values()) == [
+        "diagram-description@v9", "diagram-synthesis@v5", "image-description@v2", "instances-summary@v5",
+        "module-description@v3", "module-summary@v6", "package-summary@v7", "package-synthesis@v6"]
 
 
 def test_templates_and_request_log(tmp_path, fake_chat):
@@ -244,17 +268,17 @@ def test_templates_and_request_log(tmp_path, fake_chat):
     db = sqlite3.connect(out / ".cache/llm.sqlite")
     rows = db.execute("SELECT template, project, item, image_path, prompt, notes FROM requests ORDER BY template, "
                       "image_path").fetchall()
-    assert [(r[0], r[3]) for r in rows] == [("diagram-description@v6", "diagrams/Drone_BDD.png"),
+    assert [(r[0], r[3]) for r in rows] == [(CURRENT["diagram-description"].key, "diagrams/Drone_BDD.png"),
                                            ("image-description@v2", "images/BINARY-img1.png"),
                                            ("image-description@v2", "images/BINARY-img2.png"),
-                                           ("package-summary@v4", None)]
+                                           (CURRENT["package-summary"].key, None)]
     assert all(r[1] == token and r[2].startswith(token[:23]) for r in rows)
-    assert rows[0][4].startswith(TEMPLATES["diagram-description@v6"].text.split("{{")[0])
+    assert rows[0][4].startswith(CURRENT["diagram-description"].text.split("{{")[0])
     assert "Diagram: Drone BDD (SysML Block Definition Diagram)" in rows[0][4]
     chunks = [json.loads(line) for line in (out / "chunks.jsonl").open()]
     templates = {c["metadata"]["provenance"]["derivation"].get("template") for c in chunks
                  if c["metadata"]["kind"].startswith("generated:")}
-    assert templates == {"diagram-description@v6", "image-description@v2", "package-summary@v4"}
+    assert templates == {CURRENT["diagram-description"].key, "image-description@v2", CURRENT["package-summary"].key}
     # The image goes before the text (FU-015).
     request = json.loads(json.dumps(fake_chat[0].enrichment()[0][1]))
     assert [part["type"] for part in request[0]["content"]] == ["image_url", "text"]
@@ -454,8 +478,10 @@ def test_every_template_filled_by_its_builder():
             "instances-summary": pv.instances_summary(ix, "Model::P", own, sections, texts),
         }
     assert set(filled) == set(CURRENT)
-    for tid, v in filled.items():
-        assert "{{" not in CURRENT[tid].render(v.values), tid
+    from cameo_ingest.enrich import with_context
+
+    for tid, v in filled.items():  # with the context, as the enricher adds it (plan GS)
+        assert "{{" not in CURRENT[tid].render(with_context(CURRENT[tid], v.values, lambda: "(none)")), tid
     assert filled["module-summary"].values["CUT_NOTE"] == CURRENT["module-summary"].fragment(
         "cut", limit=PART_CHARS[1], length=PART_CHARS[1] + 1) and filled["module-summary"].cut
     assert filled["diagram-description"].values["DIAGRAM"].endswith(")") and "(None)" not in filled[

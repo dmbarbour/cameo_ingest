@@ -78,9 +78,9 @@ class Assembly:
     threads: bool = True  # requirement threads (plan RF, ADR-0019)
     hierarchies: bool = True  # type hierarchies (plan TH, ADR-0026)
     line_refs: bool = False  # a chunk reference on each line: it costs completeness (plan RF)
-    # Kinds that stay out of rag/, as globs: the LLM's summaries and diagram descriptions crowd out
-    # answers (plan RM, ADR-0028). The pages and chunks.jsonl keep them.
-    rag_without: tuple[str, ...] = ("generated:summary", "generated:diagram_description", "generated:module_summary")
+    # Kinds that stay out of rag/, as globs. None since 0.20.0: the LLM says what a package or diagram
+    # is about (ADR-0029), where it listed names that crowded out answers (ADR-0028).
+    rag_without: tuple[str, ...] = ()
 
 
 @dataclass

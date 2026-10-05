@@ -82,14 +82,34 @@ for cleaning a filter in a water treatment plant …"
 (0.795 / 0.791) and help where-is questions a little (0.649 / 0.653); diagram descriptions alone
 help more (0.750 / 0.689) and cost a little (0.790 / 0.786). Together they help most.
 
+## A reading on real models (GS-06)
+
+The drone and SAF_FFDS, built with the requests in use and with `about/context` (173 new answers;
+`out/gs3/reading.txt`): 20 package answers and 20 diagram answers drawn at random, each read
+beside its input, its context and the answer in use.
+- **Package answers: 20 of 20 faithful.** Each says what the package covers and what it is for,
+  where the answer in use lists names. "This package contains the safety assurance case for the
+  forest fire detection system", for one whose answer in use names each claim and argument. The
+  strongest stretch: "ensuring the drone can safely navigate".
+- **Diagram answers: 19 of 20 faithful in substance.**
+  - **One misreading:** a maintainer's activity returns "a fire department system" to operation,
+    where the system is the FFDS and the fire department only a swimlane.
+  - **Generic purposes:** several end with a purpose the input doesn't state ("This ensures that
+    every system requirement is justified by an operational need", "to save a life"): inferred,
+    as the request allows, and general.
+- **The classes on real models:** structure 67, flow 20, interfaces 18, overview 17, behavior 16,
+  intent 13, requirements 13, library 6, states 2, sparse 1.
+- **Context:** the model's own documentation is sometimes noise (an ONVIF specification pasted
+  into data types, a sentence in German); the answers ignore it.
+
 ## Caveats
 
 - **12 where-is questions** are few; the gain is significant, its size uncertain.
 - **The fiction alone:** the samples weren't there as distractors.
-- **One model,** gemma-4-31B-it, and no reading yet of `about` answers on real models, whose
-  packages are mostly undocumented: what does a model say a package is "for" when nothing says
-  so? That is plan GS's CP3.
+- **One model,** gemma-4-31B-it, and a reading of 40 answers on two models.
 
 ## Decision
 
-Pending the maintainer (plan GS, "When to stop and ask").
+The maintainer, 2026-10-05: "Yes, about should replace summaries. Please proceed with the
+experiment." After the reading, `about/context` becomes the requests in use, on the pages and in
+`rag/`; the classes stay in the metadata, and no class is left out (plan GS-07).

@@ -427,19 +427,12 @@ INSTANCES_SUMMARY = Template(
     fragments=(("cut", "\n(The digest was cut here.)"),),
 )
 
-# The versions in use, one per template. Their keys are part of a run's options, so that a project
-# written with other versions is written again (FU-014).
-_IN_USE = (DIAGRAM_DESCRIPTION, MODULE_DESCRIPTION, DIAGRAM_SYNTHESIS, IMAGE_DESCRIPTION, PACKAGE_SUMMARY,
-           MODULE_SUMMARY, PACKAGE_SYNTHESIS, INSTANCES_SUMMARY)
-CURRENT = {t.id: t for t in _IN_USE}  # by id
-TEMPLATES = {t.key: t for t in _IN_USE}  # by key, as the request log names them
-assert len(CURRENT) == len(_IN_USE), "two versions of one template"
 
 
-# -- Candidates (plan GS): requests for what search by meaning needs ----------------------------
-# Not in use: a variant swaps them into CURRENT for an experiment (scripts/build_variant.py), and
-# one that wins becomes the version in use. Their versions follow the one in use: +1, the request
-# as in use, with context; +2, the `about` request; +3, the `about` request with context.
+# -- Variants (plan GS): requests for what search by meaning needs -------------------------------
+# Built from the requests in use before 0.20.0 (`current/plain`, above): +1, the same with context;
+# +2, the `about` request; +3, the `about` request with context, in use since 0.20.0. A variant
+# swaps its templates into CURRENT for an experiment (scripts/build_variant.py).
 
 PACKAGE_CLASSES = (
     ("intent", "it states purposes, rationale or how things are meant to work"),
@@ -554,18 +547,30 @@ def _candidate(base: Template, about: bool, context: bool) -> Template:
     return replace(base, version=base.version + (3 if about and context else 2 if about else 1),
                    text=head + extra + sep + tail, classes=classes,
                    slots=base.slots + ((_CONTEXT_SLOTS[kind],) if context else ()),
-                   purpose=base.purpose + (" Plan GS candidate: " + ", ".join(
+                   purpose=base.purpose + (" Plan GS: " + ", ".join(
                        x for x, on in (("about", about), ("with context", context)) if on) + "."))
 
 
 _VARIED = (PACKAGE_SUMMARY, MODULE_SUMMARY, PACKAGE_SYNTHESIS, INSTANCES_SUMMARY, DIAGRAM_DESCRIPTION, DIAGRAM_SYNTHESIS)
 VARIANTS = {  # name -> the templates it puts in CURRENT, by id
+    "current/plain": {t.id: t for t in _VARIED},  # in use before 0.20.0
     "current/context": {t.id: _candidate(t, False, True) for t in _VARIED},
     "about/plain": {t.id: _candidate(t, True, False) for t in _VARIED},
     "about/context": {t.id: _candidate(t, True, True) for t in _VARIED},
 }
+
+# The versions in use, one per template. Their keys are part of a run's options, so that a project
+# written with other versions is written again (FU-014). Since 0.20.0 (plan GS, ADR-0029), packages
+# and diagrams are asked what they are about and for, with context.
+_ABOUT = VARIANTS["about/context"]
+_IN_USE = (_ABOUT["diagram-description"], MODULE_DESCRIPTION, _ABOUT["diagram-synthesis"], IMAGE_DESCRIPTION,
+           _ABOUT["package-summary"], _ABOUT["module-summary"], _ABOUT["package-synthesis"],
+           _ABOUT["instances-summary"])
+CURRENT = {t.id: t for t in _IN_USE}  # by id
+TEMPLATES = {t.key: t for t in _IN_USE}  # by key, as the request log names them
+assert len(CURRENT) == len(_IN_USE), "two versions of one template"
 _ALL = {t.key: t for t in (*_IN_USE, *(t for v in VARIANTS.values() for t in v.values()))}
-assert len(_ALL) == len(_IN_USE) + 3 * len(_VARIED), "two candidates share a version"
+assert len(_ALL) == len(_IN_USE) + 3 * len(_VARIED), "two variants share a version"
 
 
 def split_class(key: str | None, answer: str) -> tuple[str | None, str]:

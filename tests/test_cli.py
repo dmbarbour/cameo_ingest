@@ -127,11 +127,12 @@ def test_options_change_rewrites_projects(tmp_path, monkeypatch, fake_chat):
     from cameo_ingest import prompts, runner
 
     # A new prompt template version counts as an option change (FU-014).
-    later = dataclasses.replace(prompts.PACKAGE_SUMMARY, version=prompts.PACKAGE_SUMMARY.version + 1)
+    in_use = prompts.CURRENT["package-summary"]
+    later = dataclasses.replace(in_use, version=in_use.version + 100)
     monkeypatch.setitem(prompts.CURRENT, "package-summary", later)
     assert main(["run", "-o", str(out), "--text-model", "m", "--no-calibrate"]) == 0
     assert json.loads((out / "run.json").read_text())["projects"]["written"] == 1
-    monkeypatch.setitem(prompts.CURRENT, "package-summary", prompts.PACKAGE_SUMMARY)
+    monkeypatch.setitem(prompts.CURRENT, "package-summary", in_use)
     assert main(["run", "-o", str(out)]) == 0
     assert json.loads((out / "run.json").read_text())["projects"]["written"] == 1
     assert main(["run", "-o", str(out)]) == 0
