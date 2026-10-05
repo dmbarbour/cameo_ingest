@@ -1,48 +1,30 @@
 # Roadmap: open, deferred and tentative work
 
 Gathered on 2026-10-03 from the retired plans and reviews (`docs/archive/`), whose IDs are given
-so that their history can be found. When an item becomes a plan, it moves to `docs/plans/`.
+so that their history can be found; reviewed on 2026-10-05. Each item is described once, in its
+section. When an item becomes a plan, it moves to `docs/plans/`. Done work leaves the roadmap:
+its record is the archived plan, the ADRs and the design documents.
 
 ## Next, by ease and reward
 
-Ranked on 2026-10-04: easy and valuable first. The items are described in the sections below.
+Ranked on 2026-10-05, among the items that can progress now, without the maintainer or new
+evidence. Everything ranked on 2026-10-04 is done: the quick wins (0.16.1), type hierarchies
+(plan TH, 0.18.0), what shapes hold (plan IS, 0.19.0) and the review of the switches (ADR-0027).
 
-**Quick wins:** all done on 2026-10-04 (0.16.1):
-- HTML in shapes' text converted;
-- the piece marker on a line of its own;
-- `calibrate-text`;
-- the upward-arrow spot check. No description of the 10 diagrams with the most upward arrows
-  states one backwards, so the arrow items are deferred (`docs/research/upward-arrows-2026-10-04.md`).
+1. **Retrieval's untested measures** (Retrieval evaluation, below): windows over the pages, and
+   ledger and generated chunks in or out. The tools are in place (`retrieval_eval.py`,
+   `compare_retrieval.py`, `assemble_tree.py`), and a result could change what the tree's chunks
+   hold for every question.
+2. **Compartments in the legends, tested first** (Sketches and the vision model): cards whose
+   legends list elements the image doesn't show, to learn whether telling the model what shapes
+   hold helps or biases it.
+3. **The text guard for other limits** (The text model): `DIAGRAM_ITEMS` and `DIGEST_CHARS`,
+   guarded as the part size is. The calibration's machinery exists.
+4. **Kinds of a shared library type across models** (Related facts): an index across models, as
+   for identifiers.
 
-**Larger, and worth it** (a day or more each):
-1. **Type hierarchies for search:** done (plan TH, 0.18.0).
-2. **What a drawn diagram shows inside shapes:** done (plan IS, 0.19.0, ADR-0027), on the
-   diagram's page and chunk. The elements' "Shown in diagrams" (option B) isn't needed for the
-   questions measured: the diagram's chunk answers them.
-
-**Waiting on evidence:**
-- **Tables and matrices:** done as far as the file allows (plan CT, 0.17): tables that list their
-  rows are computed, and matrices described in words. Computing tables that find their rows in a
-  scope, or matrices, waits on evidence of what Cameo shows: a saved table, or a matrix exported
-  from Cameo, to test a rule against.
-- **Attachments:** the public samples hold 20 images and 1 PDF in all. Whether the maintainer's
-  models have more decides this.
-- **Better module boundaries, and lines between undrawn ends:** each costs a redraw and new
-  descriptions. A reading of descriptions where they apply (sequence diagrams, TMT's collaborator
-  views) would show whether they matter.
-
-**Review (ADR-0027):** done (2026-10-05). `--threads`, `--hierarchies`, `--cross-index` and
-`--line-refs` are retired for their measured defaults; `scripts/assemble_tree.py` varies them for
-measurement.
-
-**Later:**
-- the judge panel and ratings;
-- the TC follow-ups (other limits, cards that lose real packages);
-- keyword search from the command line;
-- the retrieval evaluation's extras;
-- facet lists;
-- stale proxies;
-- `quality`'s regex.
+Larger, or of less certain reward: better module boundaries (a reading of the descriptions
+first), the judge panel, and TMT-2024x as a test of confusion between versions.
 
 ## Waiting on the maintainer
 
@@ -55,6 +37,8 @@ measurement.
 - **Exports by group** (KX-11, proposed): `export --group-by meta:KEY|folder`, one page and workbook
   per group, with an index of identifiers across them. Waits until the maintainer's corpus is
   counted (estimated at about 345,000 items: past the page's comfortable 300,000).
+- **Keyword search from the command line:** worth building if Python can run where the corpus is
+  read.
 - **Retrieval spot check** (RE-04): the maintainer's check of generated questions,
   `out/eval/questions/spot-check.md`.
 - **Questions for the RAG stack's owners** (RE-09):
@@ -64,48 +48,32 @@ measurement.
   - whether e5's prefixes are added;
   - how many chunks go into a prompt.
 
-## Tentative plans
+## Waiting on evidence
 
 - **Computing more tables and matrices,** as a new plan if feedback asks for it (the maintainer,
-  2026-10-04).
-  - **Matrices** (32 in the samples) store nothing they show, and are described in words (0.17.2),
-    not computed. 11 of 32 have plain relationship criteria, scopes inside the model and no queries:
-    they would be the easy ones. Nothing in the file shows what Cameo displays, though, so a
-    computed matrix couldn't be checked, unless a matrix exported from Cameo can serve as truth.
-  - **Tables that list their rows** are computed (plan CT, ADR-0025).
-- **Tables that find their rows in a scope** (147 in the samples) wait on evidence: a model that
-  saved such a table's rows would test a rule. Whether opening and saving a table in Cameo stores
-  them is untested.
-- **Attachments:**
+  2026-10-04). Tables that list their rows are computed (plan CT, ADR-0025), and matrices are
+  described in words (0.17.2).
+  - **Tables that find their rows in a scope** (147 in the samples): a model that saved such a
+    table's rows would test a rule. Whether opening and saving a table in Cameo stores them is
+    untested.
+  - **Matrices** (32 in the samples) store nothing they show. 11 of 32 have plain relationship
+    criteria, scopes inside the model and no queries: they would be the easy ones. Nothing in the
+    file shows what Cameo displays, though, so a computed matrix couldn't be checked, unless a
+    matrix exported from Cameo can serve as truth.
+- **Attachments:** the public samples hold 20 images and 1 PDF in all. Whether the maintainer's
+  models have more decides this. If they do:
   - link `BINARY-*` images and documents to the elements that own them;
   - convert PDF and Office attachments to text;
   - then describe an image with what owns it: its name, kind and documentation (ADR-0017). Today
     the request says "nothing says which element owns it or where it appears".
 
   `pipeline` still writes image bytes itself (AR-007's residue).
-- **Kinds of a shared library type across models** (after plan TH, ADR-0026): TMT's and
-  TMT-2024x's analyses specialize one library's `MonteCarloAnalysis`, and SAF models specialize
-  SysML's `Block`. Each model lists them; an index across models, as for identifiers, would bring
-  them together.
-- **Better module boundaries** (DV):
-  - sequence diagrams in bands along the time axis;
-  - activity diagrams along their partitions (swimlanes, from `inPartition`; TMT's aren't nested in
-    the layout).
-
-  Sequence diagrams also confuse validation and descriptions: messages join activations, while
-  models name lifelines. Their lifelines, lines and activations repeat one name.
-- **After plan TC** (the text model's calibration, a guard; ADR-0024):
-  - **Cards that lose real packages:** the reading cards are read evenly by strong models to
-    192,000 characters, unlike real packages. Cards of long, unmarked lists, as real packages
-    are, would be needed before letting any part grow (`docs/research/text-reading-2026-10-04.md`).
-  - **The same guard for other limits:** `DIAGRAM_ITEMS` (150 shapes and connections per
-    request) and `DIGEST_CHARS`.
-- **Keyword search from the command line,** for when Python can run where the corpus is read.
+- **Facet lists** (RF-05): TMT's tags run to hundreds of requirements per value, and choosing the
+  tags needs heuristics with only one example. Deferred with them: DOORS-like structure for the
+  traffic project (RF-04).
 
 ## Sketches and the vision model
 
-- **More cases where knowing Cameo helps a model read an image** (the maintainer's invitation,
-  ADR-0017). Only embedded images (above) and module sketches have been examined.
 - **Compartments in the legends** (plan IS's option C). Telling the vision model what each block's
   compartments hold "could improve feedback; on the other, it could overly bias the vision model"
   (the maintainer, 2026-10-05). Two ways to find out first:
@@ -114,8 +82,21 @@ measurement.
   - **progressive disclosure:** let the model ask for a shape's contents (a tool call) when it needs
     them, in place of putting them all in the legend. This needs an endpoint and model that support
     tool calls.
+- **Better module boundaries** (DV). Each change costs a redraw and new descriptions, so a reading
+  of descriptions where they apply would first show whether they matter.
+  - Sequence diagrams in bands along the time axis. They also confuse validation and
+    descriptions: messages join activations, while models name lifelines, and a lifeline, its
+    line and its activations repeat one name.
+  - Activity diagrams along their partitions (swimlanes, from `inPartition`; TMT's aren't nested
+    in the layout).
 - **Lines between undrawn ends:** some connections end at views that aren't drawn as shapes (TMT's
   collaborator views), and invite invented connections.
+- **Messy layouts:** in TMT's "Duration Analysis" diagrams, a tree's bar runs along the edge of an
+  unrelated shape, and models read the children as joined to it. No drawing rule fixes that layout
+  (`docs/research/sketch-ambiguities-2026-10-03.md`).
+- **More cases where knowing Cameo helps a model read an image** (the maintainer's invitation,
+  ADR-0017). Only embedded images and module sketches have been examined.
+- **A judged check of descriptions themselves,** beyond what validation measures from the image.
 - **Arrows, deferred** (`docs/research/upward-arrows-2026-10-04.md`). Descriptions take each
   connection's direction from its text, and none of 175 upward connections checked was stated
   backwards. These matter again only if images are read without their connection lists:
@@ -125,7 +106,15 @@ measurement.
     head or a mid-line arrow might help;
   - direction in large modules: Qwen3-VL reads 56% of directions right among 36 shapes, its
     calibrated module size.
-- **A judged check of descriptions themselves,** beyond what validation measures from the image.
+
+## The text model
+
+After plan TC (the text model's calibration, a guard; ADR-0024):
+- **The same guard for other limits:** `DIAGRAM_ITEMS` (150 shapes and connections per request)
+  and `DIGEST_CHARS`.
+- **Cards that lose real packages:** the reading cards are read evenly by strong models to
+  192,000 characters, unlike real packages. Cards of long, unmarked lists, as real packages are,
+  would be needed before letting any part grow (`docs/research/text-reading-2026-10-04.md`).
 
 ## LLM quality
 
@@ -141,16 +130,17 @@ measurement.
 ## Retrieval evaluation
 
 - **Windows over the pages** (RE-05), and generated and ledger chunks in or out (RE-08): untested.
+- **TMT-2024x as a test of confusion between versions.**
 - **A stricter judge prompt** (v2), and the Kimi tie-breaker on the plain pools
   (`out/eval/judge-plain2/run.sh`).
-- **TMT-2024x as a test of confusion between versions.**
 
 ## Related facts
 
-- **Facet lists** (RF-05, deferred): TMT's tags run to hundreds of requirements per value, and
-  choosing the tags needs heuristics with only one example. Deferred with them: DOORS-like
-  structure for the traffic project (RF-04).
-- **Not built:** trace cards; threads from the DOORS hierarchy; graph bundles.
+- **Kinds of a shared library type across models** (after plan TH, ADR-0026): TMT's and
+  TMT-2024x's analyses specialize one library's `MonteCarloAnalysis`, and SAF models specialize
+  SysML's `Block`. Each model lists them; an index across models, as for identifiers, would bring
+  them together.
+- **Not built** (plan RF): trace cards; threads from the DOORS hierarchy; graph bundles.
 
 ## Known gaps and small fixes
 
@@ -158,10 +148,8 @@ measurement.
   checks for this.
 - **`quality`** still cuts an answer out of the rendered page with a regex (AR-012R2, partial by
   decision).
-- **What a drawn diagram shows inside shapes:** its `usedObjects` also name compartment
-  properties, operations, ports and triggers (12,095 elements in 594 diagrams of the samples).
-  Its "Elements shown" and the elements' "Shown in diagrams" count only what is drawn.
-- **The scripts are untested** (AR-022, accepted).
+- **Most scripts are untested** (AR-022, accepted). `validate_sketches.py` and `assemble_tree.py`
+  have tests.
 
 ## Deferred indefinitely
 
