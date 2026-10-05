@@ -1,6 +1,7 @@
 # ADR-0027: Heuristics are defaults, not switches; what shapes hold is shown
 
-- **Status:** Accepted, 2026-10-05 (plan IS; the maintainer: "A").
+- **Status:** Accepted, 2026-10-05 (plan IS; the maintainer: "A"); updated on 2026-10-05 (Changes,
+  below).
 - **Sources:**
   - `docs/archive/plans/inside-shapes-2026-10-05.md`;
   - `docs/research/inside-shapes-2026-10-05.md`;
@@ -39,3 +40,8 @@ maintainer declined:
   hierarchies (ADR-0026) are on; line references, which cost completeness, are off. They are
   `exports.Assembly`, which `scripts/assemble_tree.py` varies for measurement. A tree that
   remembers one is told it is ignored, and the CLI no longer takes them.
+
+## Changes
+
+- 2026-10-05: the review of the four older switches, which the consequences left to the roadmap,
+  is done; the consequence says what became of each. Before: `f2b13e2`.

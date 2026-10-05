@@ -1,7 +1,6 @@
 # ADR-0004: Tree settings, project options, and versions
 
-- **Status:** Accepted, 2026-09-29 to 2026-10-02. The switches `cross-index`, `threads`, `hierarchies`
-  and `line-refs` were retired on 2026-10-05 for fixed defaults (ADR-0027).
+- **Status:** Accepted, 2026-09-29 to 2026-10-02; updated on 2026-10-05 (Changes, below).
 - **Sources:**
   - plan RI (flags become settings);
   - AR-013R1 and R2;
@@ -35,3 +34,9 @@ project's own files contain, and must make the project again when they change.
 - **Effective sizes:** the tree's own settings win, then the vision model's calibration
   (ADR-0015), then the defaults.
 - **Settings are never secrets:** `--env` names a file, never its contents.
+
+## Changes
+
+- 2026-10-05: the switches `cross-index`, `threads` and `line-refs` (and `hierarchies`, added by
+  ADR-0026) retired for fixed defaults (ADR-0027), and left out of the list of switches. Before:
+  `f2b13e2`.

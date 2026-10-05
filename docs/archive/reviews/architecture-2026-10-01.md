@@ -1048,3 +1048,8 @@ into a refactoring plan, with output compared before and after on every sample.
 2. **Finished studies (AR-026R2):** archive them, or delete them and cite their commits?
 3. **The evaluation package (AR-026R3):** out of the wheel, or reorganized within it?
 4. **Retired and rejected prompt templates (AR-025R2):** move them out of the runtime registry?
+
+## Changes
+
+- 2026-10-05: the status says that 0.15.2 fixed AR-002's escapes, not that they remain on the
+  roadmap. Before: `9d525d0`.

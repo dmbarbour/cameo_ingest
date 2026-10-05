@@ -1,7 +1,7 @@
 # ADR-0026: Type hierarchies as assembled chunks, beside threads
 
-- **Status:** Accepted, 2026-10-04 (plan TH; the maintainer asked for them "esp. for search"). The
-  switch was retired on 2026-10-05: hierarchy chunks are always on (ADR-0027).
+- **Status:** Accepted, 2026-10-04 (plan TH; the maintainer asked for them "esp. for search");
+  updated on 2026-10-05 (Changes, below).
 - **Sources:**
   - `docs/archive/plans/type-hierarchies-2026-10-04.md`;
   - `docs/research/type-hierarchies-2026-10-04.md`;
@@ -31,3 +31,8 @@ some are kinds of a kind) has its answer spread over several chunks, none of whi
   questions. With eight questions, nothing is significant.
 - Kinds that specialize a shared library type across models (TMT's and TMT-2024x's
   `MonteCarloAnalysis`) are listed per model, not yet brought together across models.
+
+## Changes
+
+- 2026-10-05: the tree-wide switch `--hierarchies` retired: hierarchy chunks are always in the
+  tree's chunks (ADR-0027). Before: `f2b13e2`.

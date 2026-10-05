@@ -1,7 +1,7 @@
 # ADR-0019: An index of identifiers across models, and requirement threads
 
-- **Status:** Accepted, 2026-10-01 (plan RF; the maintainer's answers 1 to 5). The switches were
-  retired on 2026-10-05: the defaults below are fixed (ADR-0027).
+- **Status:** Accepted, 2026-10-01 (plan RF; the maintainer's answers 1 to 5); updated on 2026-10-05
+  (Changes, below).
 - **Sources:**
   - `docs/archive/plans/related-facts-2026-10-01.md`;
   - `docs/research/related-facts-2026-10-01.md`;
@@ -35,3 +35,8 @@
 ## Consequences
 
 Facet lists were deferred: TMT's tags run to hundreds of requirements per value (roadmap).
+
+## Changes
+
+- 2026-10-05: the index, threads and line references are fixed defaults, no longer switches
+  (ADR-0027); the decision no longer names the flags. Before: `f2b13e2`.

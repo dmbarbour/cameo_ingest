@@ -2,8 +2,9 @@
 
 Architecture decision records: why cameo-ingest is the way it is. Each is short: its context, the
 decision, the evidence, and the consequences, with the IDs of the plans and reviews (now in
-`docs/archive/`) where it was made. A record is never rewritten to say something else: a new one
-supersedes it, and its status says so.
+`docs/archive/`) where it was made. A record is kept current: when a later decision or a change
+in the code puts it out of date, it is updated in place, and its `## Changes` section logs the
+date, what changed, and a commit that holds the text before (conventions in `docs/README.md`).
 
 | ADR | Decision |
 |---|---|

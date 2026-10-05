@@ -53,5 +53,11 @@ coverage and complete were unchanged.
 
 ## Decision
 
-Keep hierarchy chunks, on by default (`--hierarchies`; since 2026-10-05, always, ADR-0027). They hold answers that span the levels of
-a hierarchy, which no element chunk holds, and they cost the other questions nothing measurable.
+Keep hierarchy chunks, on by default (`--hierarchies`; since 2026-10-05, always, ADR-0027). They
+hold answers that span the levels of a hierarchy, which no element chunk holds, and they cost the
+other questions nothing measurable.
+
+## Changes
+
+- 2026-10-05: the decision notes that the `--hierarchies` switch is retired (ADR-0027). Before:
+  `f2b13e2`.
