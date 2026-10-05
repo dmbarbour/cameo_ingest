@@ -25,7 +25,14 @@ SUMMARY_CHARS = 12_000  # a package summarized in one request; a larger one in p
 PART_CHARS = (3_000, 12_000)  # a large package's parts: the smallest worth its own request, and the limit
 OWN_CHARS = 6_000  # a large package's own section, sent with its parts' summaries
 MAX_SUMMARIES = 30  # summaries per synthesis request; more are summarized in runs first
-DIGEST_CHARS = (8_000, 4_000)  # an instances digest, and the text of the package's other elements
+# An instances digest, and the text of the package's other elements, at the default part size; they
+# follow the part size in use (`digest_chars`), so that calibration guards them as it guards a part.
+DIGEST_CHARS = (8_000, 4_000)
+
+
+def digest_chars(part_chars: int) -> tuple[int, int]:
+    """The digest's limits for a part size: two thirds and one third of it (8,000 and 4,000 of 12,000)."""
+    return part_chars * DIGEST_CHARS[0] // PART_CHARS[1], part_chars * DIGEST_CHARS[1] // PART_CHARS[1]
 CONTEXT_CHARS = (400, 200, 3_000)  # context (plan GS): a package's, each shape's first sentence, a diagram's in all
 
 
@@ -418,10 +425,12 @@ INSTANCES_SUMMARY = Template(
              "'<n> instance specifications of <m> classifiers.'; the top-level instances (those no other "
              "instance's slot refers to), up to 10; then per classifier, most instances first, up to 40: '- "
              "<classifier> (<kind>): <count> instances, such as <up to 3 names>', and its slots' features with "
-             f"how many instances set them and up to 3 values. At most {DIGEST_CHARS[0]:,} characters, and "
+             f"how many instances set them and up to 3 values. At most {DIGEST_CHARS[0]:,} characters at the default "
+             "part size, two thirds of the part size in use, and "
              "marked where cut."),
         Slot("OTHERS", "text",
-             f"the sections of the package's other elements as plain text, cut at {DIGEST_CHARS[1]:,} characters in "
+             f"the sections of the package's other elements as plain text, cut at {DIGEST_CHARS[1]:,} characters (a "
+             "third of the part size) in "
              "all, or '(none)'."),
     ),
     fragments=(("cut", "\n(The digest was cut here.)"),),

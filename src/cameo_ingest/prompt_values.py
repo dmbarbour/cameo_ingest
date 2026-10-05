@@ -16,7 +16,7 @@ from . import semantics as sem
 from .diagram_graph import DiagramGraph
 from .model import Diagram, Element, ModelIndex
 from .partition import Partition
-from .prompts import CONTEXT_CHARS, CURRENT, DIAGRAM_ITEMS, DIGEST_CHARS, GUIDE, OWN_CHARS, PART_CHARS, Template
+from .prompts import CONTEXT_CHARS, CURRENT, DIAGRAM_ITEMS, GUIDE, OWN_CHARS, PART_CHARS, Template, digest_chars
 from .sketch import conventions
 from .text import one_line, plural
 
@@ -110,9 +110,10 @@ def package_synthesis(package: str, sizes: list[int], own: str, run: Level, whol
                    "SUMMARIES": summaries}, {"parts": len(sizes), "scope": scope})
 
 
-def instances_summary(ix: ModelIndex, package: str, own: str, sections: list[Element], texts: list[str]) -> Values:
+def instances_summary(ix: ModelIndex, package: str, own: str, sections: list[Element], texts: list[str],
+                      part_chars: int = PART_CHARS[1]) -> Values:
     """A package made mostly of instance specifications, described by a digest of them rather
-    than in full (FU-022)."""
+    than in full (FU-022), within limits that follow the part size in use (`digest_chars`)."""
     instances = [e for e in sections if e.kind == "InstanceSpecification"]
 
     def classifier(el_id: str) -> str:
@@ -156,11 +157,12 @@ def instances_summary(ix: ModelIndex, package: str, own: str, sections: list[Ele
             shown = ", ".join(dict.fromkeys(values))[:200]
             lines.append(f"  - slot {feature}, set {plural(len(values), 'time')}: {shown}")
     digest = "\n".join(lines)
-    if len(digest) > DIGEST_CHARS[0]:
-        digest = digest[:DIGEST_CHARS[0]] + CURRENT["instances-summary"].fragment("cut")
+    limit, other_limit = digest_chars(part_chars)
+    if len(digest) > limit:
+        digest = digest[:limit] + CURRENT["instances-summary"].fragment("cut")
     others = "\n".join(text for e, text in zip(sections, texts, strict=True) if e.kind != "InstanceSpecification")
     return Values({"PACKAGE": package, "PACKAGE_TEXT": own[:OWN_CHARS], "DIGEST": digest,
-                   "OTHERS": others[:DIGEST_CHARS[1]] or "(none)"},
+                   "OTHERS": others[:other_limit] or "(none)"},
                   {"digest": {"instances": len(instances), "elements": len(sections)}})
 
 

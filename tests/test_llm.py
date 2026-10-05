@@ -482,6 +482,10 @@ def test_every_template_filled_by_its_builder():
 
     for tid, v in filled.items():  # with the context, as the enricher adds it (plan GS)
         assert "{{" not in CURRENT[tid].render(with_context(CURRENT[tid], v.values, lambda: "(none)")), tid
+    small = pv.instances_summary(ix, "Model::P", own, sections, texts, part_chars=300)  # follows the part size
+    assert small.values["DIGEST"].endswith(CURRENT["instances-summary"].fragment("cut"))
+    assert len(small.values["DIGEST"]) <= 200 + len(CURRENT["instances-summary"].fragment("cut"))
+    assert filled["instances-summary"].values["DIGEST"] != small.values["DIGEST"]
     assert filled["module-summary"].values["CUT_NOTE"] == CURRENT["module-summary"].fragment(
         "cut", limit=PART_CHARS[1], length=PART_CHARS[1] + 1) and filled["module-summary"].cut
     assert filled["diagram-description"].values["DIAGRAM"].endswith(")") and "(None)" not in filled[

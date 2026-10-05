@@ -15,11 +15,15 @@ or diagram is about and for (plan GS, 0.20.0, ADR-0029).
 
 1. **Compartments in the legends, tested first** (Sketches and the vision model): cards whose
    legends list elements the image doesn't show, to learn whether telling the model what shapes
-   hold helps or biases it.
-2. **The text guard for other limits** (The text model): `DIAGRAM_ITEMS` and `DIGEST_CHARS`,
-   guarded as the part size is. The calibration's machinery exists.
-3. **Kinds of a shared library type across models** (Related facts): an index across models, as
-   for identifiers.
+   hold helps or biases it. Less reward since 0.20.0: descriptions say what a diagram is for,
+   without names or values (ADR-0029), and already get each shape's documentation as context.
+
+Checked on 2026-10-05, and no longer next:
+- **The text guard for other limits:** `DIGEST_CHARS` now follows the part size in use
+  (`prompts.digest_chars`), so calibration guards it with the part; 41 of the 0.20.0 tree's 70
+  digests are cut at 8,000 characters. `DIAGRAM_ITEMS` (150) is never reached: diagrams over 25
+  shapes are described in modules, and the largest legend sent has 72 lines.
+- **Kinds of a shared library type across models:** waiting on evidence (below).
 
 Larger, or of less certain reward: better module boundaries (a reading of the descriptions
 first), the judge panel, and TMT-2024x as a test of confusion between versions.
@@ -66,6 +70,11 @@ first), the judge panel, and TMT-2024x as a test of confusion between versions.
     the request says "nothing says which element owns it or where it appears".
 
   `pipeline` still writes image bytes itself (AR-007's residue).
+- **Kinds of a shared library type across models** (after plan TH, ADR-0026): of the 14
+  library types that kinds specialize in the samples, 2 are specialized in two projects: TMT's
+  and TMT-2024x's `MonteCarloAnalysis` (42 kinds each, one model in two versions) and
+  `ValueProperty` (3 each). Whether the maintainer's corpus shares library types across models
+  decides this.
 - **Facet lists** (RF-05): TMT's tags run to hundreds of requirements per value, and choosing the
   tags needs heuristics with only one example. Deferred with them: DOORS-like structure for the
   traffic project (RF-04).
@@ -108,8 +117,6 @@ first), the judge panel, and TMT-2024x as a test of confusion between versions.
 ## The text model
 
 After plan TC (the text model's calibration, a guard; ADR-0024):
-- **The same guard for other limits:** `DIAGRAM_ITEMS` (150 shapes and connections per request)
-  and `DIGEST_CHARS`.
 - **Cards that lose real packages:** the reading cards are read evenly by strong models to
   192,000 characters, unlike real packages. Cards of long, unmarked lists, as real packages are,
   would be needed before letting any part grow (`docs/research/text-reading-2026-10-04.md`).
@@ -133,10 +140,6 @@ After plan TC (the text model's calibration, a guard; ADR-0024):
 
 ## Related facts
 
-- **Kinds of a shared library type across models** (after plan TH, ADR-0026): TMT's and
-  TMT-2024x's analyses specialize one library's `MonteCarloAnalysis`, and SAF models specialize
-  SysML's `Block`. Each model lists them; an index across models, as for identifiers, would bring
-  them together.
 - **Not built** (plan RF): trace cards; threads from the DOORS hierarchy; graph bundles.
 
 ## Known gaps and small fixes

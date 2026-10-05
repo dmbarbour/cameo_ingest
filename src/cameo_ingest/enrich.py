@@ -255,7 +255,7 @@ class Enricher:
                     ask, t, with_context(t, pv.package_summary(text).values, context))))
                 continue
             if sum(e.kind == "InstanceSpecification" for e in sections) >= INSTANCE_SHARE * len(sections):
-                v = pv.instances_summary(ix, ix.qualified_name(pkg_id), own, sections, texts)
+                v = pv.instances_summary(ix, ix.qualified_name(pkg_id), own, sections, texts, self.part_chars)
                 t = CURRENT["instances-summary"]
                 self._first.append(Request(an.SUMMARY, pkg_id, tr, partial(
                     ask, t, with_context(t, v.values, context), notes=v.notes)))

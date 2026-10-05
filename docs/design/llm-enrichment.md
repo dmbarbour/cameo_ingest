@@ -54,7 +54,8 @@ diagram, and the extracted chunks hold the rest.
   - per classifier, up to 40 of them: the count, 3 example names, and the features its slots set,
     with up to 3 values each.
 
-  It is cut at 8,000 characters; the package's other sections at 4,000 (`DIGEST_CHARS`).
+  It is cut at two thirds of the part size (8,000 characters by default); the package's other
+  sections at a third (`DIGEST_CHARS`, `digest_chars`). 41 of the 0.20.0 tree's 70 digests are cut.
 
 ## Limits
 
@@ -67,7 +68,7 @@ Named constants in `prompts.py`, interpolated into the slot descriptions:
 | `PART_CHARS` | (3,000, 12,000) | A part's size: the smallest worth a request, and the default part size |
 | `OWN_CHARS` | 6,000 | A large package's own section, in its synthesis |
 | `MAX_SUMMARIES` | 30 | Summaries per synthesis request; more go in runs |
-| `DIGEST_CHARS` | (8,000, 4,000) | The instance digest, and the package's other sections |
+| `DIGEST_CHARS` | (8,000, 4,000) | The instance digest, and the package's other sections, at the default part size; they follow the part size in use (`digest_chars`: two thirds and a third), so calibration guards them too |
 | `enrich.INSTANCE_SHARE` | 0.8 | The share of instance specifications that calls for a digest |
 
 **The part size** is an option (`part_chars`, 0.16.0): `--part-chars` wins, then the text model's
