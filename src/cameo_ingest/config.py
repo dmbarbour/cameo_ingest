@@ -138,3 +138,66 @@ class ProjectOptions:
     def hash(self) -> str:
         """Of the options that change a project's output."""
         return sha256_text(json.dumps(self.as_dict(), sort_keys=True))[:16]
+
+
+# -- What `cameo-ingest config` sets (plan CF-02) ---------------------------------------------------
+@dataclass(frozen=True)
+class Setting:
+    """A tree setting a user sets with `config`: what a user can judge (ADR-0027). Every one can be
+    set and unset, back to its default, and every switch turned either way."""
+
+    key: str  # as `config` names it
+    field: str  # the TreeSettings field that holds it
+    kind: str  # "switch", "text", "count" or "choice"
+    about: str
+    default: str  # how `config show` names the default
+    choices: tuple[str, ...] = ()
+    inverse: bool = False  # a switch held as its opposite (`llm on` is `no_llm` False)
+
+
+SETTINGS = (
+    Setting("llm", "no_llm", "switch", "use the LLM for summaries and descriptions", "on", inverse=True),
+    Setting("text-model", "text_model", "text", "the model for package summaries, at $OPENAI_BASE_URL", "none"),
+    Setting("vision-model", "vision_model", "text", "the model for diagram and image descriptions", "the text model"),
+    Setting("render", "render", "switch", "draw diagram sketches, which the vision model reads", "on"),
+    Setting("rag-files", "rag_files", "switch", "write rag/: a file per chunk, for RAG tools that read files", "on"),
+    Setting("rag-source", "rag_source", "choice", "how a rag/ file names its source", "trace", ("trace", "id")),
+    Setting("concurrency", "llm_concurrency", "count", "LLM requests at once", "1"),
+    Setting("max-calls", "llm_max_calls", "count", "LLM requests per run, at most", "no limit"),
+)
+BY_KEY = {s.key: s for s in SETTINGS}
+_ON, _OFF = ("on", "true", "yes", "1"), ("off", "false", "no", "0")
+
+
+def parse_setting(key: str, text: str) -> Any:
+    """The stored value of `config set KEY TEXT`; ValueError, saying what is allowed, otherwise."""
+    s = BY_KEY.get(key)
+    if s is None:
+        raise ValueError(f"no setting {key!r}; the settings are {', '.join(BY_KEY)}")
+    t = text.strip()
+    if s.kind == "switch":
+        if t.lower() not in _ON + _OFF:
+            raise ValueError(f"{key} is on or off, not {text!r}")
+        return (t.lower() in _ON) != s.inverse
+    if s.kind == "choice":
+        if t not in s.choices:
+            raise ValueError(f"{key} is one of {', '.join(s.choices)}, not {text!r}")
+        return t
+    if s.kind == "count":
+        if not t.isdigit() or int(t) < 1:
+            raise ValueError(f"{key} is a whole number of 1 or more, not {text!r}")
+        return int(t)
+    if not t:
+        raise ValueError(f"{key} needs a value; `config unset {key}` returns it to its default")
+    return t
+
+
+def shown(key: str, stored: dict[str, Any]) -> tuple[str, bool]:
+    """A setting's value as `config show` writes it, and whether it is the tree's own (not the default)."""
+    s = BY_KEY[key]
+    if stored.get(s.field) is None:
+        return s.default, False
+    v = stored[s.field]
+    if s.kind == "switch":
+        return ("on" if bool(v) != s.inverse else "off"), True
+    return str(v), True

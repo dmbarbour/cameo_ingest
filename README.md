@@ -45,6 +45,11 @@ many files, bundles or names it turns up under.
 | `cameo-ingest export -o OUT [--workbook FILE] [--search-page FILE]` | Writes the catalog of the tree's models for people to search without tools: a workbook, a self-contained search page, or both (see "Searching without tools"). Apart from `run`, since it is a distribution step. |
 | `cameo-ingest calibrate-vision -o OUT [--suite quick\|standard]` | Calibrates the sketches to the tree's vision model on demand, as the first run with a model does on its own (see "Calibrating sketches to the vision model"). |
 | `cameo-ingest calibrate-text -o OUT` | Calibrates the part size to the tree's text model on demand, as the first run with a model does on its own (see "Calibrating the part size to the text model"). |
+| `cameo-ingest config [show]` / `config set KEY VALUE` / `config unset KEY` | The tree's settings: `llm` (on or off), `text-model`, `vision-model`, `render`, `rag-files`, `rag-source`, `concurrency` and `max-calls`. Each can be set and unset, back to its default; setting one starts a tree, so a tree can be configured before its first input. |
+
+- **Which tree.** Every command works on `-o OUT`; without it, on `$CAMEO_INGEST_TREE`; without
+  that, on `./ingest_tree` in the working directory. (`CAMEO_INGEST_DEST`, before 0.20.2, is
+  ignored, with a notice.)
 
 - **Output directories.** A missing or empty directory starts a tree. A directory with
   `state.sqlite` is continued. Any other non-empty directory is refused.
@@ -72,7 +77,7 @@ than hours later (`--no-preflight` skips the check).
 
 | Variable | Flag | Purpose |
 |---|---|---|
-| `CAMEO_INGEST_DEST` | `-o` | The output tree, when `-o` is not given; it may come from the `--env` file. |
+| `CAMEO_INGEST_TREE` | `-o` | The output tree, when `-o` is not given; else `./ingest_tree`. |
 | `OPENAI_API_KEY`, `OPENAI_BASE_URL` | | Any OpenAI-compatible endpoint, such as vLLM or Ollama serving gemma. |
 | `CAMEO_INGEST_TEXT_MODEL`, then `OPENAI_MODEL` | `--text-model` | Model for package summaries. |
 | `CAMEO_INGEST_VISION_MODEL` | `--vision-model` | Model for diagram and image descriptions. Defaults to the text model. |

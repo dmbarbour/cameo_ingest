@@ -3,15 +3,15 @@
 import os
 
 import pytest
-from helpers import LLM_ENV, FakeChat
+from helpers import LLM_ENV, TREE_ENV, FakeChat
 
 
 @pytest.fixture(autouse=True)
 def isolated_env(request, monkeypatch):
-    """Tests never see the developer's LLM settings, and --env cannot leak between tests. The
-    live tests (`-m llm`) keep them: they are the endpoint to test."""
-    if request.node.get_closest_marker("llm") is None:
-        monkeypatch.setattr(os, "environ", {k: v for k, v in os.environ.items() if k not in LLM_ENV})
+    """Tests never see the developer's LLM settings or tree, and --env cannot leak between tests.
+    The live tests (`-m llm`) keep the LLM settings: they are the endpoint to test."""
+    drop = TREE_ENV + (LLM_ENV if request.node.get_closest_marker("llm") is None else ())
+    monkeypatch.setattr(os, "environ", {k: v for k, v in os.environ.items() if k not in drop})
 
 
 @pytest.fixture

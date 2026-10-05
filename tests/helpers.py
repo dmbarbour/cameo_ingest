@@ -19,6 +19,7 @@ csv.field_size_limit(1 << 30)  # documentation columns in large models exceed th
 LLM_ENV = ("OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL", "CAMEO_INGEST_TEXT_MODEL",
            "CAMEO_INGEST_VISION_MODEL", "CAMEO_INGEST_LLM_TIMEOUT", "CAMEO_INGEST_LLM_RETRIES",
            "CAMEO_INGEST_LLM_MAX_CALLS")
+TREE_ENV = ("CAMEO_INGEST_TREE", "CAMEO_INGEST_DEST", "CAMEO_INGEST_CACHE")  # never a test's, unless it sets them
 
 
 SAMPLES_DIR = Path(__file__).parent.parent / "samples"

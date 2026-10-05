@@ -1,6 +1,6 @@
 # Plan: configuration through `cameo-ingest config`, 2026-10-05
 
-- **Status:** Decided on 2026-10-05 (the maintainer's answers, below); CP1 next.
+- **Status:** In progress: CP1 done (0.20.2); CP2 next.
 - **Step prefix:** `CF`, so steps are `CF-01`, `CF-02` and so on.
 - **Addresses:** the maintainer, 2026-10-05, trying the tool:
   > "getting set up is a bit confusing: too many configuration options independent of current
@@ -80,8 +80,8 @@ there is one, and warns when it changes.
 
 | Step | What | Status |
 |---|---|---|
-| CF-01 | **Which tree:** `-o`, `CAMEO_INGEST_TREE`, then `./ingest_tree/` (D2), for every command; `CAMEO_INGEST_DEST` retired with a notice. Tests. | |
-| CF-02 | **`config show`, `set`, `unset`:** each setting described, checked and reversible (D6); `llm` on or off (D5). Tests. | |
+| CF-01 | **Which tree:** `-o`, `CAMEO_INGEST_TREE`, then `./ingest_tree/` (D2), for every command; `CAMEO_INGEST_DEST` retired with a notice. Tests. | Done (0.20.2): `cli.tree_of`; tests strip the tree variables; `tests/test_cli.py::test_which_tree` |
+| CF-02 | **`config show`, `set`, `unset`:** each setting described, checked and reversible (D6); `llm` on or off (D5). Tests. | Done (0.20.2): `config.SETTINGS` (llm, text-model, vision-model, render, rag-files, rag-source, concurrency, max-calls), `cli.configure`; setting one starts a tree; `tests/test_cli.py::test_config` |
 | CF-03 | **The endpoint:** `OPENAI_BASE_URL` and `OPENAI_API_KEY` only (D3); `config test` and `config models`; the model's identity and creation time recorded. Tests with a fake endpoint; once against DeepInfra. | |
 | CF-04 | **The shared store:** the LLM answers and calibrations per user (`CAMEO_INGEST_CACHE`, D4), a tree's existing store still read; the tree records the calibration it used. Tests. | |
 | CF-05 | **Runs read the tree's configuration only:** the settings flags, `--env` and the other variables go; retired settings noticed. Tests. | |

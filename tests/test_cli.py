@@ -69,25 +69,24 @@ def test_adding_a_directory_reports_its_walk(tmp_path, caplog):
     assert "report.docx" not in caplog.text
 
 
-def test_destination_from_the_environment(tmp_path, monkeypatch, capsys):
-    """Without -o, the output tree is $CAMEO_INGEST_DEST, which may come from an --env file."""
+def test_which_tree(tmp_path, monkeypatch, caplog):
+    """Without -o, the tree is $CAMEO_INGEST_TREE, else ./ingest_tree (plan CF-01);
+    $CAMEO_INGEST_DEST is retired, with a notice."""
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
-    monkeypatch.delenv("CAMEO_INGEST_DEST", raising=False)
-    assert main([str(src), "--no-llm", "--no-render"]) == 2
-    assert "CAMEO_INGEST_DEST" in capsys.readouterr().err
-    monkeypatch.setenv("CAMEO_INGEST_DEST", str(tmp_path / "dest"))
+    monkeypatch.chdir(tmp_path)
     assert main([str(src), "--no-llm", "--no-render"]) == 0
-    assert (tmp_path / "dest" / "manifest.json").is_file()
+    assert (tmp_path / "ingest_tree" / "manifest.json").is_file()
     assert main(["status"]) == 0
-    monkeypatch.delenv("CAMEO_INGEST_DEST")
-    env = tmp_path / "settings.env"
-    env.write_text(f"CAMEO_INGEST_DEST={tmp_path / 'from-env'}\n")
-    try:
-        assert main([str(src), "--env", str(env), "--no-llm", "--no-render"]) == 0
-        assert (tmp_path / "from-env" / "manifest.json").is_file()
-    finally:
-        os.environ.pop("CAMEO_INGEST_DEST", None)  # set by the --env file, not by monkeypatch
+    monkeypatch.setenv("CAMEO_INGEST_TREE", str(tmp_path / "chosen"))
+    assert main([str(src), "--no-llm", "--no-render"]) == 0
+    assert (tmp_path / "chosen" / "manifest.json").is_file()
+    assert main([str(src), "-o", str(tmp_path / "given"), "--no-llm", "--no-render"]) == 0  # -o wins
+    assert (tmp_path / "given" / "manifest.json").is_file()
+    monkeypatch.delenv("CAMEO_INGEST_TREE")
+    monkeypatch.setenv("CAMEO_INGEST_DEST", str(tmp_path / "old"))
+    assert main(["status"]) == 0 and not (tmp_path / "old").exists()
+    assert "CAMEO_INGEST_DEST is retired" in caplog.text
 
 
 def test_tree_rules_and_missing_inputs(tmp_path, capsys):
@@ -248,3 +247,39 @@ def test_markdown_chunk_style_retired(tmp_path, caplog):
     assert not list((out / "rag" / "text").rglob("*.md")) and list((out / "rag" / "text").rglob("*.txt"))
     with pytest.raises(SystemExit):
         main([str(tmp_path / "drone.mdzip"), "-o", str(tmp_path / "again"), "--chunk-style", "markdown"])
+
+
+def test_config(tmp_path, capsys):
+    """`config` shows, sets and unsets the tree's settings, each reversible; it can start a tree
+    before its first input (plan CF-02)."""
+    from cameo_ingest.state import State
+
+    out = tmp_path / "tree"
+    assert main(["config", "-o", str(out)]) == 0
+    assert "no tree yet" in capsys.readouterr().out and not out.exists()
+    for key, value, expect in (("llm", "off", "llm = off"), ("text-model", "google/gemma-4-31B-it", "= google/gemma-4"),
+                               ("rag-source", "id", "rag-source = id"), ("concurrency", "8", "concurrency = 8"),
+                               ("render", "no", "render = off")):
+        assert main(["config", "-o", str(out), "set", key, value]) == 0
+        assert expect in capsys.readouterr().out
+    st = State(out)
+    assert st.settings() == {"no_llm": True, "text_model": "google/gemma-4-31B-it", "rag_source": "id",
+                             "llm_concurrency": 8, "render": False}
+    st.close()
+    assert main(["config", "-o", str(out), "set", "llm", "on"]) == 0  # either way
+    assert main(["config", "-o", str(out), "unset", "text-model"]) == 0
+    assert main(["config", "-o", str(out), "unset", "render"]) == 0
+    shown = capsys.readouterr().out
+    assert main(["config", "-o", str(out), "show"]) == 0
+    shown = capsys.readouterr().out
+    assert "llm           on                 (default)" in shown and "text-model    none" in shown
+    assert "concurrency   8" in shown and "rag-source    id" in shown
+    for bad in (["set", "llm", "maybe"], ["set", "concurrency", "0"], ["set", "rag-source", "path"],
+                ["set", "colour", "red"], ["unset", "colour"]):
+        assert main(["config", "-o", str(out), *bad]) == 2, bad
+    assert "the settings are llm, text-model" in capsys.readouterr().err
+    # A configured tree then ingests as configured.
+    src = tmp_path / "drone.mdzip"
+    src.write_bytes(make_mdzip())
+    assert main(["config", "-o", str(out), "set", "llm", "off"]) == 0
+    assert main([str(src), "-o", str(out), "--no-render"]) == 0

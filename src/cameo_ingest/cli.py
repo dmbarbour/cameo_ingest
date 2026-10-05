@@ -40,9 +40,10 @@ from .runner import Runner
 from .state import State, StateError
 
 log = logging.getLogger("cameo_ingest")
+DEFAULT_TREE = "ingest_tree"  # in the working directory, when neither -o nor $CAMEO_INGEST_TREE says (plan CF)
 
 COMMANDS = ("add", "run", "ingest", "status", "prune", "quality", "export", "scan", "projects", "groups", "remove",
-            "restore", "calibrate-vision", "calibrate-text")
+            "restore", "calibrate-vision", "calibrate-text", "config")
 
 NO_MODEL = """error: no LLM model is configured. Either
   - pass --no-llm to ingest without LLM summaries and descriptions, or
@@ -129,7 +130,7 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--version", action="version", version=f"cameo-ingest {__version__}")
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("-o", "--out", type=Path,
-                        help="output tree (created if missing; default: $CAMEO_INGEST_DEST)")
+                        help=f"output tree (created if missing; default: $CAMEO_INGEST_TREE, else ./{DEFAULT_TREE})")
     common.add_argument("-v", "--verbose", action="count", default=0, help="-v: phases; -vv: debug")
     common.add_argument("--log-file", type=Path, metavar="FILE", help="also write a detailed (DEBUG) log to FILE")
 
@@ -206,6 +207,16 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("add", parents=[common, inputs], help="add inputs to the task list")
     sub.add_parser("run", parents=[common, running], help="process pending inputs and unfinished projects")
     sub.add_parser("ingest", parents=[common, inputs, running], help="add inputs, then run (the default)")
+    cf = sub.add_parser("config", parents=[common], help="show or change the tree's settings (plan CF)",
+                        description="The tree's settings: show them, set one, or unset one (back to its default). "
+                                    "The LLM endpoint and key are $OPENAI_BASE_URL and $OPENAI_API_KEY.")
+    cfs = cf.add_subparsers(dest="action", metavar="ACTION")
+    cfs.add_parser("show", help="each setting, its value, and whether it is the tree's own or the default")
+    cset = cfs.add_parser("set", help="set a setting")
+    cset.add_argument("key", metavar="KEY")
+    cset.add_argument("value", metavar="VALUE")
+    cunset = cfs.add_parser("unset", help="return a setting to its default")
+    cunset.add_argument("key", metavar="KEY")
     st = sub.add_parser("status", parents=[common], help="what the tree holds, and the latest run")
     st.add_argument("--json", action="store_true", help="print JSON")
     pr = sub.add_parser("prune", parents=[common],
@@ -820,19 +831,62 @@ def print_status(state: State, as_json: bool) -> None:
               + (f", {run['llm_calls']} LLM calls" if run["llm_calls"] is not None else ""))
 
 
+def configure(out: Path, args: argparse.Namespace) -> int:
+    """`cameo-ingest config`: show, set or unset the tree's settings (plan CF-02). Setting one
+    starts a tree, so that a tree can be configured before its first input."""
+    from .config import BY_KEY, SETTINGS, parse_setting, shown
+
+    action = args.action or "show"
+    if action == "show":
+        stored = stored_settings(out)
+        print(f"settings of {out}" + ("" if State.exists(out) else " (no tree yet: the defaults)"))
+        width = max(len(s.key) for s in SETTINGS)
+        for s in SETTINGS:
+            value, own = shown(s.key, stored)
+            print(f"  {s.key:<{width}}  {value:<18} {'' if own else '(default)':<10} {s.about}")
+        print("endpoint: $OPENAI_BASE_URL " + ("set" if os.environ.get("OPENAI_BASE_URL") else "not set (OpenAI)")
+              + "; key: $OPENAI_API_KEY " + ("set" if os.environ.get("OPENAI_API_KEY") else "not set"))
+        return 0
+    try:
+        value = parse_setting(args.key, args.value) if action == "set" else None
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    if action == "unset" and args.key not in BY_KEY:
+        print(f"error: no setting {args.key!r}; the settings are {', '.join(BY_KEY)}", file=sys.stderr)
+        return 2
+    state = State(out)
+    try:
+        state.lock()
+        stored = state.settings()
+        field = BY_KEY[args.key].field
+        if action == "set":
+            stored[field] = value
+        else:
+            stored.pop(field, None)
+        state.save_settings(TreeSettings.from_stored(stored).stored())
+        print(f"{args.key} = {shown(args.key, state.settings())[0]}")
+    finally:
+        state.close()
+    return 0
+
+
+def tree_of(out: Path | None) -> Path:
+    """The tree a command works on (plan CF-01): -o; else $CAMEO_INGEST_TREE; else ./ingest_tree."""
+    if out is not None:
+        return out
+    if os.environ.get("CAMEO_INGEST_DEST") and not os.environ.get("CAMEO_INGEST_TREE"):
+        log.warning("CAMEO_INGEST_DEST is retired and ignored: set CAMEO_INGEST_TREE, or give -o")
+    return Path(os.environ.get("CAMEO_INGEST_TREE") or DEFAULT_TREE)
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] not in COMMANDS and not {"-h", "--help", "--version"} & set(argv):
         argv.insert(0, "ingest")  # `cameo-ingest FILE -o OUT` keeps working
     args = build_parser().parse_args(argv)
     setup_logging(args.verbose, args.log_file)
-    if args.out is None:  # the tree from the environment, or from an --env file given here
-        if getattr(args, "env", None) and args.env.is_file() and "CAMEO_INGEST_DEST" not in os.environ:
-            load_env(args.env)
-        if not os.environ.get("CAMEO_INGEST_DEST"):
-            print("error: no output tree: give -o DIR, or set CAMEO_INGEST_DEST", file=sys.stderr)
-            return 2
-        args.out = Path(os.environ["CAMEO_INGEST_DEST"])
+    args.out = tree_of(args.out)
     out: Path = args.out
     if not State.exists(out):
         if args.command in ("run", "status", "prune", "quality", "export", "scan", "projects", "groups", "remove",
@@ -843,6 +897,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"error: {out} is not empty and is not a cameo-ingest output tree (no state.sqlite)",
                   file=sys.stderr)
             return 2
+    if args.command == "config":
+        return configure(out, args)
     if args.command == "add":
         state = State(out)
         try:
