@@ -15,7 +15,7 @@ Ranked on 2026-10-04: easy and valuable first. The items are described in the se
   states one backwards, so the arrow items are deferred (`docs/research/upward-arrows-2026-10-04.md`).
 
 **Larger, and worth it** (a day or more each):
-1. **Type hierarchies for search:** now plan TH (`docs/plans/type-hierarchies-2026-10-04.md`).
+1. **Type hierarchies for search:** done (plan TH, 0.18.0).
 2. **What a drawn diagram shows inside shapes:** the data is already read (`usedObjects`).
    "Shown in diagrams" would also name compartment properties, ports and triggers. That changes
    many chunks, so it needs the maintainer's yes.
@@ -77,7 +77,10 @@ Ranked on 2026-10-04: easy and valuable first. The items are described in the se
     the request says "nothing says which element owns it or where it appears".
 
   `pipeline` still writes image bytes itself (AR-007's residue).
-- **Type hierarchies for search:** plan TH (`docs/plans/type-hierarchies-2026-10-04.md`).
+- **Kinds of a shared library type across models** (after plan TH, ADR-0026): TMT's and
+  TMT-2024x's analyses specialize one library's `MonteCarloAnalysis`, and SAF models specialize
+  SysML's `Block`. Each model lists them; an index across models, as for identifiers, would bring
+  them together.
 - **Better module boundaries** (DV):
   - sequence diagrams in bands along the time axis;
   - activity diagrams along their partitions (swimlanes, from `inPartition`; TMT's aren't nested in

@@ -18,6 +18,6 @@ def is_fictional(element_id: str | None) -> bool:
 
 
 def ACROSS() -> list[dict]:
-    """Questions with answers in parts: across the three Riverbend proposals (rwt, hal, aqu), and
-    along derivations within a model."""
-    return rivals.across() + rivals.within()
+    """Questions with answers in parts: across the three Riverbend proposals (rwt, hal, aqu), along
+    derivations within a model, and over a model's type hierarchy (plan TH)."""
+    return rivals.across() + rivals.within() + traffic.kinds()

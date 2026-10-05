@@ -310,15 +310,16 @@ def test_validation_on_the_trees_sketches(tmp_path, monkeypatch, capsys):
     capsys.readouterr()
     assert calibrate(out, suite="standard") == 0
     err = capsys.readouterr().err
-    assert (f"expected quality with {MODEL}: on 8 of the tree's sketches, 100% of names read, 100% of connections "
+    # 12: the strata of the projects sampled, which come in content order (plan TH changed Port Calder's).
+    assert (f"expected quality with {MODEL}: on 12 of the tree's sketches, 100% of names read, 100% of connections "
             "found, 100% of directions right") in err
     dest = next((out / "calibration").iterdir())
     summary = json.loads((dest / "validation.json").read_text())["summary"]
-    assert set(summary["strata"]) == {"small", "medium"} and not summary["warnings"]
-    assert len(list((dest / "validation").glob("*.png"))) == 8 and "| all | 8 |" in (dest / "validation.md").read_text()
+    assert set(summary["strata"]) == {"small", "medium", "modules"} and not summary["warnings"]
+    assert len(list((dest / "validation").glob("*.png"))) == 12 and "| all | 12 |" in (dest / "validation.md").read_text()
     assert json.loads(record(out)["validation"])["overall"]["names"] == 1.0
     assert main(["status", "-o", str(out)]) == 0
-    assert "expected quality: on 8 of the tree's sketches, 100% of names read" in capsys.readouterr().out
+    assert "expected quality: on 12 of the tree's sketches, 100% of names read" in capsys.readouterr().out
 
 
 def test_validation_warns_of_what_will_suffer(tmp_path, monkeypatch, capsys):

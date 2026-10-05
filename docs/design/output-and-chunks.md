@@ -76,7 +76,7 @@ Made by `chunks.make`, checked by `chunks.problems`, at creation and in every te
     `project`, and their `<kind>:details`;
   - ledgers: `ledger:elements`, `ledger:requirements`, `ledger:diagrams`, `ledger:packages`,
     `ledger:projects`;
-  - across models: `index:id` (3,691), `trace:thread`;
+  - across models: `index:id` (3,691), `trace:thread`, `index:hierarchy`;
   - generated: `generated:diagram_description` (2,871), `generated:module_summary`,
     `generated:summary`, `generated:module_description`, `generated:image_description`.
 - **`metadata.file`:** the page it comes from.
@@ -157,6 +157,20 @@ ADR-0019 (`crossref.py`).
   - parts repeat their ancestors;
   - each project writes `index/threads.jsonl` and `THREADS.md`, and the tree switch decides only
     whether `chunks.jsonl` and `rag/` include them.
+- **Type hierarchies** (`hierarchies.py`, plan TH, ADR-0026):
+  - a root is a general with no general in the project, or a general outside it (a library's
+    type) that two or more of its kinds specialize, "(outside this project)";
+  - each kind appears once, under the first of its generals, with its kind word and the first
+    sentence of its documentation (100 characters); its other generals are named ("also a kind
+    of Sensor");
+  - alike leaves share a line ("10 kinds of this name": a model's runs of one analysis);
+  - at least 3 kinds; no depth limit, since parts repeat their ancestors (NIST's 1,005 kinds come
+    in 75 parts);
+  - each project writes `index/hierarchies.jsonl` and `HIERARCHIES.md`, and `--hierarchies` (on)
+    decides whether `chunks.jsonl` and `rag/` include them, as `index:hierarchy`;
+  - on Port Calder's fictional hierarchy, they hold answers that span levels, which no element
+    chunk holds, and cost the 210 standing questions nothing
+    (`docs/research/type-hierarchies-2026-10-04.md`).
 - **Line references** (`--line-refs`, off) end each line with `[project:chunk]`.
 
 ## Reproducibility

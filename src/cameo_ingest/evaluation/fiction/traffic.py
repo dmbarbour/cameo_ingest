@@ -65,6 +65,14 @@ FEATURES = [  # unique facts, each given to one intersection; {name} is the inte
     "The intersection was rebuilt in 2021 as a signalised roundabout with metering signals on two arms.",
     "Hospital ambulances from Calder General preempt the signals via the Beacon EVP-90 on a 300 m approach.",
 ]
+KINDS = [  # key, name, documentation, general: the catalogue's types (plan TH)
+    ("fd", "Field Device", "Any device installed at a signalised junction or in its roadside cabinet.", None),
+    ("ctrl", "Signal Controller", "Runs the signal timing at one junction and switches its lamps.", "fd"),
+    ("det", "Vehicle Detector", "Tells the controller that a vehicle is waiting at, or approaching, the stop bar.", "fd"),
+    ("nid", "Non-intrusive Detector", "A detector mounted above or beside the road, with nothing cut into its surface.",
+     "det"),
+    ("prio", "Priority Receiver", "Receives requests for priority from emergency vehicles or buses.", "fd"),
+]
 PLANS = [("AM Peak", "07:00", "09:30"), ("Midday", "09:30", "15:30"), ("PM Peak", "15:30", "18:30"),
          ("Night", "22:00", "06:00")]
 AREAS = [  # package, first id number, requirement texts ({c} is a corridor, where present)
@@ -176,17 +184,21 @@ def build() -> Project:
     beh = p.package("beh", "Operations")
 
     vt_s = p.value_type("vt_s", "seconds", eq, unit="s")
+    for key, name, doc, general in KINDS:  # the catalogue's types, three levels deep (plan TH)
+        p.block(key, name, eq, doc, general=general)
     for key, name, doc in CONTROLLERS:
-        p.block(key, name, eq, doc, values=[("phases", None, 8 if key != "nx2" else 4)])
+        p.block(key, name, eq, doc, values=[("phases", None, 8 if key != "nx2" else 4)], general="ctrl")
         p.apply("PCT", "Equipment", key, vendor=name.split()[0], partNumber=f"{name.split()[-1]}-STD",
                 mtbfHours=rng.choice([60000, 75000, 90000]))
     for key, name, doc in DETECTORS:
-        p.block(key, name, eq, doc)
+        p.block(key, name, eq, doc, general="det" if key == "loop" else "nid")
     p.block("evp", "Beacon EVP-90 Receiver", eq,
-            "An optical receiver that picks up the strobe of an approaching emergency vehicle.")
-    p.block("tspu", "TransitLink TSP Unit", eq, "A cabinet module that passes bus priority requests to the controller.")
-    p.block("pb", "Accessible Push Button", eq, "A push button with a locator tone, a raised arrow and a vibrating tactile.")
-    p.block("modem", "Cellular Modem", eq, "Fallback link to the ATMS when the Calder Ring is down.")
+            "An optical receiver that picks up the strobe of an approaching emergency vehicle.", general="prio")
+    p.block("tspu", "TransitLink TSP Unit", eq, "A cabinet module that passes bus priority requests to the controller.",
+            general="prio")
+    p.block("pb", "Accessible Push Button", eq, "A push button with a locator tone, a raised arrow and a vibrating tactile.",
+            general="fd")
+    p.block("modem", "Cellular Modem", eq, "Fallback link to the ATMS when the Calder Ring is down.", general="fd")
 
     # -- the network -----------------------------------------------------------------------------
     pool = sorted(f"{a} {b}" for a in STREET_WORDS[0] for b in STREET_WORDS[1])
@@ -431,3 +443,44 @@ def build() -> Project:
           "What does a traffic centre operator do first when told of a crash?", ["inc_act"],
           evidence="Confirm Incident on CCTV")
     return p
+
+
+def kinds() -> list[dict]:
+    """Questions about the equipment catalogue's types (plan TH), with answers in parts: one part
+    per kind, held where a chunk says the kind is a kind of its general (its own chunk, or its
+    general's), or where a hierarchy of the catalogue lists it. A question across levels has its
+    whole answer only in a hierarchy."""
+    general = {key: g for key, _, _, g in KINDS}
+    general.update({k: "ctrl" for k, *_ in CONTROLLERS})
+    general.update({"loop": "det", "radar": "nid", "video": "nid", "evp": "prio", "tspu": "prio", "pb": "fd",
+                    "modem": "fd"})
+    names = {k: n for k, n, *_ in KINDS + [(k, n, d, None) for k, n, d in CONTROLLERS + DETECTORS]}
+    names.update({"evp": "Beacon EVP-90 Receiver", "tspu": "TransitLink TSP Unit", "pb": "Accessible Push Button",
+                  "modem": "Cellular Modem"})
+
+    def part(k: str) -> list:
+        g = names[general[k]]
+        return [[names[k], f"is a kind of {g}"], [f"{names[k]} is a kind of this", g],
+                [names[k], "kinds of Field Device"]]
+
+    rows = [
+        ("k01", "What kinds of vehicle detector does Port Calder approve?",
+         "Which ways of sensing traffic can be used at Port Calder's junctions?", ["loop", "radar", "video"]),
+        ("k02", "List every type of field device approved in Port Calder's Equipment Catalogue.",
+         "What equipment can Port Calder install at a signalised junction?",
+         ["atc4", "atc5", "nx2", "loop", "radar", "video", "evp", "tspu", "pb", "modem"]),
+        ("k03", "Which kinds of field device give vehicles priority at Port Calder's signals?",
+         "What lets buses and fire engines get a green light sooner in Port Calder?", ["evp", "tspu"]),
+        ("k04", "Which signal controllers does Port Calder approve?",
+         "Which models of traffic controller can be installed in Port Calder?", ["atc4", "atc5", "nx2"]),
+    ]
+    out = []
+    for qid, literal, paraphrase, keys in rows:
+        for style, text in (("literal", literal), ("paraphrase", paraphrase)):
+            out.append({"id": f"kinds-{qid}-{style}", "rule": "parts", "fact": f"kinds-{qid}", "style": style,
+                        "category": "hierarchy", "difficulty": "hard" if len(keys) > 3 else "medium",
+                        "question": text, "answers": [], "related": [], "evidence": [],
+                        "evidence_groups": [part(k) for k in keys],
+                        "group_elements": [[f"_pct_{k}", f"_pct_{general[k]}"] for k in keys],
+                        "project_name": "Port Calder Traffic Signal System"})
+    return out

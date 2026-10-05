@@ -1,8 +1,9 @@
 # Plan: type hierarchies for search, 2026-10-04
 
-- **Status:** Active; CP1 done (0.18.0), CP2 in progress. The maintainer asked for it on 2026-10-03 ("seems we may
-  need to be drawing some generalization trees, too? … esp. for search"), and on 2026-10-04:
-  "please proceed with type hierarchies for search".
+- **Status:** Done on 2026-10-04 (0.18.0), and retired to the archive that day. The maintainer
+  asked for it on 2026-10-03 ("seems we may need to be drawing some generalization trees, too? …
+  esp. for search"), and on 2026-10-04: "please proceed with type hierarchies for search". Its
+  content is in ADR-0026, `docs/design/output-and-chunks.md`, the research note, and the roadmap.
 - **Step prefix:** `TH`, so steps are `TH-01`, `TH-02` and so on.
 - **Builds on:** the requirement threads (plan RF, ADR-0019): a chunk per tree, assembled, behind
   a tree-wide switch, cut into parts that restate their ancestors.
@@ -54,9 +55,9 @@ Surveyed on every `.mdzip` in `samples/`:
 | TH-01 | **Hierarchies** (`hierarchies.py`): roots, lines, multiple generals, outside generals, depth; the records of `index/hierarchies.jsonl`; `HIERARCHIES.md`. | Done (0.18.0), with alike leaves on one line ("10 kinds of this name": TMT's runs of one analysis); a kind under two roots appears in both |
 | TH-02 | **Chunks** in the tree, as threads are (`exports.py`); the switch; `status` and README. | Done (0.18.0): `exports.hierarchy_chunks`, `--hierarchies` (tree-wide, on); README and design docs at TH-06 |
 | TH-03 | **Tests:** a fixture with a hierarchy of 3 levels, a kind with two generals, and a general outside the project; the switch off leaves no chunk. **The samples:** counts, and NIST's large hierarchy read in parts. | Done: `tests/test_hierarchies.py`. On SAF_Profile, NIST_M-SysML and TMT: 17, 2 and 23 hierarchies, 185 chunks; NIST's 1,005 kinds in 75 parts, each restating its ancestors |
-| TH-04 | **The fiction:** a type hierarchy in Port Calder (field equipment: detectors, signal heads, controllers, 3 levels, with documentation), and questions about it, graded by construction: "what kinds of …" (every kind, in parts), "what is X a kind of" (one), "which kinds of … do Y" (some). | |
-| TH-05 | **Measured:** retrieval on the hierarchy questions with and without hierarchy chunks (coverage@10 and complete@10, as plan RF measured threads), and the 210 questions unchanged; a research note. | |
-| TH-06 | **The release check;** docs: design, README, an ADR; a version. | |
+| TH-04 | **The fiction:** a type hierarchy in Port Calder (field equipment: detectors, signal heads, controllers, 3 levels, with documentation), and questions about it, graded by construction: "what kinds of …" (every kind, in parts), "what is X a kind of" (one), "which kinds of … do Y" (some). | Done: Port Calder's catalogue types (Field Device; Signal Controller, Vehicle Detector, Priority Receiver; Non-intrusive Detector), `traffic.kinds()`: 4 questions, 8 with paraphrases, in parts (`questions-th.jsonl`); the questions file now holds 246 |
+| TH-05 | **Measured:** retrieval on the hierarchy questions with and without hierarchy chunks (coverage@10 and complete@10, as plan RF measured threads), and the 210 questions unchanged; a research note. | Done: `docs/research/type-hierarchies-2026-10-04.md`. With hierarchies, complete@10 0.25 → 0.38 for most systems, coverage and MRR up or level, none significant (8 questions); the 210 unchanged |
+| TH-06 | **The release check;** docs: design, README, an ADR; a version. | Done: the tree rebuilt at 0.18.0 (6 new requests, none failed; 259 hierarchy chunks; the invariants hold); README, design docs, ADR-0026 |
 
 ## Checkpoints
 

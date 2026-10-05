@@ -315,8 +315,9 @@ out/
                          diagrams (.csv); diagram-tables/<name>.csv, each table that lists its
                          rows, as Cameo shows it
     index/               elements.jsonl (full structure), hierarchy.json, chunks.jsonl,
-                         ids.jsonl and threads.jsonl (the index across models and the threads),
-                         catalog.jsonl (what `export` writes out, one record per item)
+                         ids.jsonl, threads.jsonl and hierarchies.jsonl (the index across models,
+                         the threads and the type hierarchies), catalog.jsonl (what `export`
+                         writes out, one record per item)
 ```
 
 ### Provenance
@@ -425,6 +426,7 @@ requirement ids, relationships and the smaller embedding models, at half the tok
 | `generated:module_description` | One module of a large diagram. `metadata.covers` locates it: `number` and `of`, the legend's shape numbers (`shapes`), `elements`, its `box` in diagram coordinates, the page `anchor` and the `image` | "What does this part of the activity do?" |
 | `index:id` | An identifier (a requirement id, or an id cited in text) and every place it occurs, across every model in the tree: what holds it, how (its id, in its text, satisfies it, is derived from it…), a snippet, and the project's short id (`[9ffd7a2c]`; with `--line-refs`, the place's chunk too, `[9ffd7a2c:14d101e0b1d2]`). One entry per id held by two elements or more | "Which models address RWT-REG-002?", "What cites PCT-SYS-0302?" |
 | `trace:thread` | A model's derivation tree from one requirement: what derives from it, level by level, with what satisfies, verifies or refines each (`--no-threads` leaves them out) | "Which tests verify the requirements derived from SN-02?" |
+| `index:hierarchy` | A model's type hierarchy from one general: its kinds, level by level, each with its kind word and the first sentence of its documentation (`--no-hierarchies` leaves them out; `HIERARCHIES.md` has them for reading) | "What kinds of vehicle detector does the model define?" |
 | `generated:module_summary` | One part (or run of parts) of a large package. `metadata.covers` gives `number` to `last` of `of`, the `elements` it covers and the page `anchor` | "Which part of the requirements covers pointing?" |
 
 In the root `chunks.jsonl`, `metadata.source_metadata` holds the `--meta` values of every
@@ -645,9 +647,9 @@ uv run python -m cameo_ingest.treediff BEFORE AFTER   # what a change did to an 
 - **Ferrous Valley Level Crossing:** two variants whose blocks share their names, traceability
   three levels deep, a hazard log, and a fact found only in a diagram note;
 - **Port Calder Traffic Signal System:** about 5,100 XMI ids, 150 intersections with
-  near-duplicate names.
+  near-duplicate names, and a type hierarchy of its equipment, three levels deep.
 
-Each comes with questions whose answers are known by construction (238 in all, tagged by
+Each comes with questions whose answers are known by construction (246 in all, tagged by
 difficulty; 210 without Kestrel, in `questions-ra.jsonl`, the set every comparison since
 2026-10-02 uses), for the retrieval evaluation (`scripts/retrieval_eval.py --questions
 out/eval/fiction/questions.jsonl`; `docs/design/evaluation.md`). The tests ingest every project and check that each answer
