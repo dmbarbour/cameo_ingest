@@ -78,6 +78,7 @@ than hours later (`--no-preflight` skips the check).
 | Variable | Flag | Purpose |
 |---|---|---|
 | `CAMEO_INGEST_TREE` | `-o` | The output tree, when `-o` is not given; else `./ingest_tree`. |
+| `CAMEO_INGEST_CACHE` | | The LLM store's directory, shared by every tree; else `~/.cache/cameo-ingest` (`$XDG_CACHE_HOME`). |
 | `OPENAI_API_KEY`, `OPENAI_BASE_URL` | | Any OpenAI-compatible endpoint, such as vLLM or Ollama serving gemma. |
 | `CAMEO_INGEST_TEXT_MODEL`, then `OPENAI_MODEL` | `--text-model` | Model for package summaries. |
 | `CAMEO_INGEST_VISION_MODEL` | `--vision-model` | Model for diagram and image descriptions. Defaults to the text model. |
@@ -85,11 +86,15 @@ than hours later (`--no-preflight` skips the check).
 | `CAMEO_INGEST_LLM_RETRIES` | `--llm-retries` | Retries per request (default 2). |
 | `CAMEO_INGEST_LLM_MAX_CALLS` | `--llm-max-calls` | Stop calling the LLM after N requests in a run (default: no limit). |
 
-Flags take precedence over variables. `.env.example` lists the variables: copy it to `.env`,
+`cameo-ingest config test` checks the endpoint, the key and each model (the vision model reads a
+drawn number), and `config models [TEXT]` lists the endpoint's models. Flags take precedence over variables. `.env.example` lists the variables: copy it to `.env`,
 which is gitignored, and pass `--env .env`. Variables already set in the environment take
 precedence over the file, and the log names the variables loaded but never their values.
 
-LLM responses are kept in an SQLite store, `OUT/.cache/llm.sqlite` (or `--cache-dir DIR`),
+LLM responses are kept in an SQLite store, `llm.sqlite` in `$CAMEO_INGEST_CACHE` or else
+`~/.cache/cameo-ingest/` (0.20.3), shared by every tree: a second tree reuses the answers the first
+paid for, and calibrates a model already calibrated from stored answers. A tree's own store from
+before (`OUT/.cache/llm.sqlite`) is copied into it once. Answers are
 keyed by endpoint, model and a hash of the request, so re-runs are cheap and repeatable; each
 response is committed on its own. A failed request is logged and skipped, and never fails the
 ingest; after 3 consecutive failures, enrichment is switched off for the rest of the run.

@@ -166,7 +166,11 @@ ADR-0010 (`llm.py`, `sqlite_cache.py`).
   (`--llm-replay`, a miss fails the project); `connect()` makes the run's.
 - **The preflight:** "Reply with the single word OK.", and the vision check sends a 32 × 32 white
   PNG. It bypasses the store and the budget, and failure exits 5.
-- **The store,** `ResponseStore` in `OUT/.cache/llm.sqlite` (or `--cache-dir`):
+- **The store,** `ResponseStore` in `llm.sqlite`, per user and shared by every tree
+  (`config.store_dir`: `$CAMEO_INGEST_CACHE`, else `~/.cache/cameo-ingest`; plan CF-04, 0.20.3). A
+  tree's own store from before (`OUT/.cache/llm.sqlite`) is copied into it once (`cli.shared_store`,
+  the columns both have). Calibrations' answers are in it too, so a model is calibrated for a new
+  tree from stored answers:
   - answers keyed by (endpoint, model, request sha256);
   - a `requests` log of each request's template, project, item, slot values, the rendered prompt,
     image sha256 and path, and notes (such as `truncated`, or `scaled` for a shrunk image).

@@ -182,6 +182,11 @@ class OpenAIChat:
         resp = self._client.chat.completions.create(model=model, messages=messages, temperature=temperature)
         return (resp.choices[0].message.content or "").strip()
 
+    def models(self) -> list[tuple[str, int | None]]:
+        """The endpoint's models (`GET /models`): each id, with its creation time when the endpoint
+        gives one (plan CF-03). Endpoints give no version; the id and this time are all there is."""
+        return sorted((m.id, getattr(m, "created", None)) for m in self._client.models.list())
+
     def close(self) -> None:
         """Close the connection pool, so that requests still in flight fail at once."""
         self._client.close()

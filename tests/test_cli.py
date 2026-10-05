@@ -192,6 +192,7 @@ def test_interrupt_and_resume(tmp_path, fake_chat, monkeypatch, capsys):
     ref = tmp_path / "ref"
     assert main([str(src), "-o", str(ref), "--vision-model", "m", "--no-calibrate", "--no-preflight"]) == 0
     monkeypatch.setattr(FakeChat, "interrupt_at", 2)  # Ctrl-C during the second LLM request
+    os.environ["CAMEO_INGEST_CACHE"] = str(tmp_path / "store-out")  # not the reference's answers
     out = tmp_path / "out"
     assert main([str(src), "-o", str(out), "--vision-model", "m", "--no-calibrate", "--no-preflight"]) == 130
     assert "Continue with: cameo-ingest run -o" in capsys.readouterr().err
@@ -283,3 +284,46 @@ def test_config(tmp_path, capsys):
     src.write_bytes(make_mdzip())
     assert main(["config", "-o", str(out), "set", "llm", "off"]) == 0
     assert main([str(src), "-o", str(out), "--no-render"]) == 0
+
+
+def test_config_test_and_models(tmp_path, monkeypatch, capsys, caplog):
+    """`config test` checks that each model answers and the vision model reads a drawn number;
+    `config models` lists the endpoint's models, those the tree uses marked; a model whose
+    creation time changes is noted (plan CF-03)."""
+    from cameo_ingest import cli
+    from cameo_ingest.checks import CARD_NUMBER
+
+    class Endpoint:
+        created = 1700000000
+        reads = True
+
+        def models(self):
+            return [("acme/text", self.created), ("acme/vision", 1700000001), ("acme/embed", None)]
+
+        def complete(self, model, messages, temperature):
+            if isinstance(messages[0]["content"], list):  # the card
+                return CARD_NUMBER if self.reads else "I can't see images."
+            return "Ready."
+
+    endpoint = Endpoint()
+    monkeypatch.setattr(cli, "make_client", lambda cfg: endpoint)
+    out = tmp_path / "tree"
+    assert main(["config", "-o", str(out), "test"]) == 2
+    assert "config set text-model" in capsys.readouterr().err
+    assert main(["config", "-o", str(out), "set", "text-model", "acme/text"]) == 0
+    assert main(["config", "-o", str(out), "set", "vision-model", "acme/vision"]) == 0
+    capsys.readouterr()
+    assert main(["config", "-o", str(out), "test"]) == 0
+    report = capsys.readouterr().out
+    assert "ok   the text model acme/text answers" in report and "ok   the vision model acme/vision reads" in report
+    endpoint.reads = False
+    assert main(["config", "-o", str(out), "test"]) == 5
+    assert "FAIL the vision model acme/vision reads an image" in capsys.readouterr().out
+    endpoint.created = 1800000000
+    main(["config", "-o", str(out), "test"])
+    assert "acme/text at this endpoint reports another creation time" in caplog.text
+    assert main(["config", "-o", str(out), "models"]) == 0
+    listing = capsys.readouterr().out
+    assert "acme/text  [text model]" in listing and "acme/vision  [vision model]" in listing and "acme/embed" in listing
+    assert main(["config", "-o", str(out), "models", "vis"]) == 0
+    assert "acme/text" not in capsys.readouterr().out

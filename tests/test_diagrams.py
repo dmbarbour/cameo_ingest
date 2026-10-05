@@ -8,6 +8,7 @@ from helpers import (
     check_invariants,
     project_dir,
     run,
+    store_db,
 )
 
 from cameo_ingest.cli import main
@@ -208,7 +209,7 @@ def test_large_diagram_modules(tmp_path, fake_chat):
     from cameo_ingest.prompts import CURRENT
 
     assert [c["metadata"]["provenance"]["derivation"]["template"] for c in whole] == [CURRENT["diagram-synthesis"].key]
-    db = sqlite3.connect(out / ".cache/llm.sqlite")
+    db = sqlite3.connect(store_db())
     rows = db.execute("SELECT template, prompt, image_path FROM requests WHERE template LIKE 'module%' "
                       "OR template LIKE 'diagram%' ORDER BY rowid").fetchall()
     assert [r[0] for r in rows] == ["module-description@v3"] * 2 + [CURRENT["diagram-synthesis"].key]

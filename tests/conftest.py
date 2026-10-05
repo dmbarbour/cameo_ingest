@@ -7,11 +7,14 @@ from helpers import LLM_ENV, TREE_ENV, FakeChat
 
 
 @pytest.fixture(autouse=True)
-def isolated_env(request, monkeypatch):
-    """Tests never see the developer's LLM settings or tree, and --env cannot leak between tests.
-    The live tests (`-m llm`) keep the LLM settings: they are the endpoint to test."""
+def isolated_env(request, monkeypatch, tmp_path):
+    """Tests never see the developer's LLM settings, tree or LLM store, and --env cannot leak
+    between tests: each test has a store of its own (`helpers.store_db`). The live tests
+    (`-m llm`) keep the LLM settings: they are the endpoint to test."""
     drop = TREE_ENV + (LLM_ENV if request.node.get_closest_marker("llm") is None else ())
-    monkeypatch.setattr(os, "environ", {k: v for k, v in os.environ.items() if k not in drop})
+    env = {k: v for k, v in os.environ.items() if k not in drop}
+    env["CAMEO_INGEST_CACHE"] = str(tmp_path / "llm-store")
+    monkeypatch.setattr(os, "environ", env)
 
 
 @pytest.fixture

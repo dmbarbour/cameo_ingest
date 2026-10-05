@@ -3,6 +3,7 @@
 import csv
 import hashlib
 import json
+import os
 import re
 from collections import Counter
 from pathlib import Path
@@ -14,6 +15,7 @@ from helpers import (
     FakeChat,
     check_invariants,
     project_dir,
+    store_db,
     tree,
 )
 
@@ -92,7 +94,7 @@ def test_a_section_too_long_for_a_part_is_split_not_cut(tmp_path, fake_chat):
     assert main([str(src), "-o", str(out), "--text-model", "m", "--no-calibrate", "--no-preflight", "--no-render"]) == 0
     report = json.loads((out / "run.json").read_text())["llm"]
     assert "truncated_input" not in report["outcomes"]
-    db = sqlite3.connect(out / ".cache/llm.sqlite")
+    db = sqlite3.connect(store_db())
     prompts = [r[0] for r in db.execute("SELECT slots FROM requests WHERE template LIKE 'module-summary%'")]
     sections = [json.loads(x)["SECTIONS"] for x in prompts]
     assert all(len(x) <= PART_CHARS[1] for x in sections)
@@ -109,10 +111,11 @@ def test_the_part_size_is_an_option(tmp_path, fake_chat):
     src.write_bytes(make_mdzip(large_package_model()))
     sizes = {}
     for chars in (None, 6000):
+        os.environ["CAMEO_INGEST_CACHE"] = str(tmp_path / f"store{chars}")  # each size's own requests
         out = tmp_path / f"out{chars}"
         args = [str(src), "-o", str(out), "--text-model", "m", "--no-calibrate", "--no-preflight", "--no-render"]
         assert main(args + (["--part-chars", str(chars)] if chars else [])) == 0
-        db = sqlite3.connect(out / ".cache/llm.sqlite")
+        db = sqlite3.connect(store_db())
         parts = [json.loads(r[0])["SECTIONS"] for r in db.execute(
             "SELECT slots FROM requests WHERE template LIKE 'module-summary%' AND item LIKE '%bigp%'")]
         assert parts and all(len(x) <= (chars or 12000) for x in parts)
@@ -156,7 +159,7 @@ def test_large_package_parts(tmp_path, fake_chat, monkeypatch):
     summary = [c for c in chunks if c["metadata"]["kind"] == "generated:summary" and c["metadata"]["element_id"] == "bigp"]
     assert summary[0]["text"].startswith("Summary of Package Big in Model (project drone [")
     assert [c["metadata"]["provenance"]["derivation"]["template"] for c in summary] == [CURRENT["package-synthesis"].key]
-    db = sqlite3.connect(out / ".cache/llm.sqlite")
+    db = sqlite3.connect(store_db())
     used = Counter(r[0] for r in db.execute("SELECT template FROM requests WHERE item LIKE '%bigp%'"))
     synthesis = CURRENT["package-synthesis"].key
     assert used[CURRENT["module-summary"].key] == n and used[synthesis] == len(parts) - n + 1
@@ -193,7 +196,7 @@ def test_instance_packages_summarized_from_a_digest(tmp_path, fake_chat):
     check_invariants(out)
     page = (project_dir(out) / "packages/Model__Results.md").read_text()
     assert "- **Classifier:** [Battery]" in page and "## Parts, summarized" not in page
-    db = sqlite3.connect(out / ".cache/llm.sqlite")
+    db = sqlite3.connect(store_db())
     rows = db.execute("SELECT template, prompt FROM requests WHERE item LIKE '%resp%'").fetchall()
     assert [r[0] for r in rows] == [CURRENT["instances-summary"].key]
     prompt = rows[0][1]
@@ -265,7 +268,7 @@ def test_templates_and_request_log(tmp_path, fake_chat):
     out = tmp_path / "out"
     assert main([str(src), "-o", str(out), "--text-model", "m", "--no-calibrate", "--no-preflight"]) == 0
     token = f"sha256:{project_dir(out).name}"
-    db = sqlite3.connect(out / ".cache/llm.sqlite")
+    db = sqlite3.connect(store_db())
     rows = db.execute("SELECT template, project, item, image_path, prompt, notes FROM requests ORDER BY template, "
                       "image_path").fetchall()
     assert [(r[0], r[3]) for r in rows] == [(CURRENT["diagram-description"].key, "diagrams/Drone_BDD.png"),
@@ -553,3 +556,29 @@ def test_package_context():
         "It refers to:"]
     assert "- Class Meridian ATC-5: The current standard controller, with an Ethernet uplink to the ATMS." in lines
     assert pv.package_context(ix, next(e.id for e in ix.elements.values() if e.kind == "Model")) == "(none)"
+
+
+def test_a_trees_own_store_joins_the_shared_store(tmp_path, fake_chat, monkeypatch):
+    """The LLM store is per user (plan CF-04); a tree's own store, from before, is copied into it
+    once, so that nothing it paid for is asked again."""
+    import shutil
+
+    from cameo_ingest.state import State
+
+    src = tmp_path / "drone.mdzip"
+    src.write_bytes(make_mdzip())
+    out = tmp_path / "out"
+    args = [str(src), "-o", str(out), "--vision-model", "m", "--no-calibrate", "--no-preflight"]
+    assert main(args) == 0
+    (out / ".cache").mkdir()
+    shutil.copy(store_db(), out / ".cache" / "llm.sqlite")  # as 0.20.1 and before kept it
+    os.environ["CAMEO_INGEST_CACHE"] = str(tmp_path / "new-store")
+    from cameo_ingest import runner
+
+    monkeypatch.setattr(runner, "TOOL", "cameo-ingest/99")  # every project written again, asking the same
+    assert main(["run", "-o", str(out), "--no-preflight"]) == 0
+    outcomes = json.loads((out / "run.json").read_text())["llm"]["outcomes"]
+    assert "answered" not in outcomes and outcomes.get("cached"), outcomes
+    st = State(out)
+    assert st.meta("store_adopted") == str(tmp_path / "new-store")
+    st.close()

@@ -408,6 +408,14 @@ class State:
     def calibrations(self) -> list[sqlite3.Row]:
         return self.db.execute("SELECT * FROM calibrations ORDER BY created DESC").fetchall()
 
+    def meta(self, key: str) -> str | None:
+        row = self.db.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+        return row[0] if row else None
+
+    def set_meta(self, key: str, value: str) -> None:
+        with self.tx() as db:
+            db.execute("INSERT OR REPLACE INTO meta VALUES (?, ?)", (key, value))
+
     def settings(self) -> dict[str, Any]:
         return {r["key"]: json.loads(r["value"]) for r in self.db.execute("SELECT * FROM settings")}
 

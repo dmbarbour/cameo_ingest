@@ -1,6 +1,7 @@
 # Plan: configuration through `cameo-ingest config`, 2026-10-05
 
-- **Status:** In progress: CP1 done (0.20.2); CP2 next.
+- **Status:** In progress: CP1 (0.20.2) and CP2 (0.20.3) done; stopped before CP3, as planned, for the
+  maintainer's look at the new setup.
 - **Step prefix:** `CF`, so steps are `CF-01`, `CF-02` and so on.
 - **Addresses:** the maintainer, 2026-10-05, trying the tool:
   > "getting set up is a bit confusing: too many configuration options independent of current
@@ -82,8 +83,8 @@ there is one, and warns when it changes.
 |---|---|---|
 | CF-01 | **Which tree:** `-o`, `CAMEO_INGEST_TREE`, then `./ingest_tree/` (D2), for every command; `CAMEO_INGEST_DEST` retired with a notice. Tests. | Done (0.20.2): `cli.tree_of`; tests strip the tree variables; `tests/test_cli.py::test_which_tree` |
 | CF-02 | **`config show`, `set`, `unset`:** each setting described, checked and reversible (D6); `llm` on or off (D5). Tests. | Done (0.20.2): `config.SETTINGS` (llm, text-model, vision-model, render, rag-files, rag-source, concurrency, max-calls), `cli.configure`; setting one starts a tree; `tests/test_cli.py::test_config` |
-| CF-03 | **The endpoint:** `OPENAI_BASE_URL` and `OPENAI_API_KEY` only (D3); `config test` and `config models`; the model's identity and creation time recorded. Tests with a fake endpoint; once against DeepInfra. | |
-| CF-04 | **The shared store:** the LLM answers and calibrations per user (`CAMEO_INGEST_CACHE`, D4), a tree's existing store still read; the tree records the calibration it used. Tests. | |
+| CF-03 | **The endpoint:** `OPENAI_BASE_URL` and `OPENAI_API_KEY` only (D3); `config test` and `config models`; the model's identity and creation time recorded. Tests with a fake endpoint; once against DeepInfra. | Done: `checks.run_checks` (the vision model reads a drawn 731), `OpenAIChat.models`, `cli.check_config`, `note_models` (the creation time per endpoint and model in the tree's `meta`, a warning when it changes); against DeepInfra, gemma-4 passes both, and Qwen3-235B as the vision model fails ("does not accept image input"); `tests/test_cli.py::test_config_test_and_models` |
+| CF-04 | **The shared store:** the LLM answers and calibrations per user (`CAMEO_INGEST_CACHE`, D4), a tree's existing store still read; the tree records the calibration it used. Tests. | Done: `config.store_dir`; a tree's own store copied in once (`cli.shared_store`); calibration answers shared through the store; each test has its own store; `tests/test_llm.py::test_a_trees_own_store_joins_the_shared_store` |
 | CF-05 | **Runs read the tree's configuration only:** the settings flags, `--env` and the other variables go; retired settings noticed. Tests. | |
 | CF-06 | **`config -i`.** Tests with scripted input. | |
 | CF-07 | **Developers, docs and release:** the evaluation scripts read `OPENAI_*` from the environment; the README's setup rewritten around `config -i`; ADR-0004 and ADR-0010 updated, a new ADR; a release check; 0.21.0. | |
@@ -96,6 +97,35 @@ there is one, and warns when it changes.
 | CP2: the endpoint and the store | CF-03, CF-04 | `config test/models`, a shared store |
 | CP3: one source | CF-05 | Runs read the tree's configuration only |
 | CP4: interactive, docs | CF-06, CF-07 | `config -i`; 0.21.0 |
+
+## The setup after CP3 (a draft of the README's, for the maintainer's look)
+
+> **Setting up.** The LLM endpoint and its key are the OpenAI clients' own variables; everything
+> else is the tree's, set with `cameo-ingest config`.
+>
+> ```
+> export OPENAI_BASE_URL=https://api.deepinfra.com/v1/openai   # any OpenAI-compatible endpoint; unset for OpenAI
+> export OPENAI_API_KEY=...
+> cd my-work
+> cameo-ingest config -i            # choose and test the models, calibrate: saved in ./ingest_tree
+> cameo-ingest path/to/models/      # ingest into ./ingest_tree
+> cameo-ingest status
+> ```
+>
+> - **Another tree:** `-o DIR` on any command, or `export CAMEO_INGEST_TREE=DIR`.
+> - **Without the LLM:** `cameo-ingest config set llm off` (and `on` again).
+> - **The settings:** `config show`; `config set KEY VALUE`; `config unset KEY`, back to the
+>   default. `llm`, `text-model`, `vision-model`, `render`, `rag-files`, `rag-source`,
+>   `concurrency`, `max-calls`.
+> - **Checks:** `config test` (the endpoint, the key, each model; the vision model reads a drawn
+>   number); `config models [TEXT]`.
+> - **The LLM store:** answers and calibrations, shared by every tree, in `~/.cache/cameo-ingest`, or
+>   `$CAMEO_INGEST_CACHE`.
+>
+> These four variables are all there is: `OPENAI_BASE_URL`, `OPENAI_API_KEY`,
+> `CAMEO_INGEST_TREE`, `CAMEO_INGEST_CACHE`. Since 0.21.0, `--env`, the model and LLM flags,
+> `OPENAI_MODEL` and the other `CAMEO_INGEST_*` variables are gone; a tree that remembers one of
+> its old settings is told it is ignored.
 
 ## When to stop and ask
 

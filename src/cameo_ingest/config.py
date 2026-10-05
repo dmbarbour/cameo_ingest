@@ -10,7 +10,9 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, fields, replace
+from pathlib import Path
 from typing import Any
 
 from .prompts import PART_CHARS
@@ -201,3 +203,16 @@ def shown(key: str, stored: dict[str, Any]) -> tuple[str, bool]:
     if s.kind == "switch":
         return ("on" if bool(v) != s.inverse else "off"), True
     return str(v), True
+
+
+def store_dir(cache_dir: str | None = None) -> Path:
+    """Where the LLM's answers, their request log and so the calibrations' answers live (plan
+    CF-04): per user and shared by every tree, so that a second tree reuses what the first paid
+    for, and calibrates a model it has seen from stored answers. $CAMEO_INGEST_CACHE moves it; a
+    tree's own `cache_dir` setting (until 0.21.0) wins."""
+    if cache_dir:
+        return Path(cache_dir)
+    if os.environ.get("CAMEO_INGEST_CACHE"):
+        return Path(os.environ["CAMEO_INGEST_CACHE"])
+    return Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "cameo-ingest"
+

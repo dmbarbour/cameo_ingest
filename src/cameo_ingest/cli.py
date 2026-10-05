@@ -217,6 +217,10 @@ def build_parser() -> argparse.ArgumentParser:
     cset.add_argument("value", metavar="VALUE")
     cunset = cfs.add_parser("unset", help="return a setting to its default")
     cunset.add_argument("key", metavar="KEY")
+    cfs.add_parser("test", help="check the endpoint and key, and that each model answers (the vision model reads an "
+                                "image); exits 5 when a check fails")
+    cmodels = cfs.add_parser("models", help="the endpoint's models, those the tree uses or has calibrated marked")
+    cmodels.add_argument("filter", nargs="?", metavar="TEXT", help="only models whose id holds TEXT")
     st = sub.add_parser("status", parents=[common], help="what the tree holds, and the latest run")
     st.add_argument("--json", action="store_true", help="print JSON")
     pr = sub.add_parser("prune", parents=[common],
@@ -562,7 +566,7 @@ def run_tree(args: argparse.Namespace, argv: list[str]) -> int:
     if args.llm_replay is not None and not (cfg.enabled and args.llm_replay.is_file()):
         print(f"error: --llm-replay needs a model and an existing store file ({args.llm_replay})", file=sys.stderr)
         return 2
-    llm = EnrichmentSession(cfg, Path(settings.cache_dir) if settings.cache_dir else out / ".cache",
+    llm = EnrichmentSession(cfg, shared_store(out, settings),
                             connect(cfg, args.llm_replay))
     if cfg.enabled and not args.no_preflight and not check_endpoint(llm):
         return 5
@@ -703,7 +707,7 @@ def calibrate_text(out: Path, args: argparse.Namespace) -> int:
         print("error: calibrate-text needs a text model: --text-model, or CAMEO_INGEST_TEXT_MODEL (see `run`)",
               file=sys.stderr)
         return 2
-    llm = EnrichmentSession(cfg, Path(settings.cache_dir) if settings.cache_dir else out / ".cache",
+    llm = EnrichmentSession(cfg, shared_store(out, settings),
                             connect(cfg, args.llm_replay))
     if not args.no_preflight and not check_endpoint(llm):
         return 5
@@ -749,7 +753,7 @@ def calibrate_vision(out: Path, args: argparse.Namespace) -> int:
         print("error: calibrate-vision needs a vision model: --vision-model, or CAMEO_INGEST_VISION_MODEL or the "
               "text model's settings (see `run`)", file=sys.stderr)
         return 2
-    llm = EnrichmentSession(cfg, Path(settings.cache_dir) if settings.cache_dir else out / ".cache",
+    llm = EnrichmentSession(cfg, shared_store(out, settings),
                             connect(cfg, args.llm_replay))
     if not args.no_preflight and not check_endpoint(llm):
         return 5
@@ -837,6 +841,8 @@ def configure(out: Path, args: argparse.Namespace) -> int:
     from .config import BY_KEY, SETTINGS, parse_setting, shown
 
     action = args.action or "show"
+    if action in ("test", "models"):
+        return check_config(out, action, getattr(args, "filter", None))
     if action == "show":
         stored = stored_settings(out)
         print(f"settings of {out}" + ("" if State.exists(out) else " (no tree yet: the defaults)"))
@@ -869,6 +875,117 @@ def configure(out: Path, args: argparse.Namespace) -> int:
     finally:
         state.close()
     return 0
+
+
+def check_config(out: Path, action: str, text: str | None) -> int:
+    """`config test` and `config models` (plan CF-03), on the tree's models at $OPENAI_BASE_URL."""
+    from . import checks
+
+    settings = TreeSettings.from_stored(stored_settings(out))
+    cfg = llm_config(settings)
+    if cfg is None:
+        return 2
+    endpoint = cfg.base_url or "https://api.openai.com/v1 (OpenAI; $OPENAI_BASE_URL not set)"
+    print(f"endpoint: {endpoint}; key: $OPENAI_API_KEY " + ("set" if os.environ.get("OPENAI_API_KEY") else "not set"))
+    client = make_client(cfg)
+    if action == "models":
+        try:
+            models = client.models()
+        except Exception as e:  # what the endpoint says
+            print(f"error: the endpoint lists no models: {type(e).__name__}: {e}", file=sys.stderr)
+            return 5
+        calibrated = set()
+        if State.exists(out):
+            st = State(out)
+            calibrated = {r["model"] for r in st.calibrations()}
+            st.close()
+        for model, created in models:
+            if text and text.lower() not in model.lower():
+                continue
+            marks = [m for m, on in (("text model", model == cfg.text_model), ("vision model", model == cfg.vision_model),
+                                     ("calibrated", model in calibrated)) if on]
+            print(f"  {model}" + (f"  [{', '.join(marks)}]" if marks else ""))
+        return 0
+    if not cfg.enabled:
+        print("error: no model is set: `cameo-ingest config set text-model NAME` (and vision-model, if another "
+              "model reads images), or `config set llm off`", file=sys.stderr)
+        return 2
+    failed = False
+    note_models(out, client, cfg)
+    for c in checks.run_checks(client, cfg):
+        print(f"  {'ok  ' if c.ok else 'FAIL'} {c.name}: {c.detail} ({c.seconds:.1f} s)")
+        failed |= not c.ok and not c.name.startswith("the endpoint lists")
+    if failed:
+        print("A check failed: see OPENAI_BASE_URL, OPENAI_API_KEY, and `config set text-model` or `vision-model`.",
+              file=sys.stderr)
+    return 5 if failed else 0
+
+
+def note_models(out: Path, client: Any, cfg: LLMConfig) -> None:
+    """Record, in the tree, the creation time the endpoint gives each configured model, and warn
+    when it has changed: a model's identity is its endpoint and id, and this time is the only sign
+    the endpoint gives that another model now answers to the id (plan CF-03)."""
+    if not State.exists(out):
+        return
+    try:
+        created = dict(client.models())
+    except Exception:  # an endpoint that lists no models: nothing to compare
+        return
+    st = State(out)
+    try:
+        for model in dict.fromkeys(m for m in (cfg.text_model, cfg.vision_model) if m):
+            key, now = f"model:{cfg.base_url or ''}|{model}", created.get(model)
+            if now is None:
+                continue
+            before = st.meta(key)
+            if before is not None and before != str(now):
+                log.warning("%s at this endpoint reports another creation time (%s, was %s): it may be another "
+                            "model under the same id", model, now, before)
+            st.set_meta(key, str(now))
+    finally:
+        st.close()
+
+
+def shared_store(out: Path, settings: TreeSettings) -> Path:
+    """The LLM store's directory (`config.store_dir`), with a tree's own store from before 0.20.2
+    copied into it once, so that nothing it paid for is asked again (plan CF-04)."""
+    from .config import store_dir
+    from .llm import STORE_FILE
+
+    store = store_dir(settings.cache_dir)
+    old = out / ".cache" / STORE_FILE
+    if not old.is_file() or not State.exists(out) or old.resolve() == (store / STORE_FILE).resolve():
+        return store
+    st = State(out)
+    try:
+        if st.meta("store_adopted") is None:
+            import sqlite3
+
+            from .llm import ResponseStore
+
+            ResponseStore(store / STORE_FILE).close()  # its tables, if it is new
+            db = sqlite3.connect(store / STORE_FILE)
+            db.execute("ATTACH DATABASE ? AS old", (str(old),))
+            for table in ("responses", "requests"):  # the columns both have: an old store may lack some
+                main_cols = [r[1] for r in db.execute(f"PRAGMA main.table_info({table})")]
+                old_cols = {r[1] for r in db.execute(f"PRAGMA old.table_info({table})")}
+                cols = ", ".join(c for c in main_cols if c in old_cols)
+                if cols:
+                    db.execute(f"INSERT OR IGNORE INTO main.{table} ({cols}) SELECT {cols} FROM old.{table}")
+            db.commit()
+            db.close()
+            st.set_meta("store_adopted", str(store))
+            log.warning("copied this tree's LLM answers (%s) into the shared store, %s", old, store)
+    finally:
+        st.close()
+    return store
+
+
+def make_client(cfg: LLMConfig) -> Any:
+    """The endpoint's client, for checks (tests replace it)."""
+    from .llm import OpenAIChat
+
+    return OpenAIChat(cfg)
 
 
 def tree_of(out: Path | None) -> Path:
@@ -918,7 +1035,7 @@ def main(argv: list[str] | None = None) -> int:
         from . import quality
 
         state = State(out)
-        cache = Path(TreeSettings.from_stored(state.settings()).cache_dir or out / ".cache")
+        cache = shared_store(out, TreeSettings.from_stored(state.settings()))
         state.close()
         try:
             set_dir = quality.sample(out, cache, n=args.n, seed=args.seed, kinds=args.kind)
