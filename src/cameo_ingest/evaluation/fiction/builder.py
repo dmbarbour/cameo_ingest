@@ -98,6 +98,7 @@ class Project:
         self.ends: dict[str, tuple[str, str]] = {}  # relationship key -> (source key, target key)
         self.parts: dict[str, list[tuple[str, str, str]]] = {}  # block -> [(part key, name, type key)]
         self.ports: dict[str, dict[str, str]] = {}  # block -> port name -> port key
+        self.shown: dict[str, list[str]] = {}  # diagram -> the members its blocks show (plan IS)
         self.values: dict[str, dict[str, str]] = {}  # block -> value name -> property key
         self.connectors: dict[str, list[str]] = {}  # block -> connector keys
         self.flows: dict[str, list[tuple[str, str, str]]] = {}  # behavior -> [(edge key, source, target)]
@@ -411,6 +412,18 @@ class Project:
     def _diagram(self, key: str, name: str, kind: str, owner: str, shapes: list[_Shape],
                  paths: list[tuple[str, str, str, str]]) -> str:
         stream = f"BINARY-{self.prefix}-{slug(key)}"
+
+        def drawn(s: _Shape) -> list[str]:
+            return [s.element] + [e for n in s.nested for e in drawn(n)]
+
+        # The elements the diagram uses, as Cameo saves them (plan IS): what it draws, then what its
+        # blocks show in their compartments (values, parts, ports).
+        elements = list(dict.fromkeys([e for s in shapes for e in drawn(s)] + [el for _, el, _, _ in paths]))
+        members = [k for e in elements for k in (*self.values.get(e, {}).values(),
+                                                  *(pk for pk, _, _ in self.parts.get(e, [])),
+                                                  *self.ports.get(e, {}).values())]
+        used = "".join(f"<usedObjects href='#{self.id(e)}'/>" for e in dict.fromkeys(elements + members))
+        self.shown[key] = members
         self.nodes[owner].children.append(
             "<xmi:Extension extender='MagicDraw UML 2024x'><modelExtension>"
             f"<ownedDiagram xmi:type='uml:Diagram' xmi:id='{self.id(key)}' name={quoteattr(name)} "
@@ -418,7 +431,7 @@ class Project:
             "<xmi:Extension extender='MagicDraw UML 2024x'><diagramRepresentation>"
             "<diagram:DiagramRepresentationObject xmlns:diagram='http://www.nomagic.com/ns/magicdraw/core/diagram/1.0' "
             f"type={quoteattr(kind)} umlType={quoteattr(DIAGRAM_TYPES[kind])}>"
-            f"<diagramContents><binaryObject streamContentID='{stream}'/></diagramContents>"
+            f"<diagramContents><binaryObject streamContentID='{stream}'/>{used}</diagramContents>"
             "</diagram:DiagramRepresentationObject></diagramRepresentation></xmi:Extension>"
             "</ownedDiagram></modelExtension></xmi:Extension>")
         self.names[key], self.kinds[key] = name, "Diagram"
