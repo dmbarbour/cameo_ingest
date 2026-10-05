@@ -31,9 +31,9 @@ Ranked on 2026-10-04: easy and valuable first. The items are described in the se
   descriptions. A reading of descriptions where they apply (sequence diagrams, TMT's collaborator
   views) would show whether they matter.
 
-**Review (ADR-0027):** the switches for heuristics that predate the decision that heuristics are
-defaults, not switches: `--threads`, `--hierarchies`, `--cross-index` and `--line-refs`. Each could
-become a fixed, measured default.
+**Review (ADR-0027):** done (2026-10-05). `--threads`, `--hierarchies`, `--cross-index` and
+`--line-refs` are retired for their measured defaults; `scripts/assemble_tree.py` varies them for
+measurement.
 
 **Later:**
 - the judge panel and ratings;

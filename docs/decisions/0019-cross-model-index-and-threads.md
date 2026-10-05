@@ -1,6 +1,7 @@
 # ADR-0019: An index of identifiers across models, and requirement threads
 
-- **Status:** Accepted, 2026-10-01 (plan RF; the maintainer's answers 1 to 5).
+- **Status:** Accepted, 2026-10-01 (plan RF; the maintainer's answers 1 to 5). The switches were
+  retired on 2026-10-05: the defaults below are fixed (ADR-0027).
 - **Sources:**
   - `docs/archive/plans/related-facts-2026-10-01.md`;
   - `docs/research/related-facts-2026-10-01.md`;
@@ -18,12 +19,11 @@
 ## Decision
 
 - **The identifier index:** `CROSSREF.md` and `index:id` chunks list every identifier held by two
-  or more elements, across all models, with each place. It is on by default (`--no-cross-index`).
+  or more elements, across all models, with each place. It is on.
 - **Threads:** derivation trees of requirements, with what satisfies and verifies them, are
-  `trace:thread` chunks. They are on by default (`--no-threads`), since they cost nothing
-  measurable. Each project also has a `THREADS.md`.
-- **Line references** (`[project:chunk]` on each line of an assembled chunk) are off by default
-  (`--line-refs`).
+  `trace:thread` chunks. They are on, since they cost nothing measurable. Each project also has a
+  `THREADS.md`.
+- **Line references** (`[project:chunk]` on each line of an assembled chunk) are off.
 
 ## Evidence
 

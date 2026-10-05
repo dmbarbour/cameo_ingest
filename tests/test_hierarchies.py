@@ -5,6 +5,9 @@ import json
 from fixture_model import EXTERNAL, LAYOUT_EXTERNAL, MODEL_EXTERNAL, make_mdzip
 from helpers import check_invariants, ingest, project_dir
 
+from cameo_ingest import exports
+from cameo_ingest.state import State
+
 
 def gen(key: str, general: str) -> str:
     target = f"<general href='{general}'/>" if "#" in general else ""
@@ -38,7 +41,7 @@ def model() -> str:
 def test_hierarchies(tmp_path):
     """Each kind once, under its first general, level by level, with its kind word and the first
     sentence of its documentation; a second general named; alike leaves on one line; a general
-    outside the project roots the kinds that specialize it; chunks behind the tree's switch."""
+    outside the project roots the kinds that specialize it; chunks unless a developer leaves them out."""
     out = ingest(tmp_path, ("drone.mdzip", make_mdzip(model(), LAYOUT_EXTERNAL, EXTERNAL)))
     check_invariants(out)
     proj = project_dir(out)
@@ -64,7 +67,8 @@ def test_hierarchies(tmp_path):
     assert "- Doppler Radar (Class); also a kind of Sensor" in det["text"] and "[" not in det["text"].split("\n", 1)[1]
     assert det["metadata"]["element_id"] == "det" and "doppler" in det["metadata"]["element_ids"]
 
-    off = ingest(tmp_path / "off", ("drone.mdzip", make_mdzip(model(), LAYOUT_EXTERNAL, EXTERNAL)),
-                 args=("--no-llm", "--no-hierarchies"))
-    assert not any(json.loads(line)["metadata"]["kind"] == "index:hierarchy" for line in (off / "chunks.jsonl").open())
-    assert (project_dir(off) / "HIERARCHIES.md").is_file()  # the page, either way
+    state = State(out)
+    exports.rebuild(state, out, exports.Assembly(hierarchies=False))  # as scripts/assemble_tree.py does
+    state.close()
+    assert not any(json.loads(line)["metadata"]["kind"] == "index:hierarchy" for line in (out / "chunks.jsonl").open())
+    assert (proj / "HIERARCHIES.md").is_file()  # the page, either way

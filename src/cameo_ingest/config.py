@@ -58,10 +58,6 @@ class TreeSettings:
     calibrate: bool = True  # calibrate to the vision model (plan VA) and the text model (plan TC)
     rag_files: bool = True
     rag_source: str = "trace"  # or "id"
-    cross_index: bool = True
-    threads: bool = True
-    hierarchies: bool = True  # type hierarchies in the tree's chunks (plan TH)
-    line_refs: bool = False
 
     @classmethod
     def from_stored(cls, stored: dict[str, Any]) -> TreeSettings:

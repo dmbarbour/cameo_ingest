@@ -10,7 +10,7 @@
     CROSSREF.md       identifiers (requirement ids, ids in text) held by two elements or more,
                       across every model, with each place (plan RF-03); also as index:id chunks.
                       Each model's derivation trees (RF-05), made with the project, join its
-                      chunks as trace:thread chunks when the tree's setting is on
+                      chunks as trace:thread chunks, as do its type hierarchies (TH) as index:hierarchy chunks
     rag/              the same chunks as files, for RAG tools that read files rather than
                       JSONL: text/<project>/<sha256>.txt, each
                       ending with a source line (project and trace), and meta/<project>/
@@ -25,7 +25,7 @@ import json
 import re
 import shutil
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -67,23 +67,37 @@ def _merged_metadata(seen: list[dict[str, Any]]) -> dict[str, list[str]]:
     return {k: sorted(v) for k, v in sorted(merged.items())}
 
 
+@dataclass(frozen=True)
+class Assembly:
+    """What the tree's own chunks bring together, beyond each project's. Fixed defaults, measured
+    (ADR-0027): users don't set them. A developer varies them to measure a change
+    (`scripts/assemble_tree.py`), and the next run puts the defaults back."""
+
+    cross_index: bool = True  # the index of identifiers across models (plan RF, ADR-0019)
+    threads: bool = True  # requirement threads (plan RF, ADR-0019)
+    hierarchies: bool = True  # type hierarchies (plan TH, ADR-0026)
+    line_refs: bool = False  # a chunk reference on each line: it costs completeness (plan RF)
+
+
 @dataclass
 class Tree:
     """What the root files are made from: every project's status, the written ones, where each
-    was found, and the tree's settings."""
+    was found, the tree's settings, and what its chunks bring together."""
 
     out: Path
     rows: list[Any]  # project_status
     written: dict[str, Any]  # content sha256 -> its row
     seen: dict[str, list[dict[str, Any]]]  # content sha256 -> its sightings
     settings: TreeSettings
+    assembly: Assembly = field(default_factory=Assembly)
 
 
-def rebuild(state: State, out: Path) -> None:
+def rebuild(state: State, out: Path, assembly: Assembly | None = None) -> None:
     """Every root file, one function each (AR-014R1)."""
     rows = state.project_rows()
     tree = Tree(out, rows, {r["content_sha256"]: r for r in state.written()},
-                {r["sha256"]: sightings(state, r["sha256"]) for r in rows}, TreeSettings.from_stored(state.settings()))
+                {r["sha256"]: sightings(state, r["sha256"]) for r in rows}, TreeSettings.from_stored(state.settings()),
+                assembly or Assembly())
     write_manifest(tree, state)
     write_provenance(tree)
     index_rows = write_index_page(tree)
@@ -153,7 +167,7 @@ def write_index_page(tree: Tree) -> list[tuple[str, str]]:
 def cross_index(tree: Tree) -> list[dict[str, Any]]:
     """The index of identifiers across the models (plan RF-03): CROSSREF.md, and its entries as
     chunks; or neither, when the tree's setting is off."""
-    if not tree.settings.cross_index:
+    if not tree.assembly.cross_index:
         if (tree.out / crossref.FILE).exists():
             (tree.out / crossref.FILE).unlink()
         return []
@@ -164,33 +178,33 @@ def cross_index(tree: Tree) -> list[dict[str, Any]]:
     fm = front_matter({"title": "Identifiers across the models in this tree", "kind": "crossref",
                        "provenance": {"tool": TOOL, "derivation": "assembled", "projects": len(tree.written)}})
     (tree.out / crossref.FILE).write_text(fm + crossref.page(merged), encoding="utf-8")
-    return crossref.entries(merged, refs=tree.settings.line_refs)
+    return crossref.entries(merged, refs=tree.assembly.line_refs)
 
 
 def thread_chunks(tree: Tree) -> dict[str, list[dict[str, Any]]]:
     """Each project's threads (plan RF-05), as chunks, by content sha256: made at build time with
     the project, included when the tree's setting is on (AR-014R2)."""
-    if not tree.settings.threads:
+    if not tree.assembly.threads:
         return {}
     out = {}
     for sha, p in tree.written.items():
         path = tree.out / PROJECTS / sha / "index" / "threads.jsonl"
         records = [json.loads(line) for line in path.open(encoding="utf-8")] if path.is_file() else []
         out[sha] = crossref.thread_chunks(records, ContentInfo(sha, p["name"]),
-                                          refs=tree.settings.line_refs)
+                                          refs=tree.assembly.line_refs)
     return out
 
 
 def hierarchy_chunks(tree: Tree) -> dict[str, list[dict[str, Any]]]:
     """Each project's type hierarchies (plan TH), as chunks, by content sha256: made at build time
     with the project, included when the tree's setting is on."""
-    if not tree.settings.hierarchies:
+    if not tree.assembly.hierarchies:
         return {}
     out = {}
     for sha, p in tree.written.items():
         path = tree.out / PROJECTS / sha / "index" / "hierarchies.jsonl"
         records = [json.loads(line) for line in path.open(encoding="utf-8")] if path.is_file() else []
-        out[sha] = hierarchies.hierarchy_chunks(records, ContentInfo(sha, p["name"]), refs=tree.settings.line_refs)
+        out[sha] = hierarchies.hierarchy_chunks(records, ContentInfo(sha, p["name"]), refs=tree.assembly.line_refs)
     return out
 
 

@@ -47,7 +47,7 @@ def _first_sentence(text: str) -> str:
 def project_hierarchies(view: ProjectView, chunk_of: dict[str, str]) -> list[dict[str, Any]]:
     """The project's type hierarchies, from the in-memory model: the records of its
     `index/hierarchies.jsonl`, each a line per kind, as text without and with the chunk references
-    that `--line-refs` adds."""
+    (`exports.Assembly.line_refs`, off)."""
     ix = view.ix
     generals: dict[str, list[str]] = defaultdict(list)  # a kind -> its generals, in the model's order
     specifics: dict[str, list[str]] = defaultdict(list)  # a general -> its kinds

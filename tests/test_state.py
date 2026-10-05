@@ -73,8 +73,8 @@ def test_settings_and_options():
     from cameo_ingest.config import MODULES, ProjectOptions, TreeSettings, parse_modules
     from cameo_ingest.provenance import sha256_text
 
-    s = TreeSettings.from_stored({"threads": False, "chunk_style": "markdown", "text_model": None})
-    assert s.threads is False and s.cross_index is True and s.stored() == {"threads": False}
+    s = TreeSettings.from_stored({"rag_files": False, "threads": False, "chunk_style": "markdown", "text_model": None})
+    assert s.rag_files is False and s.rag_source == "trace" and s.stored() == {"rag_files": False}
     assert parse_modules(None) == MODULES and parse_modules("0:1:2") == (0, 1, 2)
     with pytest.raises(ValueError):
         parse_modules("25:6")

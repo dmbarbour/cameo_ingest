@@ -33,5 +33,9 @@ maintainer declined:
 ## Consequences
 
 - New heuristics come with a measurement and a default, and no flag.
-- The existing switches for heuristics (`--threads`, `--hierarchies`, `--cross-index`,
-  `--line-refs`) predate this decision. They are to be reviewed (roadmap).
+- The switches for heuristics that predated this decision (`--threads`, `--hierarchies`,
+  `--cross-index`, `--line-refs`) were retired on 2026-10-05, each for its measured default: the
+  index across models (coverage@10 0.77 to 0.97, ADR-0019), threads (no measurable cost) and
+  hierarchies (ADR-0026) are on; line references, which cost completeness, are off. They are
+  `exports.Assembly`, which `scripts/assemble_tree.py` varies for measurement. A tree that
+  remembers one is told it is ignored, and the CLI no longer takes them.

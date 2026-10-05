@@ -54,6 +54,8 @@ An output tree remembers these choices, so later runs need no flags."""
 # Run settings an output tree remembers (never secrets: --env names a file), from their flags;
 # --no-llm and --render are read apart.
 SETTINGS = tuple(f.name for f in fields(TreeSettings) if f.name not in ("no_llm", "render"))
+# Settings a tree may remember from an older version, now fixed defaults (ADR-0027, 2026-10-05).
+RETIRED = ("cross_index", "threads", "hierarchies", "line_refs")
 
 PROGRESS_LOGGER = "cameo_ingest.progress"
 _handlers: list[logging.Handler] = []  # ours, replaced when main() runs again (as in tests)
@@ -177,17 +179,6 @@ def build_parser() -> argparse.ArgumentParser:
     flag_pair(g, "rag-files", "write rag/: every chunk as a .txt file, ending with its source and trace, for RAG "
               "tools that read files but not JSONL", "do not write rag/ (chunks.jsonl has the same chunks)",
               default=True)
-    flag_pair(g, "cross-index", "index identifiers across every model in the tree: CROSSREF.md and index:id chunks",
-              "no index across the models", default=True)
-    flag_pair(g, "hierarchies", "include each model's type hierarchies: every kind of a general, level by level "
-              "(HIERARCHIES.md and index/hierarchies.jsonl have them either way)",
-              "leave the hierarchies out of the tree's chunks", default=True)
-    flag_pair(g, "threads", "include each model's derivation trees of requirements, with what satisfies and "
-              "verifies them, in the tree's chunks and rag/, as trace:thread chunks (each project's THREADS.md "
-              "has them either way)", "leave the threads out of the tree's chunks", default=True)
-    flag_pair(g, "line-refs", "end each line of an assembled chunk (an index entry, a thread) with a short reference "
-              "to its source chunk, [project:chunk], not only to its project; the references lengthen entries, so "
-              "fewer fit one window whole", "each line names only its project, by short id", default=False)
     g.add_argument("--rag-source", choices=("trace", "id"),
                    help="what the source line of every file in rag/ says: the project and trace locator (trace, the "
                         "default), or short ids that rag/meta/_sources.json and chunks.jsonl resolve to files and "
@@ -489,6 +480,10 @@ def effective_settings(args: argparse.Namespace, stored: dict[str, Any]) -> Tree
     s = dict(stored)
     if s.pop("chunk_style", None) == "markdown":  # retired in 0.6.0 (plan RA-02)
         log.warning("the Markdown chunk style is retired: this tree's chunks will be plain text")
+    retired = [k for k in RETIRED if s.pop(k, None) is not None]
+    if retired:  # heuristics are defaults, not settings (ADR-0027)
+        log.warning("this tree remembers settings that are now fixed defaults, and ignores them: %s",
+                    ", ".join(sorted(retired)))
     for key in SETTINGS:
         v = getattr(args, key, None)
         if v is not None:

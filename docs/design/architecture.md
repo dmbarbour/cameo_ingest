@@ -27,7 +27,7 @@ export ─► catalog ─► workbook / searchpage
   4. the images page, and every page and table.
 - **The contract** between a project's build and the tree's rebuild is three files per project:
   `index/chunks.jsonl`, `index/ids.jsonl` and `index/threads.jsonl` (with `index/catalog.jsonl`
-  for the exports). Tree switches apply at rebuild (ADR-0004).
+  for the exports). Tree switches (`rag/` and its form) apply at rebuild (ADR-0004).
 
 ## Modules
 

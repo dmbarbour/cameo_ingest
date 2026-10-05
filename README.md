@@ -280,7 +280,7 @@ out/
   chunks.jsonl           all projects' chunks, with --meta values joined in
   CROSSREF.md            identifiers across every model: each requirement id, and each id in
                          names, text, documentation and tagged values, held by two elements or
-                         more, with every place (also index:id chunks; --no-cross-index)
+                         more, with every place (also index:id chunks)
   rag/                   the same chunks as files, for RAG tools that read files but not JSONL
                          (see "Using the output for RAG"); --no-rag-files leaves it out
     text/<project>/      a .txt file per chunk, named <sha256 of its text>.txt
@@ -425,9 +425,9 @@ requirement ids, relationships and the smaller embedding models, at half the tok
 | `ledger:projects` | One line per project in the tree, with where it was found; `metadata.tokens` row by row | "Which models came from supplier X?" |
 | `generated:*` | LLM summaries and descriptions (`provenance.derivation.method = "llm"`) | Extra recall; weight or filter them separately |
 | `generated:module_description` | One module of a large diagram. `metadata.covers` locates it: `number` and `of`, the legend's shape numbers (`shapes`), `elements`, its `box` in diagram coordinates, the page `anchor` and the `image` | "What does this part of the activity do?" |
-| `index:id` | An identifier (a requirement id, or an id cited in text) and every place it occurs, across every model in the tree: what holds it, how (its id, in its text, satisfies it, is derived from it…), a snippet, and the project's short id (`[9ffd7a2c]`; with `--line-refs`, the place's chunk too, `[9ffd7a2c:14d101e0b1d2]`). One entry per id held by two elements or more | "Which models address RWT-REG-002?", "What cites PCT-SYS-0302?" |
-| `trace:thread` | A model's derivation tree from one requirement: what derives from it, level by level, with what satisfies, verifies or refines each (`--no-threads` leaves them out) | "Which tests verify the requirements derived from SN-02?" |
-| `index:hierarchy` | A model's type hierarchy from one general: its kinds, level by level, each with its kind word and the first sentence of its documentation (`--no-hierarchies` leaves them out; `HIERARCHIES.md` has them for reading) | "What kinds of vehicle detector does the model define?" |
+| `index:id` | An identifier (a requirement id, or an id cited in text) and every place it occurs, across every model in the tree: what holds it, how (its id, in its text, satisfies it, is derived from it…), a snippet, and the project's short id (`[9ffd7a2c]`). One entry per id held by two elements or more | "Which models address RWT-REG-002?", "What cites PCT-SYS-0302?" |
+| `trace:thread` | A model's derivation tree from one requirement: what derives from it, level by level, with what satisfies, verifies or refines each | "Which tests verify the requirements derived from SN-02?" |
+| `index:hierarchy` | A model's type hierarchy from one general: its kinds, level by level, each with its kind word and the first sentence of its documentation (`HIERARCHIES.md` has them for reading) | "What kinds of vehicle detector does the model define?" |
 | `generated:module_summary` | One part (or run of parts) of a large package. `metadata.covers` gives `number` to `last` of `of`, the `elements` it covers and the page `anchor` | "Which part of the requirements covers pointing?" |
 
 In the root `chunks.jsonl`, `metadata.source_metadata` holds the `--meta` values of every

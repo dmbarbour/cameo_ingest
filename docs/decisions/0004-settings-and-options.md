@@ -1,6 +1,7 @@
 # ADR-0004: Tree settings, project options, and versions
 
-- **Status:** Accepted, 2026-09-29 to 2026-10-02.
+- **Status:** Accepted, 2026-09-29 to 2026-10-02. The switches `cross-index`, `threads`, `hierarchies`
+  and `line-refs` were retired on 2026-10-05 for fixed defaults (ADR-0027).
 - **Sources:**
   - plan RI (flags become settings);
   - AR-013R1 and R2;
@@ -20,8 +21,7 @@ project's own files contain, and must make the project again when they change.
     a default that changes with the tool.
   - Flags given on a run become the settings. The rule of BASE-020 (name a model or pass
     `--no-llm`) applies only while a tree has none.
-  - Switches (`rag-files`, `cross-index`, `threads`, `line-refs`, `rag-source`) apply to the whole
-    tree when the root files are rebuilt.
+  - Switches (`rag-files`, `rag-source`) apply to the whole tree when the root files are rebuilt.
 - **`config.ProjectOptions`:** what changes a project's output, hashed into its identity:
   - rendering, models, call budget, pixel budget, modules, sketch sizes and image order;
   - the versions of the prompt templates in use.

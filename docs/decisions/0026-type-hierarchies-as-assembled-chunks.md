@@ -1,6 +1,7 @@
 # ADR-0026: Type hierarchies as assembled chunks, beside threads
 
-- **Status:** Accepted, 2026-10-04 (plan TH; the maintainer asked for them "esp. for search").
+- **Status:** Accepted, 2026-10-04 (plan TH; the maintainer asked for them "esp. for search"). The
+  switch was retired on 2026-10-05: hierarchy chunks are always on (ADR-0027).
 - **Sources:**
   - `docs/archive/plans/type-hierarchies-2026-10-04.md`;
   - `docs/research/type-hierarchies-2026-10-04.md`;
@@ -20,8 +21,8 @@ some are kinds of a kind) has its answer spread over several chunks, none of whi
   - rooted at a general with no general in the project, or at a type outside it that two or more
     of its kinds specialize;
   - cut into parts that repeat their ancestors, as threads are (ADR-0019).
-- **A tree-wide switch**, `--hierarchies`, on by default. Each project keeps
-  `index/hierarchies.jsonl` and `HIERARCHIES.md` either way.
+- **In the tree's chunks,** always. Each project keeps `index/hierarchies.jsonl` and
+  `HIERARCHIES.md`.
 
 ## Consequences
 

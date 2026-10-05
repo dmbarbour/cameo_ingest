@@ -180,22 +180,48 @@ def test_rag_files(tmp_path):
     assert not rag.exists()
 
 
-def test_tree_switches(tmp_path):
-    """Each tree-level switch works alone and with the others, run after run (AR-001)."""
+def test_tree_switches(tmp_path, caplog):
+    """The tree's switch for rag/ works run after run; what its chunks bring together is fixed,
+    varied only by the developer's script, alone and together (AR-001, ADR-0027)."""
+    import importlib.util
+    from pathlib import Path
+
+    from cameo_ingest.state import State
+
+    spec = importlib.util.spec_from_file_location("assemble_tree",
+                                                  Path(__file__).parent.parent / "scripts" / "assemble_tree.py")
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     out = tmp_path / "out"
     assert main([str(src), "-o", str(out), "--no-llm", "--no-render"]) == 0
-    for index in (True, False):
-        for threads in (True, False):
-            for rag in (True, False):
-                flags = ["--cross-index" if index else "--no-cross-index", "--threads" if threads else "--no-threads",
-                         "--rag-files" if rag else "--no-rag-files"]
-                assert main(["run", "-o", str(out), *flags]) == 0, flags
-                kinds = {json.loads(line)["metadata"]["kind"] for line in (out / "chunks.jsonl").open()}
-                assert (out / "CROSSREF.md").exists() == index, flags
-                assert ("index:id" in kinds) == index and (out / "rag").exists() == rag, flags
-                assert threads or "trace:thread" not in kinds, flags
+    for rag in (True, False, True):
+        assert main(["run", "-o", str(out), "--rag-files" if rag else "--no-rag-files"]) == 0
+        assert (out / "rag").exists() == rag
+
+    def kinds():
+        return {json.loads(line)["metadata"]["kind"] for line in (out / "chunks.jsonl").open()}
+
+    full = kinds()
+    assert "index:id" in full and (out / "CROSSREF.md").exists()  # the drone derives nothing: no threads
+    for without in (["cross-index"], ["threads"], ["cross-index", "threads", "hierarchies"]):
+        assert script.main([str(out), "--without", *without]) == 0
+        assert ("index:id" in kinds()) == ("cross-index" not in without), without
+        assert (out / "CROSSREF.md").exists() == ("cross-index" not in without), without
+        assert "threads" not in without or "trace:thread" not in kinds(), without
+    assert script.main([str(out), "--line-refs"]) == 0
+    entry = next(json.loads(line) for line in (out / "chunks.jsonl").open()
+                 if json.loads(line)["metadata"]["kind"] == "index:id")
+    assert re.search(r"\[[0-9a-f]{8}:[0-9a-f]{12}\]", entry["text"]), entry["text"]
+
+    # A tree that remembers a retired switch is told, and the next run puts the defaults back.
+    state = State(out)
+    state.save_settings({**state.settings(), "threads": False, "line_refs": True})
+    state.close()
+    assert main(["run", "-o", str(out)]) == 0
+    assert "now fixed defaults, and ignores them: line_refs, threads" in caplog.text
+    assert kinds() == full and "threads" not in State(out).settings()
 
 
 def test_ledger(tmp_path):

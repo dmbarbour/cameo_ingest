@@ -223,7 +223,7 @@ def project_threads(view: ProjectView, chunk_of: dict[str, str]) -> list[dict[st
     a requirement that others derive from, and nothing above it, down through what derives from it
     (to THREAD_DEPTH levels), each with what satisfies, verifies and refines it. The records of the
     project's `index/threads.jsonl`: a line per requirement, as text without and with the chunk
-    references that `--line-refs` adds. Models without derive relationships have none."""
+    references (`exports.Assembly.line_refs`, off). Models without derive relationships have none."""
     ix = view.ix
     reqs = {el.id: req for el in ix.elements.values() if (req := sem.requirement(ix, el)) is not None}
     children: dict[str, list[str]] = defaultdict(list)

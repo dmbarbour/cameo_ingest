@@ -155,8 +155,8 @@ ADR-0019 (`crossref.py`).
   - each line adds what satisfies, verifies, refines, traces and allocates it;
   - requirement text is cut at 120 characters;
   - parts repeat their ancestors;
-  - each project writes `index/threads.jsonl` and `THREADS.md`, and the tree switch decides only
-    whether `chunks.jsonl` and `rag/` include them.
+  - each project writes `index/threads.jsonl` and `THREADS.md`, and the tree's `chunks.jsonl`
+    and `rag/` include them.
 - **Type hierarchies** (`hierarchies.py`, plan TH, ADR-0026):
   - a root is a general with no general in the project, or a general outside it (a library's
     type) that two or more of its kinds specialize, "(outside this project)";
@@ -166,12 +166,18 @@ ADR-0019 (`crossref.py`).
   - alike leaves share a line ("10 kinds of this name": a model's runs of one analysis);
   - at least 3 kinds; no depth limit, since parts repeat their ancestors (NIST's 1,005 kinds come
     in 75 parts);
-  - each project writes `index/hierarchies.jsonl` and `HIERARCHIES.md`, and `--hierarchies` (on)
-    decides whether `chunks.jsonl` and `rag/` include them, as `index:hierarchy`;
+  - each project writes `index/hierarchies.jsonl` and `HIERARCHIES.md`, and the tree's
+    `chunks.jsonl` and `rag/` include them, as `index:hierarchy`;
   - on Port Calder's fictional hierarchy, they hold answers that span levels, which no element
     chunk holds, and cost the 210 standing questions nothing
     (`docs/research/type-hierarchies-2026-10-04.md`).
-- **Line references** (`--line-refs`, off) end each line with `[project:chunk]`.
+- **Line references** (`[project:chunk]` on each line) are off: they cost completeness (plan RF).
+  The projects' records hold each line with and without one.
+- **Fixed, not settings** (ADR-0027): the index across models, threads and hierarchies are on,
+  and line references off, in `exports.Assembly`. To measure a change, `scripts/assemble_tree.py`
+  rebuilds a copy of a tree with any of them changed (`--without threads`, `--line-refs`); the
+  next run puts the defaults back. A tree that remembers one of the old switches is told it is
+  ignored.
 
 ## Reproducibility
 
