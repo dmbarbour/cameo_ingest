@@ -179,3 +179,131 @@ def natural(tree: Path, llm: EnrichmentSession, per_project: int = 6, seed: int 
 
     with ThreadPoolExecutor(concurrency) as pool:
         return [q for q in pool.map(ask, chunks) if q is not None]
+
+
+# -- Where something is described (plan GS-08) ---------------------------------------------------
+WHERE_WRITER = Template(
+    id="eval-where-writer",
+    version=1,
+    purpose="Writes two questions asking where a package, diagram or behavior is described, a literal one and a "
+            "paraphrase, for the retrieval evaluation (plan GS-08).",
+    text=(
+        "Below is a part of a systems engineering model (UML/SysML, authored in Cameo), as a search index holds its "
+        "extracted text: a {{KIND}} of the model in {{PROJECT}}. People search a library of many unrelated models for "
+        "the part of a model that covers a topic. Write two questions that someone would ask to find this {{KIND}}:\n"
+        "1. literal: in the model's own terms, but without this {{KIND}}'s exact name;\n"
+        "2. paraphrase: in everyday words, with none of the model's names, identifiers or exact values.\n"
+        "Each asks where something is covered or described (\"Where is ... described?\", \"Which part of ... covers "
+        "...?\"), not for a single fact, and says which system it is about, though a description will do. Base them "
+        "on what the text shows; if it shows too little to tell what this {{KIND}} covers, say so.\n\n"
+        "Reply with JSON only: {\"literal\": \"...\", \"paraphrase\": \"...\"}, or {\"skip\": \"why\"}.\n\n"
+        "---\n{{PASSAGE}}"
+    ),
+    slots=(
+        Slot("KIND", "text", "'package', 'diagram', 'activity' or 'state machine'."),
+        Slot("PROJECT", "text", "the project's file name, without its extension."),
+        Slot("PASSAGE", "text", "the target's extracted chunk (its first part, or all parts), cut at 6,000 "
+                                "characters; never generated text."),
+    ),
+)
+_BEHAVIORS = {"uml:Activity": "activity", "uml:StateMachine": "state machine"}
+_SHAPES = re.compile(r"^Shapes \((\d+)\)", re.MULTILINE)
+
+
+def where_targets(tree: Path, fiction: int = 20, samples: int = 40, seed: int = 1) -> list[dict]:
+    """What questions about where something is described can be about (plan GS-08), from the
+    extracted chunks alone (an item's own and its details): packages with 5 members or more, diagrams with 3 shapes or more,
+    activities and state machines with a diagram. `fiction` from the fiction, `samples` from the
+    rest, at most 4 a project and two thirds of them undocumented. Each with the elements whose
+    chunks answer it (itself and its diagrams, or a diagram's behavior) and those that relate (its
+    owner), and its text for the writer."""
+    texts: dict[str, list[str]] = defaultdict(list)
+    meta: dict[str, dict] = {}
+    by_qn: dict[tuple[str, str], list[str]] = defaultdict(list)
+    diagrams_of: dict[tuple[str, str], list[str]] = defaultdict(list)
+    for line in (tree / "chunks.jsonl").open(encoding="utf-8"):
+        c = json.loads(line)
+        m = c["metadata"]
+        el, qn, content = m.get("element_id"), m.get("qualified_name"), m.get("content")
+        kind = m["kind"].removesuffix(":details")  # a large item's members and values are in its details
+        if kind not in ("package", "diagram", "element") or not el or not qn or not content:
+            continue
+        texts[el].append(c["text"])
+        if el not in meta and kind == m["kind"]:
+            meta[el] = m
+            by_qn[(content, qn)].append(el)
+            if kind == "diagram":
+                diagrams_of[(content, qn.rsplit("::", 1)[0])].append(el)
+    candidates = []
+    for el, m in meta.items():
+        content, qn, text = m["content"], m["qualified_name"], "\n\n".join(texts[el])
+        owner = qn.rsplit("::", 1)[0] if "::" in qn else None
+        parent = by_qn.get((content, owner), []) if owner else []
+        if m["kind"] == "package":
+            kind = "package"
+            members = text.split("Members:", 1)[1] if "Members:" in text else ""
+            if sum(line.startswith("- ") for line in members.splitlines()) < 5:
+                continue
+            answers, related = [el, *diagrams_of[(content, qn)]], parent
+        elif m["kind"] == "diagram":
+            kind = "diagram"
+            shapes = _SHAPES.search(text)
+            if not shapes or int(shapes.group(1)) < 3:
+                continue
+            behavior = [p for p in parent if meta[p].get("element_type") in _BEHAVIORS]
+            answers, related = [el, *behavior], [p for p in parent if p not in behavior]
+        elif m.get("element_type") in _BEHAVIORS and diagrams_of[(content, qn)]:
+            kind = _BEHAVIORS[m["element_type"]]
+            answers, related = [el, *diagrams_of[(content, qn)]], parent
+        else:
+            continue
+        candidates.append({"element_id": el, "kind": kind, "content": content, "project": m.get("project"),
+                           "qualified_name": qn, "documented": "\nDocumentation:" in text, "text": text,
+                           "answers": list(dict.fromkeys(answers)), "related": list(dict.fromkeys(related)),
+                           "origin": "fiction" if is_fictional(el) else "samples"})
+    rng = random.Random(seed)
+    candidates.sort(key=lambda t: t["element_id"])
+    rng.shuffle(candidates)
+    out = [t for t in candidates if t["origin"] == "fiction"][:fiction]
+    per_project: Counter[str] = Counter()
+    undocumented = round(samples * 2 / 3)
+    for want_doc, quota in ((False, undocumented), (True, samples - undocumented)):
+        taken = 0
+        for t in candidates:
+            if taken == quota:
+                break
+            if t["origin"] == "samples" and t["documented"] == want_doc and per_project[t["content"]] < 4:
+                out.append(t)
+                per_project[t["content"]] += 1
+                taken += 1
+    return out
+
+
+def where_questions(targets: list[dict], llm: EnrichmentSession, writer: str, concurrency: int = 6) -> list[dict]:
+    """Two questions per target from one writer (`llm`'s text model): literal and paraphrase,
+    graded by element (rule `element`). A target the writer skips gets none."""
+    short = re.sub(r"[^a-z0-9]+", "-", writer.split("/")[-1].lower()).strip("-")
+
+    def ask(t: dict) -> list[dict]:
+        project = (t["project"] or "").rsplit(".", 1)[0]
+        res = llm.ask(WHERE_WRITER, {"KIND": t["kind"], "PROJECT": project, "PASSAGE": plain(t["text"])[:6000]},
+                      project=t["content"], inputs=(t["element_id"],))
+        m = re.search(r"\{.*\}", res[0], re.DOTALL) if res else None
+        try:
+            reply = json.loads(m.group(0)) if m else {}
+        except json.JSONDecodeError:
+            return []
+        out = []
+        for style in ("literal", "paraphrase"):
+            text = str(reply.get(style) or "").strip()
+            if text:
+                out.append({"id": f"wq-{short}-{t['element_id']}-{style}", "rule": "element", "fact": f"wq-{t['element_id']}",
+                            "style": style, "category": "where", "difficulty": "medium", "question": text,
+                            "answers": t["answers"], "related": t["related"], "evidence": [], "prefix": "",
+                            "project_name": project, "writer": writer, "origin": t["origin"],
+                            "documented": t["documented"], "target_kind": t["kind"],
+                            "target": t["qualified_name"]})
+        return out
+
+    with ThreadPoolExecutor(concurrency) as pool:
+        return [q for qs in pool.map(ask, targets) for q in qs]

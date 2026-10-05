@@ -4,7 +4,7 @@
   support 'aboutness' and paraphrased searches, perhaps we shouldn't waste our budget on proper
   nouns or exact values"; "Yes, about should replace summaries").
 - **Sources:**
-  - `docs/plans/generated-for-search-2026-10-05.md`;
+  - `docs/archive/plans/generated-for-search-2026-10-05.md`;
   - `docs/research/generated-for-search-2026-10-05.md`;
   - ADR-0028, which this replaces for `rag/`; ADR-0011.
 
@@ -41,6 +41,13 @@
 - **On the whole tree** (the release check): where-is questions 0.593 → 0.772 (significant), the
   standing questions 0.793 → 0.780 (significant), against `rag/` without generated text; against
   0.19.0's requests, better wherever significant.
+- **Confirmed by others** (GS-08): 348 where-is questions by three writers (not gemma), 40 of 60
+  targets in real models; graded by construction and by judges: MRR@10 +0.06 to +0.12
+  (significant by every grading), most for paraphrases and undocumented models.
 - **Read on real models:** 20 of 20 package answers faithful; 19 of 20 diagram answers, one
   misreading a swimlane, several ending with a generic purpose the input doesn't state.
 - **Pages** say what a package or diagram is for, where they listed its names.
+
+## Changes
+
+- 2026-10-05: GS-08's confirmation by independent writers and judges. Before: `463e42e`.

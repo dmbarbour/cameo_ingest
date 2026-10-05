@@ -1,8 +1,7 @@
 # Plan: generated text that serves search, 2026-10-05
 
-- **Status:** In progress, started on 2026-10-05. CP1 to CP3 done. The maintainer: "Yes, about
-  should replace summaries. Please proceed with the experiment." GS-07: the release check is done;
-  stopped for the maintainer on what `rag/` holds.
+- **Status:** Done on 2026-10-05 (0.20.0), and retired to the archive that day. The maintainer:
+  "about should replace summaries"; option A for `rag/`; GS-08 for confidence.
 - **Step prefix:** `GS`, so steps are `GS-01`, `GS-02` and so on.
 - **Addresses:** the maintainer, 2026-10-05, after ADR-0028 left the LLM's summaries and diagram
   descriptions out of `rag/`:
@@ -83,7 +82,8 @@ of each project's options, so the projects it touches are written again). No use
 | GS-04 | **Questions about where something is described,** in the fiction: six, each literal and as a paraphrase, graded by element. A test that each answer's element exists and has a chunk. | Done: `fiction.where()`, `questions-gs.jsonl`; `tests/test_fiction.py::test_where_questions`. A unit's kind carries its class (`generated:summary#register`), so that a glob leaves a class out |
 | GS-05 | **Screening on the fiction** (each variant's tree a copy of `current/plain`'s, so that its calibration stays: text calibration probes with the module-summary template in use, and scores the names its answer covers, which an `about` answer leaves out by design; if one is adopted, the probe must change): a tree of the fiction alone for each variant (about 150 requests each); retrieval with each variant's chunks in `rag/` against without, on the 234 questions and GS-04's, and by class. | Measured (`docs/research/generated-for-search-2026-10-05.md`): `about/context` helps where-is questions most (hybrid reranked MRR@10 0.583 → 0.814, significant) and costs the standing questions least (0.791 → 0.783, not significant; e5-large reranked 0.798 → 0.785, significant). Classes don't sort helpful from crowding: leaving any out costs the where-is gain more than it saves. Stopped for the maintainer |
 | GS-06 | **A reading on real models:** each variant on two sample projects (the drone and a SAF model): 20 package answers and 20 diagram answers each, read for faithfulness and for what they add; the classes' spread. | Done for `about/context` (the maintainer: "about should replace summaries"): 20 of 20 package answers faithful; 19 of 20 diagram answers faithful in substance, one misreading a swimlane, several ending with a generic purpose the input doesn't state |
-| GS-07 | **The decision and a release check:** the variant and the classes that enter `rag/`; the whole tree built with them (about 5,700 requests), compared with the default; an ADR, the docs, a version. | In progress: `about/context` in use (0.20.0), its text on the pages; ADR-0029, the docs; the release check (`out/v020/on`): against 0.19.1, where-is questions 0.593 → 0.772 (hybrid reranked, significant), standing 0.793 → 0.780 (significant); against 0.19.0, better wherever significant. Stopped for the maintainer on what `rag/` holds |
+| GS-07 | **The decision and a release check:** the variant and the classes that enter `rag/`; the whole tree built with them (about 5,700 requests), compared with the default; an ADR, the docs, a version. | In progress: `about/context` in use (0.20.0), its text on the pages; ADR-0029, the docs; the release check (`out/v020/on`): against 0.19.1, where-is questions 0.593 → 0.772 (hybrid reranked, significant), standing 0.793 → 0.780 (significant); against 0.19.0, better wherever significant. The maintainer chose option A: its answers in `rag/` |
+| GS-08 | **More confidence** (the maintainer: "Add a few other judges to the panel… guarding against overfitting"). The 12 where-is questions were 6 topics, written by the request's designer, about the fiction alone. **Questions by a panel of writers** (DeepSeek-V3.2, Qwen3-235B, gpt-oss-120b; not gemma), each from a target's extracted text only (`evaluation.questions.where_targets`, `where_questions`; `scripts/write_where_questions.py`): 60 targets, 20 in the fiction and 40 in 17 real projects, two thirds undocumented; a literal question and a paraphrase each. **Graded by construction** (the target's chunks and its diagrams) **and by a judge panel** (DeepSeek-V3.2 and Qwen3-235B, gpt-oss-120b on their disagreements) over the reranked systems' top 10 (`judge_pools.py --systems`). 0.19.1 against 0.20.0, by writer, origin, documentation and style. | Done: 348 questions for 60 targets (`out/eval/where`); 0.19.1 → 0.20.0, hybrid reranked MRR@10 +0.122 by construction, +0.059 by the panel, +0.075 by the lower grade, all significant; for every writer and in real models, most for paraphrases and undocumented targets. `judge_pools.py --systems`; `tests/test_evaluation.py::test_where_targets_and_questions` |
 
 ## Checkpoints
 
@@ -92,7 +92,7 @@ of each project's options, so the projects it touches are written again). No use
 | CP1: requests | GS-01 to GS-03 | Variant requests, classes in the metadata, a builder |
 | CP2: screening | GS-04, GS-05 | Which variants, and classes, stop crowding and help where-is questions |
 | CP3: reading | GS-06 | Whether the answers are faithful and worth reading, on real models |
-| CP4: decision | GS-07 | A default, or none |
+| CP4: decision | GS-07, GS-08 | A default, or none, and confidence in it |
 
 ## When to stop and ask
 

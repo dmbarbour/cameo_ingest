@@ -51,6 +51,7 @@ def main() -> int:
     ap.add_argument("--cache", type=Path, default=Path("out/eval/judge/.cache"))
     ap.add_argument("--concurrency", type=int, default=6)
     ap.add_argument("--limit", type=int, help="only this many pairs (a trial)")
+    ap.add_argument("--systems", nargs="+", help="pool only these systems' top 10 (default: every system's)")
     args = ap.parse_args()
     if args.env:
         load_env(args.env)
@@ -58,6 +59,8 @@ def main() -> int:
     pairs: dict[tuple[str, str, str], dict] = {}
     for s in args.sets:
         for r in records.read_jsonl(args.retrieval / s / records.RANKINGS):
+            if args.systems and r["system"] not in args.systems:
+                continue
             for t in r["top"]:
                 key = (s, r["question"], t["unit"])
                 pairs.setdefault(key, {"set": s, "qid": r["question"], "question": r["text"], "unit": t["unit"],

@@ -341,3 +341,30 @@ def test_page_units(fiction_tree):
     assert [w.id for w in run.windows(units)] == [u.id for u in units]  # cut once, as the stack cuts a file
     both = Run(str(fiction_tree), "q", rag=True, pages=True).units()
     assert any(u.id.startswith("page:") for u in both) and any(not u.id.startswith("page:") for u in both)
+
+
+def test_where_targets_and_questions(fiction_tree):
+    """Targets of questions about where something is described (plan GS-08), from the extracted
+    chunks: each answered by its own chunks and its diagrams (or a diagram's behavior); a writer's
+    two questions per target, graded by element."""
+    from cameo_ingest.evaluation.grading import Question
+    from cameo_ingest.evaluation.questions import where_questions, where_targets
+
+    targets = where_targets(fiction_tree, fiction=1000, samples=0)  # all of them
+    by_name = {t["qualified_name"]: t for t in targets}
+    assert {t["origin"] for t in targets} == {"fiction"}
+    backwash = by_name["Riverbend Water Treatment Works::02 Process Train::Dual Media Filter::Filter Backwash Sequence"]
+    assert backwash["kind"] == "activity" and backwash["answers"] == ["_rwt_bwseq", "_rwt_d_bw"]
+    corridor = by_name.get("Port Calder Traffic Signal System::Port Calder Signals::Signal Network::Corridor Harbour Road")
+    assert corridor is not None and corridor["answers"] == ["_pct_cor_hr", "_pct_d_cor_hr"]
+    assert corridor["related"] == ["_pct_net"]
+
+    class Writer:
+        def ask(self, template, values, **_):
+            assert "Generated" not in values["PASSAGE"] and values["KIND"] in ("package", "diagram", "activity",
+                                                                               "state machine")
+            return '{"literal": "Where is it described?", "paraphrase": "Which part covers it?"}', None
+
+    qs = where_questions(targets[:3], Writer(), "acme/Writer-1")
+    assert len(qs) == 6 and {q["style"] for q in qs} == {"literal", "paraphrase"}
+    assert all(Question.of(q).rule == "element" and q["writer"] == "acme/Writer-1" for q in qs)

@@ -1,6 +1,6 @@
 # Research: generated text that serves search, screened on the fiction, 2026-10-05
 
-**Question.** Plan GS (`docs/plans/generated-for-search-2026-10-05.md`). The LLM's summaries and
+**Question.** Plan GS (`docs/archive/plans/generated-for-search-2026-10-05.md`). The LLM's summaries and
 diagram descriptions crowd out answers, and were left out of `rag/` (ADR-0028). Would they earn
 their place with a request for what a package or diagram is about and for, in other words than
 its names? Does more context help? Can the answer's class sort the helpful from the crowding?
@@ -126,15 +126,65 @@ questions, MRR@10 for e5-large reranked / e5-large + BM25 reranked; \* significa
 - **By kind,** each costs the standing questions a little and the costs add up; the where-is
   gains are larger together than apart.
 
+## More confidence (GS-08)
+
+The 12 where-is questions were 6 topics, written by the request's designer, about the fiction
+alone. The maintainer asked for more, by a panel, "guarding against overfitting".
+- **Questions:** 60 targets (`evaluation.questions.where_targets`, from the extracted chunks
+  only): 20 in the fiction and 40 in 17 real projects, two thirds of those undocumented; 22
+  packages, 31 diagrams, 7 activities and state machines. Three writers, none of them gemma
+  (DeepSeek-V3.2, Qwen3-235B, gpt-oss-120b), each a literal question and a paraphrase per target
+  from its extracted text, never the generated text: 348 questions (`out/eval/where`).
+- **Graded three ways:** by construction (the target's chunks and its diagrams, or a diagram's
+  behavior); by a judge panel over the reranked systems' top 10 (DeepSeek-V3.2 and Qwen3-235B,
+  13,586 pairs each, kappa 0.45; gpt-oss-120b on their 4,700 disagreements, though it agrees with
+  neither, kappa 0.10 to 0.20); and by the lower of the two main judges' grades, without the
+  tie-breaker.
+
+0.19.1 (no generated text in `rag/`) against 0.20.0, e5-large + BM25 reranked, MRR@10 change
+(95% interval); \* significant:
+
+| Questions | n | Construction | Panel | Lower grade |
+|---|---|---|---|---|
+| All | 348 | +0.122\* (+0.081…+0.163) | +0.059\* (+0.034…+0.085) | +0.075\* (+0.042…+0.107) |
+| By DeepSeek-V3.2 | 116 | +0.139\* | +0.075\* | +0.138\* |
+| By Qwen3-235B | 112 | +0.122\* | +0.058\* | +0.041 |
+| By gpt-oss-120b | 120 | +0.104\* | +0.043\* | +0.045\* |
+| Fiction | 120 | +0.097\* | +0.060\* | +0.053\* |
+| Real, undocumented | 156 | +0.175\* | +0.072\* | +0.110\* |
+| Real, documented | 72 | +0.047 | +0.029 | +0.033 |
+| Literal | 174 | +0.089\* | +0.011 | +0.009 |
+| Paraphrase | 174 | +0.155\* | +0.107\* | +0.141\* |
+| Diagrams | 138 | +0.178\* | +0.096\* | +0.113\* |
+| Packages | 178 | +0.100\* | +0.038\* | +0.047\* |
+| Activities | 26 | −0.023 | +0.019 | +0.094\* |
+
+- **The gain holds** for every writer and both origins, by every grading; it is largest for
+  paraphrases, diagrams and undocumented real models, where the extracted text can't meet the
+  question's words. Documented targets and literal questions, which share words with the
+  extracted text, gain little.
+- **Its size depends on the grading:** the judges credit chunks of other elements on the same
+  topic, so 0.19.1 already scores higher under them (0.87 against 0.51), with less room to gain.
+- **Activities** lose by construction and gain by the judges: what outranks them is the part
+  summary of the package that holds them, on the right topic and credited by the judges.
+
 ## Caveats
 
-- **12 where-is questions** are few; the gain is significant, its size uncertain.
+- **12 where-is questions** were few; GS-08's 348, by three writers, narrow the interval and
+  hold in real models.
 - **The fiction alone:** the samples weren't there as distractors.
 - **One model,** gemma-4-31B-it, and a reading of 40 answers on two models.
+- **What users ask** decides how to weigh a where-is gain against a small fact-question cost; no
+  question set can.
 
 ## Decision
 
 The maintainer, 2026-10-05: "Yes, about should replace summaries. Please proceed with the
 experiment." After the reading, `about/context` becomes the requests in use, on the pages; the
-classes stay in the metadata. Whether its answers enter `rag/`, given the release check's small
-cost to the standing questions, went back to the maintainer (plan GS, "When to stop and ask").
+classes stay in the metadata. Its answers enter `rag/` (option A, the maintainer: "I'm happy with this
+result"), after GS-08 confirmed the where-is gain with independent writers and judges.
+
+## Changes
+
+- 2026-10-05: the decision (option A for `rag/`) in place of "went back to the maintainer", and GS-08.
+  Before: `463e42e`.

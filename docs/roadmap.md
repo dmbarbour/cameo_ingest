@@ -10,8 +10,8 @@ its record is the archived plan, the ADRs and the design documents.
 Ranked on 2026-10-05, among the items that can progress now, without the maintainer or new
 evidence. Everything ranked on 2026-10-04 is done: the quick wins (0.16.1), type hierarchies
 (plan TH, 0.18.0), what shapes hold (plan IS, 0.19.0) and the review of the switches (ADR-0027).
-Retrieval's untested measures are done too (plan RM, ADR-0028), and generated text that serves
-search is a plan of its own (`docs/plans/`).
+Retrieval's untested measures are done too (plan RM), and generated text now says what a package
+or diagram is about and for (plan GS, 0.20.0, ADR-0029).
 
 1. **Compartments in the legends, tested first** (Sketches and the vision model): cards whose
    legends list elements the image doesn't show, to learn whether telling the model what shapes
