@@ -39,7 +39,9 @@ Retired on 2026-10-03; TC, CT and TH on 2026-10-04; IS, RM, GS and CF on 2026-10
 
 ## Reviews
 
-All closed and archived in `docs/archive/reviews/`:
+Open: [the maintainer's trial](../reviews/trial-2026-10-06.md), prefix TR, opened 2026-10-06.
+
+Closed and archived in `docs/archive/reviews/`:
 
 | Review | Prefix | Its content now |
 |---|---|---|
