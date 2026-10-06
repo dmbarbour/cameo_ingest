@@ -8,13 +8,12 @@ import re
 from fixture_model import MODEL, make_mdzip
 from helpers import (
     check_invariants,
+    cli,
     project_dir,
     provenance,
     run,
     tree,
 )
-
-from cameo_ingest.cli import main
 
 
 def test_mdzip_end_to_end(tmp_path):
@@ -99,7 +98,7 @@ def test_reproducible_output(tmp_path):
         src.parent.mkdir(exist_ok=True)
         src.write_bytes(data)
         out = tmp_path / f"out{i}"
-        assert main([str(src), "-o", str(out), "--meta", "program=test", "--no-llm"]) == 0
+        assert cli([str(src), "-o", str(out), "--meta", "program=test", "--no-llm"]) == 0
         trees.append(tree(out))
     assert trees[0] == trees[1] == trees[2]
     [record] = provenance(tmp_path / "out2").values()
@@ -117,13 +116,13 @@ def test_contents_and_sightings(tmp_path):
     for f, model in ((a, MODEL), (b, MODEL.replace("name='Requirements'", "name='Needs'")), (copy, MODEL)):
         f.parent.mkdir()
         f.write_bytes(make_mdzip(model))
-    assert main(["add", "-o", str(out), str(a), str(b), "--meta", "program=X"]) == 0
+    assert cli(["add", "-o", str(out), str(a), str(b), "--meta", "program=X"]) == 0
     assert not (out / "by-sha256").exists()  # added, not processed
-    assert main(["run", "-o", str(out), "--no-llm", "--no-render"]) == 0
+    assert cli(["run", "-o", str(out), "--no-llm", "--no-render"]) == 0
     projects = json.loads((out / "manifest.json").read_text())["projects"]
     assert [p["name"] for p in projects] == ["drone.mdzip", "drone.mdzip"]
     # No flags: the tree remembers --no-llm and --no-render.
-    assert main([str(tmp_path / "c"), "-o", str(out)]) == 0
+    assert cli([str(tmp_path / "c"), "-o", str(out)]) == 0
     assert len(json.loads((out / "manifest.json").read_text())["projects"]) == 2
     assert json.loads((out / "run.json").read_text())["projects"]["written"] == 0
     seen = {r["token"]: [s["path"] for s in r["sightings"]] for r in provenance(out).values()}
@@ -141,7 +140,7 @@ def test_rag_files(tmp_path):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     out = tmp_path / "out"
-    assert main([str(src), "-o", str(out), "--no-llm", "--no-render", "--meta", "program=X"]) == 0
+    assert cli([str(src), "-o", str(out), "--no-llm", "--no-render", "--meta", "program=X"]) == 0
     chunks = [json.loads(line) for line in (out / "chunks.jsonl").open()]
     rag = out / "rag"
     assert sorted(p.name for p in rag.iterdir()) == ["meta", "text"]
@@ -169,14 +168,14 @@ def test_rag_files(tmp_path):
     assert sources[meta["source_id"]]["files"] == [str(src.resolve())] and folder.endswith(meta["source_id"])
     assert str(tmp_path) not in drone.read_text()
     stamp = drone.stat().st_mtime_ns
-    assert main(["run", "-o", str(out)]) == 0
+    assert cli(["run", "-o", str(out)]) == 0
     assert drone.stat().st_mtime_ns == stamp  # not written again
     # --rag-source is set for the whole tree: a run rewrites every file in the new form.
-    assert main(["run", "-o", str(out), "--rag-source", "id"]) == 0
+    assert cli(["run", "-o", str(out), "--rag-source", "id"]) == 0
     texts = [f.read_text() for f in (rag / "text" / folder).glob("*.txt")]
     assert any(f"Source: [{meta['source_id']}:{meta['chunk_id'][:12]}]" in t for t in texts)
     assert not any("Source: sha256:" in t or "drone.mdzip" in t for t in texts)
-    assert main(["run", "-o", str(out), "--no-rag-files"]) == 0
+    assert cli(["run", "-o", str(out), "--no-rag-files"]) == 0
     assert not rag.exists()
 
 
@@ -195,9 +194,9 @@ def test_tree_switches(tmp_path, caplog):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     out = tmp_path / "out"
-    assert main([str(src), "-o", str(out), "--no-llm", "--no-render"]) == 0
+    assert cli([str(src), "-o", str(out), "--no-llm", "--no-render"]) == 0
     for rag in (True, False, True):
-        assert main(["run", "-o", str(out), "--rag-files" if rag else "--no-rag-files"]) == 0
+        assert cli(["run", "-o", str(out), "--rag-files" if rag else "--no-rag-files"]) == 0
         assert (out / "rag").exists() == rag
 
     def kinds():
@@ -219,8 +218,8 @@ def test_tree_switches(tmp_path, caplog):
     state = State(out)
     state.save_settings({**state.settings(), "threads": False, "line_refs": True})
     state.close()
-    assert main(["run", "-o", str(out)]) == 0
-    assert "now fixed defaults, and ignores them: line_refs, threads" in caplog.text
+    assert cli(["run", "-o", str(out)]) == 0
+    assert "now defaults or calibrated, and ignores them: line_refs, threads" in caplog.text
     assert kinds() == full and "threads" not in State(out).settings()
 
 
@@ -261,7 +260,7 @@ def test_treediff(tmp_path, capsys):
     src.write_bytes(make_mdzip())
     a, b = tmp_path / "a", tmp_path / "b"
     for out in (a, b):
-        assert main([str(src), "-o", str(out), "--no-llm"]) == 0
+        assert cli([str(src), "-o", str(out), "--no-llm"]) == 0
     assert not compare(a, b) and treediff([str(a), str(b)]) == 0
     # Another tool version: masked in the files, and in the manifest's hashes of them.
     for f in [b / "chunks.jsonl", b / "manifest.json"]:
@@ -302,7 +301,8 @@ def test_reproducible_across_hash_seeds(tmp_path):
     for seed in ("0", "9"):  # seeds that iterate {"MF-1", "MF-8"} in different orders
         out = tmp_path / f"out{seed}"
         env = {**os.environ, "PYTHONHASHSEED": seed}
-        subprocess.run([sys.executable, "-m", "cameo_ingest.cli", str(src), "-o", str(out), "--no-llm", "--no-render"],
-                       check=True, env=env, capture_output=True)
+        for argv in (["config", "-o", str(out), "set", "llm", "off"], ["config", "-o", str(out), "set", "render", "off"],
+                     [str(src), "-o", str(out)]):
+            subprocess.run([sys.executable, "-m", "cameo_ingest.cli", *argv], check=True, env=env, capture_output=True)
         trees.append(tree(out))
     assert trees[0] == trees[1]

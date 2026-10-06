@@ -14,12 +14,12 @@ from helpers import (
     SAMPLES_DIR,
     FakeChat,
     check_invariants,
+    cli,
     project_dir,
     store_db,
     tree,
 )
 
-from cameo_ingest.cli import main
 from cameo_ingest.prompts import CURRENT
 
 
@@ -27,7 +27,7 @@ def test_llm_enrichment_is_labelled(tmp_path, fake_chat):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     out = tmp_path / "out"
-    assert main([str(src), "-o", str(out), "--vision-model", "gemma-4", "--no-calibrate"]) == 0
+    assert cli([str(src), "-o", str(out), "--vision-model", "gemma-4", "--no-calibrate"]) == 0
     check_invariants(out)  # includes unique chunk ids for the two image descriptions (BASE-002)
     client = fake_chat[0]
     assert len(client.requests) == 4  # preflight, then the diagram and two images: no budget (BASE-019)
@@ -91,7 +91,7 @@ def test_a_section_too_long_for_a_part_is_split_not_cut(tmp_path, fake_chat):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip(model))
     out = tmp_path / "out"
-    assert main([str(src), "-o", str(out), "--text-model", "m", "--no-calibrate", "--no-preflight", "--no-render"]) == 0
+    assert cli([str(src), "-o", str(out), "--text-model", "m", "--no-calibrate", "--no-preflight", "--no-render"]) == 0
     report = json.loads((out / "run.json").read_text())["llm"]
     assert "truncated_input" not in report["outcomes"]
     db = sqlite3.connect(store_db())
@@ -102,10 +102,14 @@ def test_a_section_too_long_for_a_part_is_split_not_cut(tmp_path, fake_chat):
     assert sum(x.count("operator console") for x in sections) == 40 * 8 + 400  # every sentence, once
 
 
-def test_the_part_size_is_an_option(tmp_path, fake_chat):
-    """`--part-chars` sets the largest input of package text (plan TC-06): smaller parts are more
-    of them, each within the size, and the size is in the projects' options."""
+def test_the_part_size_is_the_calibrations(tmp_path, fake_chat):
+    """The largest input of package text is the text model's calibration's, or 12,000 (plan TC-06;
+    plan CF): smaller parts are more of them, each within the size, and the size is in the
+    projects' options."""
     import sqlite3
+
+    from cameo_ingest import textcal
+    from cameo_ingest.state import State
 
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip(large_package_model()))
@@ -113,8 +117,12 @@ def test_the_part_size_is_an_option(tmp_path, fake_chat):
     for chars in (None, 6000):
         os.environ["CAMEO_INGEST_CACHE"] = str(tmp_path / f"store{chars}")  # each size's own requests
         out = tmp_path / f"out{chars}"
-        args = [str(src), "-o", str(out), "--text-model", "m", "--no-calibrate", "--no-preflight", "--no-render"]
-        assert main(args + (["--part-chars", str(chars)] if chars else [])) == 0
+        assert cli(["config", "-o", str(out), "set", "text-model", "m"]) == 0
+        if chars:  # as a calibration that found 12,000 characters read unevenly records it
+            st = State(out)
+            st.save_calibration("", "m", textcal.SUITE_VERSION, {"part_chars": chars}, {}, "calibration/m", kind="text")
+            st.close()
+        assert cli([str(src), "-o", str(out), "--no-preflight", "--no-render"] + ([] if chars else ["--no-calibrate"])) == 0
         db = sqlite3.connect(store_db())
         parts = [json.loads(r[0])["SECTIONS"] for r in db.execute(
             "SELECT slots FROM requests WHERE template LIKE 'module-summary%' AND item LIKE '%bigp%'")]
@@ -136,7 +144,7 @@ def test_large_package_parts(tmp_path, fake_chat, monkeypatch):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip(large_package_model()))
     out = tmp_path / "out"
-    assert main([str(src), "-o", str(out), "--text-model", "m", "--no-calibrate", "--no-preflight", "--no-render"]) == 0
+    assert cli([str(src), "-o", str(out), "--text-model", "m", "--no-calibrate", "--no-preflight", "--no-render"]) == 0
     check_invariants(out)
     page = (project_dir(out) / "packages/Model__Big.md").read_text()
     assert "## Parts, summarized" in page and '<a id="part-1"></a>' in page and re.search('<a id="parts-\\d+-\\d+">', page)
@@ -192,7 +200,7 @@ def test_instance_packages_summarized_from_a_digest(tmp_path, fake_chat):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip(instances_model()))
     out = tmp_path / "out"
-    assert main([str(src), "-o", str(out), "--text-model", "m", "--no-calibrate", "--no-preflight", "--no-render"]) == 0
+    assert cli([str(src), "-o", str(out), "--text-model", "m", "--no-calibrate", "--no-preflight", "--no-render"]) == 0
     check_invariants(out)
     page = (project_dir(out) / "packages/Model__Results.md").read_text()
     assert "- **Classifier:** [Battery]" in page and "## Parts, summarized" not in page
@@ -266,7 +274,7 @@ def test_templates_and_request_log(tmp_path, fake_chat):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     out = tmp_path / "out"
-    assert main([str(src), "-o", str(out), "--text-model", "m", "--no-calibrate", "--no-preflight"]) == 0
+    assert cli([str(src), "-o", str(out), "--text-model", "m", "--no-calibrate", "--no-preflight"]) == 0
     token = f"sha256:{project_dir(out).name}"
     db = sqlite3.connect(store_db())
     rows = db.execute("SELECT template, project, item, image_path, prompt, notes FROM requests ORDER BY template, "
@@ -293,10 +301,10 @@ def test_quality_sample(tmp_path, fake_chat, capsys):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     out = tmp_path / "out"
-    assert main([str(src), "-o", str(out), "--text-model", "m", "--no-calibrate", "--no-preflight"]) == 0
+    assert cli([str(src), "-o", str(out), "--text-model", "m", "--no-calibrate", "--no-preflight"]) == 0
     drawn = []
     for _ in range(2):  # the same seed draws the same items
-        assert main(["quality", "sample", "-o", str(out), "--n", "3", "--seed", "7"]) == 0
+        assert cli(["quality", "sample", "-o", str(out), "--n", "3", "--seed", "7"]) == 0
         set_dir = Path(capsys.readouterr().out.split("spot-check set ")[1].split(":")[0])
         items = [json.loads(line) for line in (set_dir / "items.jsonl").open()]
         drawn.append((set_dir.name, [i["id"] for i in items]))
@@ -325,7 +333,7 @@ def test_llm_call_budget(tmp_path, fake_chat):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     out = tmp_path / "out"
-    assert main([str(src), "-o", str(out), "--vision-model", "m", "--no-calibrate", "--llm-max-calls", "1"]) == 0
+    assert cli([str(src), "-o", str(out), "--vision-model", "m", "--no-calibrate", "--llm-max-calls", "1"]) == 0
     assert len(fake_chat[0].enrichment()) == 1
     report = json.loads((out / "run.json").read_text())["llm"]
     assert report["calls"] == 1 and report["outcomes"]["skipped_budget"] == 2
@@ -336,25 +344,26 @@ def test_llm_store_and_replay(tmp_path, fake_chat, monkeypatch):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     store = tmp_path / "store"
-    args = [str(src), "--vision-model", "m", "--no-calibrate", "--cache-dir", str(store), "--meta", "program=test"]
+    os.environ["CAMEO_INGEST_CACHE"] = str(store)
+    args = [str(src), "--vision-model", "m", "--no-calibrate", "--meta", "program=test"]
     trees = []
     for i in range(2):  # the second run is answered from the store (BASE-005)
         out = tmp_path / f"out{i}"
-        assert main([*args, "-o", str(out)]) == 0
+        assert cli([*args, "-o", str(out)]) == 0
         trees.append(tree(out))
     report = json.loads((out / "run.json").read_text())["llm"]
     assert report["calls"] == 0 and report["outcomes"] == {"cached": 3}
     # Replay never touches the network; it reproduces the recorded run exactly (BASE-022R5).
     monkeypatch.setattr(FakeChat, "fail", True)
     out = tmp_path / "replayed"
-    assert main([str(src), "--vision-model", "m", "--no-calibrate", "--llm-replay", str(store / "llm.sqlite"),
+    assert cli([str(src), "--vision-model", "m", "--no-calibrate", "--llm-replay", str(store / "llm.sqlite"),
                  "--meta", "program=test", "-o", str(out)]) == 0
     assert json.loads((out / "run.json").read_text())["llm"]["outcomes"] == {"replayed": 3}
     assert tree(out) == trees[1]
     assert len(fake_chat) == 2  # no client at all in replay mode
     # A request the store has no answer for fails the project, loudly.
     out = tmp_path / "missed"
-    assert main([str(src), "--vision-model", "other", "--no-calibrate", "--llm-replay", str(store / "llm.sqlite"),
+    assert cli([str(src), "--vision-model", "other", "--no-calibrate", "--llm-replay", str(store / "llm.sqlite"),
                  "-o", str(out)]) == 4
     assert "ReplayMiss: no recorded other response" in json.loads((out / "manifest.json").read_text())["failed"][0]["error"]
 
@@ -368,8 +377,8 @@ def test_llm_store_corrupt(tmp_path, fake_chat, caplog, monkeypatch):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     out = tmp_path / "out"
-    assert main([str(src), "-o", str(out), "--vision-model", "m", "--no-calibrate",
-                 "--cache-dir", str(store)]) == 0  # BASE-005
+    os.environ["CAMEO_INGEST_CACHE"] = str(store)
+    assert cli([str(src), "-o", str(out), "--vision-model", "m", "--no-calibrate"]) == 0  # BASE-005
     assert "is unreadable" in caplog.text and list(store.glob("llm.sqlite.corrupt-*"))
     assert sqlite3.connect(store / "llm.sqlite").execute("SELECT count(*) FROM responses").fetchone() == (3,)
     # A store that fails to keep a paid answer costs a re-ask later, not the project (AR-016).
@@ -380,7 +389,7 @@ def test_llm_store_corrupt(tmp_path, fake_chat, caplog, monkeypatch):
 
     monkeypatch.setattr(ResponseStore, "put", broken)
     out = tmp_path / "out2"
-    assert main([str(src), "-o", str(out), "--vision-model", "other", "--no-calibrate", "--cache-dir", str(store)]) == 0
+    assert cli([str(src), "-o", str(out), "--vision-model", "other", "--no-calibrate"]) == 0
     assert "cannot store LLM response" in caplog.text
     assert json.loads((out / "run.json").read_text())["llm"]["outcomes"] == {"answered": 3}
 
@@ -391,7 +400,7 @@ def test_llm_circuit_breaker(tmp_path, fake_chat, monkeypatch):
     src.write_bytes(make_mdzip())
     out = tmp_path / "out"
     # Four items (a diagram, two images, a package summary); the endpoint fails every request.
-    assert main([str(src), "-o", str(out), "--text-model", "m", "--no-calibrate", "--no-preflight"]) == 0
+    assert cli([str(src), "-o", str(out), "--text-model", "m", "--no-calibrate", "--no-preflight"]) == 0
     assert len(fake_chat[0].requests) == 3  # then enrichment is switched off (BASE-006)
     report = json.loads((out / "run.json").read_text())["llm"]
     assert report["disabled_after_failures"] and report["outcomes"] == {"failed": 3, "skipped_disabled": 1}
@@ -419,7 +428,7 @@ def test_replay_recorded_llm(tmp_path, sample):
     model = db.execute("SELECT model FROM responses LIMIT 1").fetchone()[0]
     db.close()
     out = tmp_path / "out"
-    assert main([str(src), "-o", str(out), "--no-render", "--no-calibrate", "--text-model", model,
+    assert cli([str(src), "-o", str(out), "--no-render", "--no-calibrate", "--text-model", model,
                  "--llm-replay", str(REPLAY)]) == 0
     check_invariants(out)
     report = json.loads((out / "run.json").read_text())["llm"]
@@ -436,7 +445,8 @@ def test_llm_concurrency(tmp_path, fake_chat, monkeypatch):
     trees = []
     for n in (1, 3):
         out = tmp_path / f"out{n}"
-        assert main([str(src), "-o", str(out), "--vision-model", "m", "--cache-dir", str(tmp_path / f"store{n}"),
+        os.environ["CAMEO_INGEST_CACHE"] = str(tmp_path / f"store{n}")
+        assert cli([str(src), "-o", str(out), "--vision-model", "m",
                      "--llm-concurrency", str(n)]) == 0
         trees.append(tree(out))
     assert FakeChat.max_inflight >= 2  # requests overlapped (BASE-019R4)...
@@ -519,8 +529,8 @@ def test_a_candidate_request_classifies_its_answer(tmp_path, monkeypatch):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     out = tmp_path / "out"
-    assert script.main(["about/context", str(src), "-o", str(out), "--text-model", "m", "--vision-model", "m",
-                        "--no-calibrate", "--no-preflight"]) == 0
+    assert cli(["config", "-o", str(out), "set", "text-model", "m"]) == 0  # the tree's models, then the variant's run
+    assert script.main(["about/context", str(src), "-o", str(out), "--no-calibrate", "--no-preflight"]) == 0
     assert prompts.CURRENT["package-summary"].key == "package-summary@v7"
     texts = [json.dumps(m) for _, m in made[0].enrichment()]
     diagram = next(t for t in texts if "classify the diagram" in t)
@@ -569,14 +579,14 @@ def test_a_trees_own_store_joins_the_shared_store(tmp_path, fake_chat, monkeypat
     src.write_bytes(make_mdzip())
     out = tmp_path / "out"
     args = [str(src), "-o", str(out), "--vision-model", "m", "--no-calibrate", "--no-preflight"]
-    assert main(args) == 0
+    assert cli(args) == 0
     (out / ".cache").mkdir()
     shutil.copy(store_db(), out / ".cache" / "llm.sqlite")  # as 0.20.1 and before kept it
     os.environ["CAMEO_INGEST_CACHE"] = str(tmp_path / "new-store")
     from cameo_ingest import runner
 
     monkeypatch.setattr(runner, "TOOL", "cameo-ingest/99")  # every project written again, asking the same
-    assert main(["run", "-o", str(out), "--no-preflight"]) == 0
+    assert cli(["run", "-o", str(out), "--no-preflight", "--no-calibrate"]) == 0
     outcomes = json.loads((out / "run.json").read_text())["llm"]["outcomes"]
     assert "answered" not in outcomes and outcomes.get("cached"), outcomes
     st = State(out)

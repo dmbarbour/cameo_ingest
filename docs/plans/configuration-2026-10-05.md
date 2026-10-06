@@ -1,7 +1,8 @@
 # Plan: configuration through `cameo-ingest config`, 2026-10-05
 
-- **Status:** In progress: CP1 (0.20.2) and CP2 (0.20.3) done; stopped before CP3, as planned, for the
-  maintainer's look at the new setup.
+- **Status:** In progress: CP1 (0.20.2), CP2 (0.20.3) and CP3 (0.21.0) done; CP4 next. The
+  maintainer approved the new setup before CP3: "Four recognized environment vars, all other
+  configuration in tree, cache for the shared stuff."
 - **Step prefix:** `CF`, so steps are `CF-01`, `CF-02` and so on.
 - **Addresses:** the maintainer, 2026-10-05, trying the tool:
   > "getting set up is a bit confusing: too many configuration options independent of current
@@ -85,9 +86,9 @@ there is one, and warns when it changes.
 | CF-02 | **`config show`, `set`, `unset`:** each setting described, checked and reversible (D6); `llm` on or off (D5). Tests. | Done (0.20.2): `config.SETTINGS` (llm, text-model, vision-model, render, rag-files, rag-source, concurrency, max-calls), `cli.configure`; setting one starts a tree; `tests/test_cli.py::test_config` |
 | CF-03 | **The endpoint:** `OPENAI_BASE_URL` and `OPENAI_API_KEY` only (D3); `config test` and `config models`; the model's identity and creation time recorded. Tests with a fake endpoint; once against DeepInfra. | Done: `checks.run_checks` (the vision model reads a drawn 731), `OpenAIChat.models`, `cli.check_config`, `note_models` (the creation time per endpoint and model in the tree's `meta`, a warning when it changes); against DeepInfra, gemma-4 passes both, and Qwen3-235B as the vision model fails ("does not accept image input"); `tests/test_cli.py::test_config_test_and_models` |
 | CF-04 | **The shared store:** the LLM answers and calibrations per user (`CAMEO_INGEST_CACHE`, D4), a tree's existing store still read; the tree records the calibration it used. Tests. | Done: `config.store_dir`; a tree's own store copied in once (`cli.shared_store`); calibration answers shared through the store; each test has its own store; `tests/test_llm.py::test_a_trees_own_store_joins_the_shared_store` |
-| CF-05 | **Runs read the tree's configuration only:** the settings flags, `--env` and the other variables go; retired settings noticed. Tests. | |
+| CF-05 | **Runs read the tree's configuration only:** the settings flags, `--env` and the other variables go; retired settings noticed. Tests. | Done (0.21.0, the breaking change, so CP4 is 0.21.1): `cli.tree_settings` (retired settings ignored with a notice, by runs and by `config set`); timeout and retries fixed (`llm.TIMEOUT`, `RETRIES`); `--no-calibrate`, `--no-preflight`, `--llm-replay`, `--heartbeat` kept for developers, hidden and not remembered; the tests set settings with `config set` (`tests/helpers.py::cli`); the live tests and `scripts/record_llm_fixture.py` take their model from their own `OPENAI_MODEL`; the README's configuration rewritten, `.env.example` for developers only |
 | CF-06 | **`config -i`.** Tests with scripted input. | |
-| CF-07 | **Developers, docs and release:** the evaluation scripts read `OPENAI_*` from the environment; the README's setup rewritten around `config -i`; ADR-0004 and ADR-0010 updated, a new ADR; a release check; 0.21.0. | |
+| CF-07 | **Developers, docs and release:** the evaluation scripts read `OPENAI_*` from the environment; the README's setup around `config -i`; the design docs; ADR-0004 and ADR-0010 updated, a new ADR; a release check; 0.21.1. | |
 
 ## Checkpoints
 
@@ -96,7 +97,7 @@ there is one, and warns when it changes.
 | CP1: the tree and its settings | CF-01, CF-02 | `config show/set/unset`, the default tree |
 | CP2: the endpoint and the store | CF-03, CF-04 | `config test/models`, a shared store |
 | CP3: one source | CF-05 | Runs read the tree's configuration only |
-| CP4: interactive, docs | CF-06, CF-07 | `config -i`; 0.21.0 |
+| CP4: interactive, docs | CF-06, CF-07 | `config -i`; 0.21.1 |
 
 ## The setup after CP3 (a draft of the README's, for the maintainer's look)
 

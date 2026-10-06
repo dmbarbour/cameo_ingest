@@ -7,12 +7,12 @@ MagicDraw 18.x through Cameo 2026x, and it has been checked against 14 public sa
 
 ```sh
 uv sync
-uv run cameo-ingest MODEL.mdzip -o out/ (--no-llm | --env .env | --text-model MODEL) \
-    [--meta program=XYZ] [--no-render] [-v]          # ingest one or more files or directories
+uv run cameo-ingest config set text-model MODEL      # or: config set llm off (see "Configuration")
+uv run cameo-ingest MODEL.mdzip [--meta program=XYZ] [-v]   # ingest files or directories into ./ingest_tree
 
-uv run cameo-ingest add -o out/ more/models/ --meta supplier=ACME   # add to the task list
-uv run cameo-ingest run -o out/                      # process it; continues a stopped run
-uv run cameo-ingest status -o out/                   # what the tree holds
+uv run cameo-ingest add more/models/ --meta supplier=ACME   # add to the task list
+uv run cameo-ingest run                              # process it; continues a stopped run
+uv run cameo-ingest status                           # what the tree holds
 ```
 
 Supported inputs are recognized by their content, so the file extension doesn't matter:
@@ -34,8 +34,8 @@ many files, bundles or names it turns up under.
 | Command | Does |
 |---|---|
 | `cameo-ingest add -o OUT PATH... [--meta K=V] [--meta-file F]` | Adds files to the task list. A directory adds the ZIP archives and XMI documents under it. `--meta` values belong to these inputs. |
-| `cameo-ingest run -o OUT [options]` | Checks the inputs for changes, scans new or changed ones, builds every project without up-to-date output, and rebuilds the root files. |
-| `cameo-ingest ingest -o OUT PATH... [options]` | `add`, then `run`. It is the default command: `cameo-ingest FILE -o OUT`. |
+| `cameo-ingest run -o OUT` | Checks the inputs for changes, scans new or changed ones, builds every project without up-to-date output, and rebuilds the root files. |
+| `cameo-ingest ingest -o OUT PATH... [--meta K=V]` | `add`, then `run`. It is the default command: `cameo-ingest FILE -o OUT`. |
 | `cameo-ingest status -o OUT [--json]` | Inputs and projects by status, failures, the latest run. Works while a run is going. |
 | `cameo-ingest prune -o OUT [--dry-run]` | Drops missing inputs, and the projects that no remaining input contains. |
 | `cameo-ingest scan -o OUT` | Finds the projects in the task list's inputs, and what each says about itself (save time, Cameo version, element ids), building nothing. |
@@ -45,7 +45,8 @@ many files, bundles or names it turns up under.
 | `cameo-ingest export -o OUT [--workbook FILE] [--search-page FILE]` | Writes the catalog of the tree's models for people to search without tools: a workbook, a self-contained search page, or both (see "Searching without tools"). Apart from `run`, since it is a distribution step. |
 | `cameo-ingest calibrate-vision -o OUT [--suite quick\|standard]` | Calibrates the sketches to the tree's vision model on demand, as the first run with a model does on its own (see "Calibrating sketches to the vision model"). |
 | `cameo-ingest calibrate-text -o OUT` | Calibrates the part size to the tree's text model on demand, as the first run with a model does on its own (see "Calibrating the part size to the text model"). |
-| `cameo-ingest config [show]` / `config set KEY VALUE` / `config unset KEY` | The tree's settings: `llm` (on or off), `text-model`, `vision-model`, `render`, `rag-files`, `rag-source`, `concurrency` and `max-calls`. Each can be set and unset, back to its default; setting one starts a tree, so a tree can be configured before its first input. |
+| `cameo-ingest config [show]` / `config set KEY VALUE` / `config unset KEY` | The tree's settings (see "Configuration"). Each can be set and unset, back to its default; setting one starts a tree, so a tree can be configured before its first input. |
+| `cameo-ingest config test` / `config models [TEXT]` | Checks the endpoint, the key and the tree's models; lists the endpoint's models, those the tree uses or has calibrated marked. |
 
 - **Which tree.** Every command works on `-o OUT`; without it, on `$CAMEO_INGEST_TREE`; without
   that, on `./ingest_tree` in the working directory. (`CAMEO_INGEST_DEST`, before 0.20.2, is
@@ -57,10 +58,9 @@ many files, bundles or names it turns up under.
   lost session). Work is committed as it finishes, and a project is published only when it
   is complete. `cameo-ingest run -o OUT` continues, reusing the sketches and LLM answers the
   stopped run already had.
-- **Remembered settings.** A run's model, rendering and LLM flags (and the `--env` file, never
-  its contents) become the tree's settings, so a later `run` needs no flags. A change of
-  options, or a new tool version, rewrites the projects it affects; stored LLM answers are
-  reused.
+- **Settings.** A tree's settings are set with `config` and kept in the tree, so no run needs
+  flags for them. A changed setting, or a new tool version, rewrites the projects it affects;
+  stored LLM answers are reused.
 - **Inputs that change or disappear.** A changed file is scanned again. A missing file is
   flagged, and its projects are kept until `prune`.
 - **Exit status.** 0 success; 2 usage or configuration error; 3 an input had no readable
@@ -69,27 +69,49 @@ many files, bundles or names it turns up under.
 
 ## Configuration
 
-LLM enrichment (package summaries, diagram and image descriptions) needs an explicit
-choice: either name a model or pass `--no-llm`. With neither, the tool stops at once and
-says how to configure one. When a model is named, one tiny request per model checks the
-endpoint before any work starts, so a wrong key, URL or model name fails in seconds rather
-than hours later (`--no-preflight` skips the check).
+The LLM endpoint and its key are the OpenAI clients' own variables; everything else is the
+tree's, set with `cameo-ingest config`:
 
-| Variable | Flag | Purpose |
-|---|---|---|
-| `CAMEO_INGEST_TREE` | `-o` | The output tree, when `-o` is not given; else `./ingest_tree`. |
-| `CAMEO_INGEST_CACHE` | | The LLM store's directory, shared by every tree; else `~/.cache/cameo-ingest` (`$XDG_CACHE_HOME`). |
-| `OPENAI_API_KEY`, `OPENAI_BASE_URL` | | Any OpenAI-compatible endpoint, such as vLLM or Ollama serving gemma. |
-| `CAMEO_INGEST_TEXT_MODEL`, then `OPENAI_MODEL` | `--text-model` | Model for package summaries. |
-| `CAMEO_INGEST_VISION_MODEL` | `--vision-model` | Model for diagram and image descriptions. Defaults to the text model. |
-| `CAMEO_INGEST_LLM_TIMEOUT` | `--llm-timeout` | Seconds per request (default 120). |
-| `CAMEO_INGEST_LLM_RETRIES` | `--llm-retries` | Retries per request (default 2). |
-| `CAMEO_INGEST_LLM_MAX_CALLS` | `--llm-max-calls` | Stop calling the LLM after N requests in a run (default: no limit). |
+```sh
+export OPENAI_BASE_URL=https://api.deepinfra.com/v1/openai   # any OpenAI-compatible endpoint; unset for OpenAI
+export OPENAI_API_KEY=...
+cd my-work
+cameo-ingest config models gemma                 # the endpoint's models
+cameo-ingest config set text-model google/gemma-4-31B-it   # saved in ./ingest_tree
+cameo-ingest config test                         # the endpoint, the key, each model
+cameo-ingest path/to/models/                     # ingest into ./ingest_tree
+cameo-ingest status
+```
 
-`cameo-ingest config test` checks the endpoint, the key and each model (the vision model reads a
-drawn number), and `config models [TEXT]` lists the endpoint's models. Flags take precedence over variables. `.env.example` lists the variables: copy it to `.env`,
-which is gitignored, and pass `--env .env`. Variables already set in the environment take
-precedence over the file, and the log names the variables loaded but never their values.
+- **Another tree:** `-o DIR` on any command, or `export CAMEO_INGEST_TREE=DIR`.
+- **Without the LLM:** `cameo-ingest config set llm off` (and `on` again). A tree needs one or
+  the other, a model or `llm off`; with neither, a run stops at once and says how to set one.
+- **The settings:** `config show`; `config set KEY VALUE`; `config unset KEY`, back to the
+  default:
+
+  | Setting | Default | Purpose |
+  |---|---|---|
+  | `llm` | `on` | `on` or `off`: generated text, package summaries and diagram and image descriptions. |
+  | `text-model` | | The model for package summaries. |
+  | `vision-model` | the text model | The model for diagram and image descriptions. |
+  | `render` | `on` | Sketches of diagrams, for people and the vision model. |
+  | `rag-files` | `on` | The `rag/` directory (see "Using the output for RAG"). |
+  | `rag-source` | `trace` | The form of `rag/` files' source line, `trace` or `id`. |
+  | `concurrency` | 1 | LLM requests sent at once (see "Progress, logs and speed"). |
+  | `max-calls` | no limit | Stop calling the LLM after N requests in a run. |
+
+- **Checks:** `config test` checks the endpoint, the key and each model (the vision model reads
+  a drawn number). Every run with a model also sends one tiny request per model before any work
+  starts, so a wrong key, URL or model name fails in seconds rather than hours later.
+- **A model's identity** is the endpoint and the model's id: OpenAI-compatible endpoints offer no
+  version hash. A tree notes the creation time the endpoint reports for each model, and warns
+  when it changes.
+
+These four variables are all there is: `OPENAI_BASE_URL`, `OPENAI_API_KEY`,
+`CAMEO_INGEST_TREE`, `CAMEO_INGEST_CACHE`. Requests time out after 120 s and are retried twice.
+Since 0.21.0, `--env`, the model and LLM flags, `OPENAI_MODEL` and the other `CAMEO_INGEST_*`
+variables are gone; a tree that remembers one of its old settings is told it is ignored. The API
+key is never written to the outputs or the logs.
 
 LLM responses are kept in an SQLite store, `llm.sqlite` in `$CAMEO_INGEST_CACHE` or else
 `~/.cache/cameo-ingest/` (0.20.3), shared by every tree: a second tree reuses the answers the first
@@ -100,35 +122,28 @@ response is committed on its own. A failed request is logged and skipped, and ne
 ingest; after 3 consecutive failures, enrichment is switched off for the rest of the run.
 `run.json` reports the calls made and, for every item left without generated text, why
 (failed, budget, switched off, empty answer), plus how many inputs were cut short to fit the
-prompt. The API key is never written to the outputs. Generated text is only reproducible
+prompt. Generated text is only reproducible
 while the store is kept: a fresh store gets fresh answers from the model.
-
-`--llm-replay FILE` answers every request from a recorded `llm.sqlite` and never uses the
-network; a request with no recorded answer fails its project. The store holds request
-hashes, not prompts, so a store recorded on public samples can be committed as a test
-fixture.
 
 ### Progress, logs and speed
 
 On a terminal, each phase (scanning inputs, building projects, and per project: parsing,
 layouts, rendering, LLM requests, writing) shows a progress bar. Otherwise (a batch job, or
-output redirected), a heartbeat line is logged every 30 s (`--heartbeat SECONDS`; 0 turns it
-off), with the phase, how far it got and an estimate of the time left. `-v` adds a line per
+output redirected), a heartbeat line is logged every 30 s, with the phase, how far it got and an estimate of the time left. `-v` adds a line per
 phase and project; `-vv` adds debug detail, including the HTTP requests. `--log-file FILE`
 writes the debug detail to a file, whatever the console shows.
 
-`--llm-concurrency N` sends up to N LLM requests at once, with the same output as sending
+`config set concurrency N` sends up to N LLM requests at once, with the same output as sending
 them one by one. The default is 1, which suits a local server; hosted endpoints usually
 accept more. It matters for large models: TMT made 2,933 requests (version 0.4.0), which took
-1 h 17 min at `--llm-concurrency 8` against gemma-4 on DeepInfra, and would take several times
+1 h 17 min at concurrency 8 against gemma-4 on DeepInfra, and would take several times
 that one at a time. Summarizing its 36 packages of analysis results from digests (FU-022) has
 since replaced 376 of those requests with 36. Rendering is the costliest step without an
 LLM: about 40 s for TMT's 1,241 sketches and the module views of its 44 large diagrams
-(`--no-render` skips them).
+(`config set render off` skips them).
 
-`--image-pixels N` is the pixel budget of sketches and of the images sent to the vision model:
-by default the vision model's calibration (see "Calibrating sketches to the vision model"),
-uncalibrated 645,120. `google/gemma-4-31B-it` on DeepInfra sees every image through 280 soft
+The pixel budget of sketches and of the images sent to the vision model is the vision model's
+calibration (see "Calibrating sketches to the vision model"); uncalibrated, 645,120. `google/gemma-4-31B-it` on DeepInfra sees every image through 280 soft
 tokens of 48 × 48 px, scaled to fill that area at the image's own aspect ratio, so sketches are
 drawn to fill it exactly, with sides in multiples of 48, and larger images are scaled down to
 it. Images go before the text in each request, as Google advises, unless calibration finds the
@@ -154,8 +169,7 @@ modules that are connected and drawn close together
 (`docs/research/diagram-partitioning-2026-09-30.md`). Uncalibrated, that is more than 25
 shapes, into modules of 6 to 25; calibration sets the size for the model (below). Each module
 is drawn and described on its own, and the diagram is then described as a whole from those
-descriptions. `--diagram-modules N:MIN:MAX` (`N` = 0 never splits) sets the thresholds
-explicitly; it is there for tuning, and the calibrated sizes should serve.
+descriptions.
 
 A package whose text is over the part size (12,000 characters, unless the text model's
 calibration lowers it) is summarized in parts of 3,000 characters up to that size, grouped by
@@ -178,13 +192,11 @@ model calibrates the sketches to it, before building:
 - **Its cost:** about 90 requests, a few minutes on a hosted model, and about a dozen more to
   validate it.
 - **Once per model and endpoint:** the result is recorded in the tree, and the answers stored,
-  so later runs ask nothing. `--no-calibrate` skips it.
+  so later runs ask nothing. The answers are in the shared store, so another tree with the same
+  model calibrates from them, without requests.
 
-A run draws with sizes from, in order:
-1. the tree's own settings: `--image-pixels`, `--diagram-modules`, `--sketch-*-px`,
-   `--image-first` or `--image-last`;
-2. the vision model's calibration;
-3. the uncalibrated defaults, gemma-4's figures at DeepInfra for now
+A run draws with sizes from the vision model's calibration, or else from the uncalibrated
+defaults, gemma-4's figures at DeepInfra for now
    (`docs/research/vision-calibration-gemma4-2026-10-03.md`):
    - 13 px text;
    - arrowheads with 10 px legs, and 1 px lines;
@@ -212,11 +224,11 @@ a value:
 
 | Setting | Recommended |
 |---|---|
-| `--image-pixels` | For a host that shrinks images to a budget of its own: the largest image in which text reads as well as in the smallest. For a model that reads at native resolution: kept as configured, since there the budget is a matter of cost. |
-| `--sketch-font-px` | 1.3 times the size read 90% of the time, at that budget. |
-| `--sketch-arrow-px`, `--sketch-line-px` | The thinnest lines and smallest heads with 95% of arrows read the right way round. |
-| `--diagram-modules` | Modules of up to the most shapes among which 90% of connections are found, either way round. |
-| `--image-first`, `--image-last` | After the text only when that reads clearly better: by 5 points, and by twice the standard error. |
+| The pixel budget | For a host that shrinks images to a budget of its own: the largest image in which text reads as well as in the smallest. For a model that reads at native resolution: kept as configured, since there the budget is a matter of cost. |
+| The font | 1.3 times the size read 90% of the time, at that budget. |
+| Arrowheads and lines | The thinnest lines and smallest heads with 95% of arrows read the right way round. |
+| The modules' size | Modules of up to the most shapes among which 90% of connections are found, either way round. |
+| The image's place | After the text only when that reads clearly better: by 5 points, and by twice the standard error. |
 
 Where the eye charts decide nothing (no arrow size passes, say), the default serves.
 
@@ -268,14 +280,13 @@ The first run with a text model also checks that it reads a part evenly, start t
   laid out in five groups, and answers five questions about each. Every name and figure is
   invented, so the scoring is exact: did the summary cover every group, and was every answer
   right?
-- **Its cost:** 30 requests, once per model and endpoint; `--no-calibrate` skips it.
+- **Its cost:** 30 requests, once per model and endpoint.
 - **What it can change:** only lower the part size. A model that reads 12,000 characters evenly
   keeps 12,000. One that doesn't, or an endpoint that cuts long inputs, gets 6,000, with a
   warning when even 6,000 reads unevenly. Calibration never makes parts larger. Strong models
   read these cards evenly to 192,000 characters, but real packages are harder to summarize, and
   larger parts mean coarser part summaries.
-- **The report:** `OUT/calibration/<model>-text-<date>/report.md`. `--part-chars N` sets the size
-  by hand, and wins. `cameo-ingest calibrate-text -o OUT` calibrates again on demand, after a host
+- **The report:** `OUT/calibration/<model>-text-<date>/report.md`. `cameo-ingest calibrate-text -o OUT` calibrates again on demand, after a host
   changes its limits, say.
 
 ## Output
@@ -292,7 +303,7 @@ out/
                          names, text, documentation and tagged values, held by two elements or
                          more, with every place (also index:id chunks)
   rag/                   the same chunks as files, for RAG tools that read files but not JSONL
-                         (see "Using the output for RAG"); --no-rag-files leaves it out
+                         (see "Using the output for RAG"); `config set rag-files off` leaves it out
     text/<project>/      a .txt file per chunk, named <sha256 of its text>.txt
     meta/<project>/      each file's metadata, <sha256>.json, at the same path
   run.json               the latest run: times, command, options, LLM calls and outcomes
@@ -405,7 +416,7 @@ ingested beside the chunks. Measured on the fictional questions
     `(project ACME_Proposal_Vol3_Annex_B… [9ffd7a2c])`. Two files both called `model.mdzip`
     read `model [1a2b3c4d]` and `model [5e6f7a8b]`.
   - **A source line** ends each file, in one of two forms, set for the whole tree with
-    `--rag-source` (a run rewrites `rag/` in the new form, without ingesting again):
+    `config set rag-source` (a run rewrites `rag/` in the new form, without ingesting again):
     - `trace` (the default): `Source:` and the trace locator (content, archive entry, element and
       line);
     - `id`: `Source:` and short ids, `[9ffd7a2c:14d101e0b1d2]`, the project's and the chunk's,
@@ -646,7 +657,8 @@ uv run pytest            # synthetic fixtures, plus the samples under 5 MB (abou
                          # page's tests need Node, and its browser test Chrome, Chromium or Edge
                          # (each skipped when missing)
 uv run pytest -m slow    # the large samples: TMT, TMT-2024x, SAF_FFDS, SAF_Plugin (about 1 min)
-uv run pytest -m llm     # a real LLM endpoint, from the environment or .env (about 1 min, ~20 requests)
+uv run pytest -m llm     # a real LLM endpoint, OPENAI_* from the environment or .env, the model
+                         # OPENAI_MODEL (about 1 min, ~20 requests)
 uv run ruff check src scripts tests   # lint, with the version the lock file pins
 uv run python scripts/record_llm_fixture.py --env .env   # re-record the LLM replay fixture
 uv run python scripts/make_fictional_projects.py out/eval/fiction   # the fictional projects, and their questions
@@ -655,6 +667,12 @@ uv run --extra eval python scripts/retrieval_eval.py TREE --env .env --questions
 uv run --extra eval python scripts/compare_retrieval.py BEFORE AFTER   # two such runs, question by question
 uv run python -m cameo_ingest.treediff BEFORE AFTER   # what a change did to an output tree
 ```
+
+**Flags for developers,** hidden from `--help`: `--llm-replay FILE` answers every request from a
+recorded `llm.sqlite` and never uses the network (a request with no recorded answer fails its
+project; the store holds request hashes, not prompts, so a store recorded on public samples is
+committed as a test fixture); `--no-calibrate` and `--no-preflight` skip calibration and the
+endpoint check for one run; `--heartbeat SECONDS` sets the heartbeat (0 turns it off).
 
 **Fictional projects.** Seven invented Cameo projects, ours to share, are built by
 `cameo_ingest.evaluation.fiction` in the format Cameo writes. They grow in size and difficulty:

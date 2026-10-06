@@ -10,8 +10,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-
-from cameo_ingest.cli import main
+from helpers import cli
 
 JS = Path(__file__).parent / "js"
 NODE = shutil.which("node")
@@ -31,7 +30,7 @@ def node(*args: str) -> str:
 @pytest.fixture(scope="module")
 def page(fiction_tree, tmp_path_factory) -> Path:
     path = tmp_path_factory.mktemp("page") / "search.html"
-    assert main(["export", "-o", str(fiction_tree), "--search-page", str(path)]) == 0
+    assert cli(["export", "-o", str(fiction_tree), "--search-page", str(path)]) == 0
     return path
 
 
@@ -50,7 +49,7 @@ def test_page_holds_the_catalog(page, fiction_tree, tmp_path):
     assert part["l"][0] == "_kois_kois" and "c" not in part  # a member borrows its owner's text, not a copy
     assert not any(i["t"] == "relationship" for d in data for i in d["items"])
     again = tmp_path / "again.html"
-    assert main(["export", "-o", str(fiction_tree), "--search-page", str(again)]) == 0
+    assert cli(["export", "-o", str(fiction_tree), "--search-page", str(again)]) == 0
     assert again.read_bytes() == page.read_bytes()
 
 
@@ -102,7 +101,7 @@ def test_page_in_a_browser(tmp_path):
     kois = PROJECTS["kois"]()
     out = ingest(tmp_path, (kois.file_name, kois.mdzip()))  # sketches drawn
     page = tmp_path / "search.html"
-    assert main(["export", "-o", str(out), "--search-page", str(page), "--sketches", "svg"]) == 0
+    assert cli(["export", "-o", str(out), "--search-page", str(page), "--sketches", "svg"]) == 0
     doc = [i["k"] for i in blocks(page)[0]["items"]].index("_kois_d_req")
     seen = json.loads(node(str(JS / "browser.js"), CHROME, str(tmp_path / "profile"), str(page), str(doc), "_kois_k7",
                            "valve closing"))

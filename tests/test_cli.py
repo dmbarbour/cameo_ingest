@@ -12,13 +12,12 @@ from fixture_model import MODEL, make_mdzip
 from helpers import (
     FakeChat,
     check_invariants,
+    cli,
     project_dir,
     provenance,
     run,
     tree,
 )
-
-from cameo_ingest.cli import main
 
 
 def test_failed_project_does_not_stop_others(tmp_path, caplog):
@@ -37,7 +36,7 @@ def test_failed_project_does_not_stop_others(tmp_path, caplog):
     src = tmp_path / "bundle.rdzip"
     src.write_bytes(bytes(data))
     out = tmp_path / "out"
-    assert main([str(src), "-o", str(out), "--no-llm", "--no-render"]) == 4
+    assert cli([str(src), "-o", str(out), "--no-llm", "--no-render"]) == 4
     manifest = json.loads((out / "manifest.json").read_text())
     assert [p["name"] for p in manifest["projects"]] == ["good.mdzip"]
     assert [f["name"] for f in manifest["failed"]] == ["bad.mdzip"]
@@ -62,7 +61,7 @@ def test_adding_a_directory_reports_its_walk(tmp_path, caplog):
     (tree / "notes.txt").write_text("not a model")
     out = tmp_path / "out"
     with caplog.at_level(logging.DEBUG, logger="cameo_ingest"):
-        assert main(["add", "-o", str(out), str(tree), "-vv"]) == 0
+        assert cli(["add", "-o", str(out), str(tree), "-vv"]) == 0
     assert "looking for models under" in caplog.text
     assert "candidate: " in caplog.text and "drone.mdzip (ZIP)" in caplog.text
     assert "found 1 candidate(s)" in caplog.text and "2 file(s) skipped by type" in caplog.text
@@ -75,17 +74,17 @@ def test_which_tree(tmp_path, monkeypatch, caplog):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     monkeypatch.chdir(tmp_path)
-    assert main([str(src), "--no-llm", "--no-render"]) == 0
+    assert cli([str(src), "--no-llm", "--no-render"]) == 0
     assert (tmp_path / "ingest_tree" / "manifest.json").is_file()
-    assert main(["status"]) == 0
+    assert cli(["status"]) == 0
     monkeypatch.setenv("CAMEO_INGEST_TREE", str(tmp_path / "chosen"))
-    assert main([str(src), "--no-llm", "--no-render"]) == 0
+    assert cli([str(src), "--no-llm", "--no-render"]) == 0
     assert (tmp_path / "chosen" / "manifest.json").is_file()
-    assert main([str(src), "-o", str(tmp_path / "given"), "--no-llm", "--no-render"]) == 0  # -o wins
+    assert cli([str(src), "-o", str(tmp_path / "given"), "--no-llm", "--no-render"]) == 0  # -o wins
     assert (tmp_path / "given" / "manifest.json").is_file()
     monkeypatch.delenv("CAMEO_INGEST_TREE")
     monkeypatch.setenv("CAMEO_INGEST_DEST", str(tmp_path / "old"))
-    assert main(["status"]) == 0 and not (tmp_path / "old").exists()
+    assert cli(["status"]) == 0 and not (tmp_path / "old").exists()
     assert "CAMEO_INGEST_DEST is retired" in caplog.text
 
 
@@ -95,13 +94,13 @@ def test_tree_rules_and_missing_inputs(tmp_path, capsys):
     (foreign / "notes.txt").write_text("mine")
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
-    assert main([str(src), "-o", str(foreign), "--no-llm"]) == 2  # never write into an unrelated directory
-    assert main(["run", "-o", str(tmp_path / "nothing")]) == 2
+    assert cli([str(src), "-o", str(foreign), "--no-llm"]) == 2  # never write into an unrelated directory
+    assert cli(["run", "-o", str(tmp_path / "nothing")]) == 2
     assert "not a cameo-ingest output tree" in capsys.readouterr().err
     out = tmp_path / "out"
-    assert main([str(src), "-o", str(out), "--no-llm", "--no-render"]) == 0
+    assert cli([str(src), "-o", str(out), "--no-llm", "--no-render"]) == 0
     src.unlink()  # the input disappears: its project stays (plan decision 3)
-    assert main(["run", "-o", str(out)]) == 0
+    assert cli(["run", "-o", str(out)]) == 0
     [record] = provenance(out).values()
     assert record["status"] == "written" and record["sightings"][0]["missing"]
     assert "(input missing)" in (out / "INDEX.md").read_text()
@@ -113,12 +112,12 @@ def test_options_change_rewrites_projects(tmp_path, monkeypatch, fake_chat):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     out = tmp_path / "out"
-    assert main([str(src), "-o", str(out), "--no-llm"]) == 0
+    assert cli([str(src), "-o", str(out), "--no-llm"]) == 0
     proj = project_dir(out)
     assert (proj / "diagrams/Drone_BDD.png").exists()
-    assert main(["run", "-o", str(out)]) == 0
+    assert cli(["run", "-o", str(out)]) == 0
     assert json.loads((out / "run.json").read_text())["projects"]["written"] == 0  # up to date
-    assert main(["run", "-o", str(out), "--no-render"]) == 0
+    assert cli(["run", "-o", str(out), "--no-render"]) == 0
     assert json.loads((out / "run.json").read_text())["projects"]["written"] == 1
     assert not (proj / "diagrams/Drone_BDD.png").exists() and (proj / "README.md").exists()
     import dataclasses
@@ -129,43 +128,44 @@ def test_options_change_rewrites_projects(tmp_path, monkeypatch, fake_chat):
     in_use = prompts.CURRENT["package-summary"]
     later = dataclasses.replace(in_use, version=in_use.version + 100)
     monkeypatch.setitem(prompts.CURRENT, "package-summary", later)
-    assert main(["run", "-o", str(out), "--text-model", "m", "--no-calibrate"]) == 0
+    assert cli(["run", "-o", str(out), "--text-model", "m", "--no-calibrate"]) == 0
     assert json.loads((out / "run.json").read_text())["projects"]["written"] == 1
     monkeypatch.setitem(prompts.CURRENT, "package-summary", in_use)
-    assert main(["run", "-o", str(out)]) == 0
+    assert cli(["run", "-o", str(out)]) == 0
     assert json.loads((out / "run.json").read_text())["projects"]["written"] == 1
-    assert main(["run", "-o", str(out)]) == 0
+    assert cli(["run", "-o", str(out)]) == 0
     assert json.loads((out / "run.json").read_text())["projects"]["written"] == 0
     monkeypatch.setattr(runner, "TOOL", "cameo-ingest/99")
-    assert main(["run", "-o", str(out)]) == 0
+    assert cli(["run", "-o", str(out)]) == 0
     assert json.loads((out / "run.json").read_text())["projects"]["written"] == 1
 
 
 def test_no_model_fails_fast(tmp_path, capsys):
+    """A tree that uses the LLM but names no model stops at once, and says which `config`
+    commands set one (BASE-020, plan CF)."""
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     out = tmp_path / "out"
-    assert main([str(src), "-o", str(out)]) == 2  # BASE-020
+    assert cli([str(src), "-o", str(out)]) == 2
     err = capsys.readouterr().err
-    assert "--no-llm" in err and "--env" in err and "OPENAI_MODEL" in err
+    assert "config set text-model NAME" in err and "config set llm off" in err and "OPENAI_BASE_URL" in err
     assert not out.exists()
 
 
-def test_env_file_and_preflight(tmp_path, capsys, caplog):
-    caplog.set_level(logging.INFO)
-    env = tmp_path / "test.env"
-    env.write_text("OPENAI_MODEL=file-model\nOPENAI_API_KEY=sk-secret-123\nOPENAI_BASE_URL=http://127.0.0.1:9/v1\n")
-    os.environ["OPENAI_MODEL"] = "shell-model"  # already set, so the file's value is not used
+def test_preflight(tmp_path, capsys, caplog):
+    """The endpoint and key come from OPENAI_BASE_URL and OPENAI_API_KEY only; an endpoint that
+    doesn't answer stops the run before any parsing (BASE-020), and the key is never shown."""
+    os.environ["OPENAI_BASE_URL"] = "http://127.0.0.1:9/v1"  # nothing listens on port 9
+    os.environ["OPENAI_API_KEY"] = "sk-secret-123"
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     out = tmp_path / "out"
-    # Nothing listens on port 9: the preflight check fails before any parsing (BASE-020).
-    assert main([str(src), "-o", str(out), "--env", str(env), "--llm-retries", "0", "--llm-timeout", "5", "-v"]) == 5
+    assert cli(["config", "-o", str(out), "set", "text-model", "shell-model"]) == 0
+    assert cli([str(src), "-o", str(out), "-v"]) == 5
     err = capsys.readouterr().err
-    assert "shell-model" in err and "127.0.0.1:9" in err
-    assert "loaded OPENAI_API_KEY, OPENAI_BASE_URL from" in caplog.text and "not loaded: OPENAI_MODEL" in caplog.text
+    assert "shell-model" in err and "127.0.0.1:9" in err and "config test" in err
     assert "sk-secret-123" not in err + caplog.text
-    assert not out.exists()
+    assert not (out / "manifest.json").exists()
     assert logging.getLogger("httpx").getEffectiveLevel() == logging.WARNING  # quiet below -vv (BASE-018)
 
 
@@ -175,7 +175,7 @@ def test_progress_heartbeats_and_log_file(tmp_path, fake_chat, monkeypatch, caps
     src.write_bytes(make_mdzip())
     log_file = tmp_path / "run.log"
     # Not a terminal, default verbosity: heartbeat lines still reach the console (BASE-018).
-    assert main([str(src), "-o", str(tmp_path / "out"), "--vision-model", "m", "--heartbeat", "0.05",
+    assert cli([str(src), "-o", str(tmp_path / "out"), "--vision-model", "m", "--heartbeat", "0.05",
                  "--log-file", str(log_file)]) == 0
     err = capsys.readouterr().err
     assert re.search(r"drone\.mdzip: LLM: \d requests? of 3 requests \(\d+%\)", err)
@@ -190,18 +190,18 @@ def test_interrupt_and_resume(tmp_path, fake_chat, monkeypatch, capsys):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     ref = tmp_path / "ref"
-    assert main([str(src), "-o", str(ref), "--vision-model", "m", "--no-calibrate", "--no-preflight"]) == 0
+    assert cli([str(src), "-o", str(ref), "--vision-model", "m", "--no-calibrate", "--no-preflight"]) == 0
     monkeypatch.setattr(FakeChat, "interrupt_at", 2)  # Ctrl-C during the second LLM request
     os.environ["CAMEO_INGEST_CACHE"] = str(tmp_path / "store-out")  # not the reference's answers
     out = tmp_path / "out"
-    assert main([str(src), "-o", str(out), "--vision-model", "m", "--no-calibrate", "--no-preflight"]) == 130
+    assert cli([str(src), "-o", str(out), "--vision-model", "m", "--no-calibrate", "--no-preflight"]) == 130
     assert "Continue with: cameo-ingest run -o" in capsys.readouterr().err
     assert json.loads((out / "run.json").read_text())["outcome"] == "interrupted"
     assert json.loads((out / "manifest.json").read_text())["projects"] == []  # nothing half-published
     [work] = (out / "by-sha256/.work").iterdir()
     sketch = (work / "diagrams/Drone_BDD.png").stat().st_mtime_ns  # drawn before the interruption
     monkeypatch.setattr(FakeChat, "interrupt_at", None)
-    assert main(["run", "-o", str(out), "--no-preflight"]) == 0  # the tree remembers the model
+    assert cli(["run", "-o", str(out), "--no-preflight", "--no-calibrate"]) == 0  # the tree remembers the model
     assert json.loads((out / "run.json").read_text())["llm"]["outcomes"] == {"answered": 2, "cached": 1}
     assert (project_dir(out) / "diagrams/Drone_BDD.png").stat().st_mtime_ns == sketch  # reused, not redrawn
     assert tree(out) == tree(ref)
@@ -212,23 +212,23 @@ def test_status_and_prune(tmp_path, capsys):
     a.write_bytes(make_mdzip())
     b.write_bytes(make_mdzip(MODEL.replace("name='Requirements'", "name='Needs'")))
     out = tmp_path / "out"
-    assert main([str(a), str(b), "-o", str(out), "--no-llm", "--no-render"]) == 0
+    assert cli([str(a), str(b), "-o", str(out), "--no-llm", "--no-render"]) == 0
     b.unlink()
-    assert main(["run", "-o", str(out)]) == 0
+    assert cli(["run", "-o", str(out)]) == 0
     capsys.readouterr()
-    assert main(["status", "-o", str(out), "--json"]) == 0
+    assert cli(["status", "-o", str(out), "--json"]) == 0
     s = json.loads(capsys.readouterr().out)
     assert s["inputs"]["counts"] == {"done": 1, "missing": 1} and s["projects"]["counts"] == {"written": 2}
     assert s["inputs"]["problems"] == [{"path": str(b), "status": "missing", "error": None}]
     assert s["latest_run"]["outcome"] == "finished"
-    assert main(["prune", "-o", str(out), "--dry-run"]) == 0
+    assert cli(["prune", "-o", str(out), "--dry-run"]) == 0
     assert "would remove 1 missing input(s) and 1 project(s)" in capsys.readouterr().out
     assert len(list((out / "by-sha256").glob("[0-9a-f]*"))) == 2
-    assert main(["prune", "-o", str(out)]) == 0
+    assert cli(["prune", "-o", str(out)]) == 0
     assert [p["name"] for p in json.loads((out / "manifest.json").read_text())["projects"]] == ["a.mdzip"]
     assert len(list((out / "by-sha256").glob("[0-9a-f]*"))) == 1
     capsys.readouterr()
-    assert main(["status", "-o", str(out)]) == 0
+    assert cli(["status", "-o", str(out)]) == 0
     assert "inputs: 1 done\nprojects: 1 written\n" in capsys.readouterr().out
 
 
@@ -240,14 +240,14 @@ def test_markdown_chunk_style_retired(tmp_path, caplog):
     st = State(out)
     st.save_settings({**st.settings(), "chunk_style": "markdown"})
     st.close()
-    assert main(["run", "-o", str(out)]) == 0
+    assert cli(["run", "-o", str(out)]) == 0
     assert "Markdown chunk style is retired" in caplog.text
     st = State(out)
     assert "chunk_style" not in st.settings()
     st.close()
     assert not list((out / "rag" / "text").rglob("*.md")) and list((out / "rag" / "text").rglob("*.txt"))
     with pytest.raises(SystemExit):
-        main([str(tmp_path / "drone.mdzip"), "-o", str(tmp_path / "again"), "--chunk-style", "markdown"])
+        cli([str(tmp_path / "drone.mdzip"), "-o", str(tmp_path / "again"), "--chunk-style", "markdown"])
 
 
 def test_config(tmp_path, capsys):
@@ -256,41 +256,41 @@ def test_config(tmp_path, capsys):
     from cameo_ingest.state import State
 
     out = tmp_path / "tree"
-    assert main(["config", "-o", str(out)]) == 0
+    assert cli(["config", "-o", str(out)]) == 0
     assert "no tree yet" in capsys.readouterr().out and not out.exists()
     for key, value, expect in (("llm", "off", "llm = off"), ("text-model", "google/gemma-4-31B-it", "= google/gemma-4"),
                                ("rag-source", "id", "rag-source = id"), ("concurrency", "8", "concurrency = 8"),
                                ("render", "no", "render = off")):
-        assert main(["config", "-o", str(out), "set", key, value]) == 0
+        assert cli(["config", "-o", str(out), "set", key, value]) == 0
         assert expect in capsys.readouterr().out
     st = State(out)
     assert st.settings() == {"no_llm": True, "text_model": "google/gemma-4-31B-it", "rag_source": "id",
                              "llm_concurrency": 8, "render": False}
     st.close()
-    assert main(["config", "-o", str(out), "set", "llm", "on"]) == 0  # either way
-    assert main(["config", "-o", str(out), "unset", "text-model"]) == 0
-    assert main(["config", "-o", str(out), "unset", "render"]) == 0
+    assert cli(["config", "-o", str(out), "set", "llm", "on"]) == 0  # either way
+    assert cli(["config", "-o", str(out), "unset", "text-model"]) == 0
+    assert cli(["config", "-o", str(out), "unset", "render"]) == 0
     shown = capsys.readouterr().out
-    assert main(["config", "-o", str(out), "show"]) == 0
+    assert cli(["config", "-o", str(out), "show"]) == 0
     shown = capsys.readouterr().out
     assert "llm           on                 (default)" in shown and "text-model    none" in shown
     assert "concurrency   8" in shown and "rag-source    id" in shown
     for bad in (["set", "llm", "maybe"], ["set", "concurrency", "0"], ["set", "rag-source", "path"],
                 ["set", "colour", "red"], ["unset", "colour"]):
-        assert main(["config", "-o", str(out), *bad]) == 2, bad
+        assert cli(["config", "-o", str(out), *bad]) == 2, bad
     assert "the settings are llm, text-model" in capsys.readouterr().err
     # A configured tree then ingests as configured.
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
-    assert main(["config", "-o", str(out), "set", "llm", "off"]) == 0
-    assert main([str(src), "-o", str(out), "--no-render"]) == 0
+    assert cli(["config", "-o", str(out), "set", "llm", "off"]) == 0
+    assert cli([str(src), "-o", str(out), "--no-render"]) == 0
 
 
 def test_config_test_and_models(tmp_path, monkeypatch, capsys, caplog):
     """`config test` checks that each model answers and the vision model reads a drawn number;
     `config models` lists the endpoint's models, those the tree uses marked; a model whose
     creation time changes is noted (plan CF-03)."""
-    from cameo_ingest import cli
+    from cameo_ingest import cli as cli_module
     from cameo_ingest.checks import CARD_NUMBER
 
     class Endpoint:
@@ -306,24 +306,24 @@ def test_config_test_and_models(tmp_path, monkeypatch, capsys, caplog):
             return "Ready."
 
     endpoint = Endpoint()
-    monkeypatch.setattr(cli, "make_client", lambda cfg: endpoint)
+    monkeypatch.setattr(cli_module, "make_client", lambda cfg: endpoint)
     out = tmp_path / "tree"
-    assert main(["config", "-o", str(out), "test"]) == 2
+    assert cli(["config", "-o", str(out), "test"]) == 2
     assert "config set text-model" in capsys.readouterr().err
-    assert main(["config", "-o", str(out), "set", "text-model", "acme/text"]) == 0
-    assert main(["config", "-o", str(out), "set", "vision-model", "acme/vision"]) == 0
+    assert cli(["config", "-o", str(out), "set", "text-model", "acme/text"]) == 0
+    assert cli(["config", "-o", str(out), "set", "vision-model", "acme/vision"]) == 0
     capsys.readouterr()
-    assert main(["config", "-o", str(out), "test"]) == 0
+    assert cli(["config", "-o", str(out), "test"]) == 0
     report = capsys.readouterr().out
     assert "ok   the text model acme/text answers" in report and "ok   the vision model acme/vision reads" in report
     endpoint.reads = False
-    assert main(["config", "-o", str(out), "test"]) == 5
+    assert cli(["config", "-o", str(out), "test"]) == 5
     assert "FAIL the vision model acme/vision reads an image" in capsys.readouterr().out
     endpoint.created = 1800000000
-    main(["config", "-o", str(out), "test"])
+    cli(["config", "-o", str(out), "test"])
     assert "acme/text at this endpoint reports another creation time" in caplog.text
-    assert main(["config", "-o", str(out), "models"]) == 0
+    assert cli(["config", "-o", str(out), "models"]) == 0
     listing = capsys.readouterr().out
     assert "acme/text  [text model]" in listing and "acme/vision  [vision model]" in listing and "acme/embed" in listing
-    assert main(["config", "-o", str(out), "models", "vis"]) == 0
+    assert cli(["config", "-o", str(out), "models", "vis"]) == 0
     assert "acme/text" not in capsys.readouterr().out

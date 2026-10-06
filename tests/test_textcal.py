@@ -99,9 +99,7 @@ def test_a_run_guards_the_part_size(tmp_path, monkeypatch, capsys):
     import json
 
     from fixture_model import make_mdzip
-    from helpers import ingest
-
-    from cameo_ingest.cli import main
+    from helpers import cli, ingest
 
     reading(monkeypatch, 10**9)
     out = ingest(tmp_path, ("m.mdzip", make_mdzip()), args=("--text-model", "good", "--no-render", "--no-preflight"))
@@ -112,16 +110,16 @@ def test_a_run_guards_the_part_size(tmp_path, monkeypatch, capsys):
     assert "**Part size: 12,000 characters.**" in report.read_text()
 
     readers = reading(monkeypatch, 9_000)
-    assert main(["run", "-o", str(out), "--text-model", "short"]) == 0
+    assert cli(["run", "-o", str(out), "--text-model", "short"]) == 0
     assert "calibrated to short: part_chars 6,000" in capsys.readouterr().err
     run = json.loads((out / "run.json").read_text())
     assert run["options"]["part_chars"] == 6_000 and run["projects"]["written"] == 1  # made again
     assert sum(r.cards for r in readers) == 2 * tc.GUARD_CARDS * len(tc.GUARD_LENGTHS)
 
     readers = reading(monkeypatch, 9_000)
-    assert main(["run", "-o", str(out)]) == 0
+    assert cli(["run", "-o", str(out)]) == 0
     assert sum(r.cards for r in readers) == 0  # the record stands
-    assert main(["status", "-o", str(out)]) == 0
+    assert cli(["status", "-o", str(out)]) == 0
     status = capsys.readouterr().out
     assert "calibrated (text): short on " in status and "part_chars 6000" in status
 
@@ -132,15 +130,14 @@ def test_calibrate_text_on_demand(tmp_path, monkeypatch, capsys):
     import json
 
     from fixture_model import make_mdzip
-    from helpers import ingest
+    from helpers import cli, ingest
 
-    from cameo_ingest.cli import main
     from cameo_ingest.state import State
 
     out = ingest(tmp_path, ("m.mdzip", make_mdzip()))
-    assert main(["calibrate-text", "-o", str(out)]) == 2  # no text model
+    assert cli(["calibrate-text", "-o", str(out)]) == 2  # no text model
     readers = reading(monkeypatch, 9_000)
-    assert main(["calibrate-text", "-o", str(out), "--text-model", "short", "--no-preflight"]) == 0
+    assert cli(["calibrate-text", "-o", str(out), "--text-model", "short", "--no-preflight"]) == 0
     printed = capsys.readouterr().out
     assert "part_chars: 6,000: the model reads 6,000-character inputs evenly, but not 12,000" in printed
     assert "recorded: runs with short use this part size" in printed
@@ -149,5 +146,5 @@ def test_calibrate_text_on_demand(tmp_path, monkeypatch, capsys):
     st.close()
     assert sum(r.cards for r in readers) == 30
     readers = reading(monkeypatch, 9_000)
-    assert main(["calibrate-text", "-o", str(out), "--text-model", "short", "--no-preflight"]) == 0
+    assert cli(["calibrate-text", "-o", str(out), "--text-model", "short", "--no-preflight"]) == 0
     assert sum(r.cards for r in readers) == 0  # every card answered from the store

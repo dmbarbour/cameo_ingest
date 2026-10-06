@@ -1,8 +1,8 @@
 """A tree's settings and a project's options, typed, with their defaults in one place (AR-013).
 
-- **Tree settings** are remembered by `state.sqlite` and applied to the whole tree on every run:
-  the LLM endpoint's models and limits, and what the root files hold (`rag/`, the index across
-  models, threads, line references). A run's flags override them, and are remembered in turn.
+- **Tree settings** are kept in `state.sqlite` and applied to the whole tree on every run: the
+  LLM's models and call budget, rendering, and what `rag/` holds. `cameo-ingest config` sets them,
+  and only it (plan CF); the fields it doesn't name are filled by calibration or defaults.
 - **Project options** decide what a project's own files hold. They are hashed into the
   project's identity, so that a project made with other options is made again (FU-014).
 """

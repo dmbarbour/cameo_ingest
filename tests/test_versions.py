@@ -5,9 +5,8 @@ import json
 import sqlite3
 import zipfile
 
-from helpers import ingest, tree
+from helpers import cli, ingest, tree
 
-from cameo_ingest.cli import main
 from cameo_ingest.fingerprint import parse_java_date
 from cameo_ingest.state import SCHEMA_VERSION, State
 
@@ -61,11 +60,11 @@ def test_groups_versions_forks_and_templates(tmp_path, capsys):
     for rel, data in inputs:
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / rel).write_bytes(data)
-    assert main(["add", "-o", str(out), str(tmp_path / "plant"), str(tmp_path / "fork"),
+    assert cli(["add", "-o", str(out), str(tmp_path / "plant"), str(tmp_path / "fork"),
                  str(tmp_path / "template.mdzip"), str(tmp_path / "derived.mdzip")]) == 0
-    assert main(["scan", "-o", str(out)]) == 0
+    assert cli(["scan", "-o", str(out)]) == 0
     capsys.readouterr()
-    assert main(["groups", "-o", str(out), "--csv", str(tmp_path / "groups.csv")]) == 0
+    assert cli(["groups", "-o", str(out), "--csv", str(tmp_path / "groups.csv")]) == 0
     report = capsys.readouterr().out
     assert "2 group(s) of likely versions" in report
     plant = report[report.index("## Group 2: plant.mdzip"):]
@@ -94,18 +93,18 @@ def test_removed_projects_stay_out(tmp_path, capsys):
     st = State(out)
     old = next(r["sha256"] for r in st.catalog() if r["name"] == "old.mdzip")
     st.close()
-    assert main(["remove", "-o", str(out), old[:10]]) == 0
+    assert cli(["remove", "-o", str(out), old[:10]]) == 0
     assert not (out / "by-sha256" / old).exists()
-    assert main(["run", "-o", str(out), "--no-llm"]) == 0  # the input is still there
+    assert cli(["run", "-o", str(out), "--no-llm"]) == 0  # the input is still there
     assert not (out / "by-sha256" / old).exists()
     assert old not in (out / "chunks.jsonl").read_text() and "old.mdzip" not in json.dumps(
         json.loads((out / "manifest.json").read_text())["projects"])
     assert "old.mdzip `sha256:" in (out / "INDEX.md").read_text() and "removed" in (out / "INDEX.md").read_text()
     capsys.readouterr()
-    assert main(["status", "-o", str(out)]) == 0 and "1 removed" in capsys.readouterr().out
-    assert main(["remove", "-o", str(out), "sha256:" + old[:8]]) == 2  # already removed: no match
-    assert main(["restore", "-o", str(out), old[:8]]) == 0
-    assert main(["run", "-o", str(out), "--no-llm"]) == 0
+    assert cli(["status", "-o", str(out)]) == 0 and "1 removed" in capsys.readouterr().out
+    assert cli(["remove", "-o", str(out), "sha256:" + old[:8]]) == 2  # already removed: no match
+    assert cli(["restore", "-o", str(out), old[:8]]) == 0
+    assert cli(["run", "-o", str(out), "--no-llm"]) == 0
     assert tree(out) == before
 
 
@@ -142,7 +141,7 @@ def test_scan_reports_what_it_is_on(tmp_path, caplog, monkeypatch):
     src = tmp_path / "slow.mdzip"
     src.write_bytes(model("Slow", BASE))
     out = tmp_path / "out"
-    assert main(["add", "-o", str(out), str(src)]) == 0
+    assert cli(["add", "-o", str(out), str(src)]) == 0
     original = Runner._read
 
     def slow(self, path, ph):

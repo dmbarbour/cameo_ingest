@@ -104,8 +104,7 @@ def test_a_table_not_computed_says_why(tmp_path):
     """A table that finds its rows in a scope lists none in the file: its page says what isn't
     shown and why, and the catalog, the workbook and the search page report it (plan CT)."""
     import xlsx
-
-    from cameo_ingest.cli import main
+    from helpers import cli
 
     model = table_model().replace("rowElements='r1 r2'", "scope='p2'")
     out = run(tmp_path, "drone.mdzip", make_mdzip(model))
@@ -119,7 +118,7 @@ def test_a_table_not_computed_says_why(tmp_path):
     assert records[0]["tables"] == {"not computed": 1}
     assert next(r for r in records if r.get("key") == "d2")["table"] == "not computed: rows from scope"
     book = tmp_path / "catalog.xlsx"
-    assert main(["export", "-o", str(out), "--workbook", str(book), "--search-page", str(tmp_path / "s.html")]) == 0
+    assert cli(["export", "-o", str(out), "--workbook", str(book), "--search-page", str(tmp_path / "s.html")]) == 0
     sheets = xlsx.sheets(book)
     assert ["Not computed", "1"] in [row[:2] for row in sheets["About"]]
     assert any("not computed: rows from scope" in (row or []) for row in sheets["Diagrams"])

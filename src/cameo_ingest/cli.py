@@ -25,17 +25,15 @@ import os
 import shutil
 import signal
 import sys
-from dataclasses import fields
 from pathlib import Path
 from typing import Any
 
 from . import __version__
 from . import runner as tree
 from .archive import ZIP_MAGIC, sniff_xmi
-from .config import IMAGE_PIXELS, MODULES, SKETCH, ProjectOptions, TreeSettings, parse_modules
+from .config import IMAGE_PIXELS, ProjectOptions, TreeSettings
 from .llm import EnrichmentSession, LLMConfig, connect
 from .progress import Progress
-from .prompts import PART_CHARS
 from .runner import Runner
 from .state import State, StateError
 
@@ -45,18 +43,17 @@ DEFAULT_TREE = "ingest_tree"  # in the working directory, when neither -o nor $C
 COMMANDS = ("add", "run", "ingest", "status", "prune", "quality", "export", "scan", "projects", "groups", "remove",
             "restore", "calibrate-vision", "calibrate-text", "config")
 
-NO_MODEL = """error: no LLM model is configured. Either
-  - pass --no-llm to ingest without LLM summaries and descriptions, or
-  - name a model with --text-model / --vision-model, or set CAMEO_INGEST_TEXT_MODEL
-    (or OPENAI_MODEL) in the environment or in a file loaded with --env FILE.
-The endpoint comes from OPENAI_BASE_URL and OPENAI_API_KEY; see .env.example.
-An output tree remembers these choices, so later runs need no flags."""
+NO_MODEL = """error: the tree uses the LLM, but names no model. Either
+  - cameo-ingest config set text-model NAME (and vision-model, if another model reads images), or
+  - cameo-ingest config set llm off, to ingest without summaries and descriptions,
+The endpoint is $OPENAI_BASE_URL (unset: OpenAI), its key $OPENAI_API_KEY; `cameo-ingest config
+models` lists the endpoint's models, and `cameo-ingest config test` checks them."""
 
-# Run settings an output tree remembers (never secrets: --env names a file), from their flags;
-# --no-llm and --render are read apart.
-SETTINGS = tuple(f.name for f in fields(TreeSettings) if f.name not in ("no_llm", "render"))
-# Settings a tree may remember from an older version, now fixed defaults (ADR-0027, 2026-10-05).
-RETIRED = ("cross_index", "threads", "hierarchies", "line_refs")
+# Settings a tree may remember from an older version, now fixed defaults or calibrated
+# (ADR-0027, 2026-10-05; plan CF, 0.21.0): ignored, with a notice.
+RETIRED = ("cross_index", "threads", "hierarchies", "line_refs", "env", "llm_timeout", "llm_retries", "cache_dir",
+           "image_pixels", "diagram_modules", "sketch_font_px", "sketch_arrow_px", "sketch_line_px", "image_first",
+           "part_chars", "calibrate")
 
 PROGRESS_LOGGER = "cameo_ingest.progress"
 _handlers: list[logging.Handler] = []  # ours, replaced when main() runs again (as in tests)
@@ -143,65 +140,11 @@ def build_parser() -> argparse.ArgumentParser:
                         help="JSON object of provenance metadata (repeatable; --meta wins)")
 
     running = argparse.ArgumentParser(add_help=False)
-    g = running.add_argument_group("run settings (remembered by the output tree)")
-    g.add_argument("--env", type=Path, metavar="FILE",
-                   help="load environment variables from a dotenv file (variables already set win)")
-    g.add_argument("--text-model", help="LLM for summaries (overrides CAMEO_INGEST_TEXT_MODEL, OPENAI_MODEL)")
-    g.add_argument("--vision-model", help="LLM for image descriptions (overrides CAMEO_INGEST_VISION_MODEL; "
-                                          "default: the text model)")
-    g.add_argument("--no-llm", action="store_true", help="no LLM enrichment (required when no model is configured)")
-    flag_pair(g, "render", "render diagram sketches", "do not render sketches", default=True)
-    g.add_argument("--image-pixels", type=int, metavar="N",
-                   help="pixel budget of diagram sketches and of images sent to the vision model (default: the "
-                        f"vision model's calibration; uncalibrated, {IMAGE_PIXELS}, gemma-4's 280 soft tokens of "
-                        "48 x 48 px at DeepInfra)")
-    g.add_argument("--diagram-modules", metavar="N:MIN:MAX",
-                   help="split diagrams of more than N shapes into modules of MIN to MAX shapes, each drawn and "
-                        "described on its own (default: the vision model's calibration; uncalibrated, "
-                        f"{':'.join(map(str, MODULES))}; N = 0 never splits)")
-    g.add_argument("--part-chars", type=int, metavar="N",
-                   help="the largest input of package text in one LLM request: a large package's parts, and a "
-                        "package summarized at once (default: the text model's calibration, which only lowers it; "
-                        f"uncalibrated, {PART_CHARS[1]:,})")
-    g.add_argument("--sketch-font-px", type=int, metavar="PX",
-                   help=f"sketches' font size (default: the vision model's calibration; uncalibrated, {SKETCH[0]})")
-    g.add_argument("--sketch-arrow-px", type=float, metavar="PX",
-                   help=f"sketches' arrowhead legs (default: as calibrated; uncalibrated, {SKETCH[1]:g})")
-    g.add_argument("--sketch-line-px", type=int, metavar="PX",
-                   help=f"sketches' connection lines (default: as calibrated; uncalibrated, {SKETCH[2]})")
-    g.add_argument("--image-first", dest="image_first", action="store_const", const=True, default=None,
-                   help="put the image before the text in requests to the vision model (default: as calibrated; "
-                        "uncalibrated, first, as Google advises for gemma)")
-    g.add_argument("--image-last", dest="image_first", action="store_const", const=False,
-                   help="put the image after the text in requests to the vision model")
-    flag_pair(g, "calibrate", "calibrate to the models before building, when the tree has no calibration for "
-              "them: the sketches to the vision model (about 90 requests) and the part size to the text model (30), "
-              "once per model (see the README's calibration sections)", "use the uncalibrated defaults", default=True)
-    flag_pair(g, "rag-files", "write rag/: every chunk as a .txt file, ending with its source and trace, for RAG "
-              "tools that read files but not JSONL", "do not write rag/ (chunks.jsonl has the same chunks)",
-              default=True)
-    g.add_argument("--rag-source", choices=("trace", "id"),
-                   help="what the source line of every file in rag/ says: the project and trace locator (trace, the "
-                        "default), or short ids that rag/meta/_sources.json and chunks.jsonl resolve to files and "
-                        "locators (id). Set for the whole tree: a run rewrites rag/ in the new form, without "
-                        "ingesting again")
-    g.add_argument("--llm-timeout", type=float, metavar="SECONDS", help="per-request timeout (default 120)")
-    g.add_argument("--llm-retries", type=int, metavar="N", help="retries per request (default 2)")
-    g.add_argument("--llm-max-calls", type=int, metavar="N", help="stop calling the LLM after N requests in a run "
-                                                                  "(default: no limit)")
-    g.add_argument("--llm-concurrency", type=int, metavar="N",
-                   help="LLM requests in flight at once (default 1; hosted endpoints usually allow more)")
-    g.add_argument("--cache-dir", type=Path, metavar="DIR",
-                   help="directory of the LLM response store, llm.sqlite (default: OUT/.cache)")
-    r = running.add_argument_group("this run only")
-    r.add_argument("--no-preflight", action="store_true",
-                   help="skip the check that each LLM model answers before work starts")
-    r.add_argument("--llm-replay", type=Path, metavar="FILE",
-                   help="answer LLM requests only from a recorded llm.sqlite, never the network; a request "
-                        "with no recorded answer fails its project (for tests)")
-    r.add_argument("--heartbeat", type=float, default=30.0, metavar="SECONDS",
-                   help="when stderr is not a terminal, log progress every SECONDS (default 30; 0: never); "
-                        "on a terminal, progress bars are shown instead")
+    # For tests and developers, not users: hidden from help. The tree's settings are `config`'s (plan CF).
+    running.add_argument("--no-preflight", action="store_true", help=argparse.SUPPRESS)
+    running.add_argument("--no-calibrate", action="store_true", help=argparse.SUPPRESS)
+    running.add_argument("--llm-replay", type=Path, metavar="FILE", help=argparse.SUPPRESS)
+    running.add_argument("--heartbeat", type=float, default=30.0, metavar="SECONDS", help=argparse.SUPPRESS)
 
     sub = ap.add_subparsers(dest="command", required=True, metavar="COMMAND")
     sub.add_parser("add", parents=[common, inputs], help="add inputs to the task list")
@@ -255,9 +198,8 @@ def build_parser() -> argparse.ArgumentParser:
     rs.add_argument("tokens", nargs="+", metavar="TOKEN", help="as for remove")
     about = ("calibrate the sketches to the tree's vision model, as the first run with a model does on its own: "
              "eye charts drawn as sketches are, read by the model, and the sizes they call for (see README, "
-             "Calibrating sketches to the vision model). Run settings given here serve this calibration only. The "
-             "standard suite's calibration is recorded in the tree, and runs with that model use it, unless the "
-             "tree sets the sizes itself")
+             "Calibrating sketches to the vision model). The standard suite's calibration is recorded in the tree, "
+             "and runs with that model use it")
     cv = sub.add_parser("calibrate-vision", parents=[common, running], help=about, description=about)
     c = cv.add_argument_group("calibration")
     c.add_argument("--suite", choices=("quick", "standard"), default="standard",
@@ -266,8 +208,7 @@ def build_parser() -> argparse.ArgumentParser:
     about = ("calibrate the part size to the tree's text model, as the first run with a model does on its own: "
              "reading cards of 6,000 to 24,000 characters, 30 requests (see README, Calibrating the part size to the "
              "text model). It only lowers the part size, for a model that reads 12,000 characters unevenly. The "
-             "calibration is recorded in the tree, and runs with that model use it, unless the tree sets "
-             "--part-chars itself")
+             "calibration is recorded in the tree, and runs with that model use it")
     sub.add_parser("calibrate-text", parents=[common, running], help=about, description=about)
     q = sub.add_parser("quality", help="measure the quality of LLM enrichment (see docs/design/llm-enrichment.md)")
     qs = q.add_subparsers(dest="action", required=True, metavar="ACTION")
@@ -490,25 +431,16 @@ def flag_pair(group: Any, name: str, on: str, off: str, default: bool) -> None:
                        help=off + ("" if default else " (the default)"))
 
 
-def effective_settings(args: argparse.Namespace, stored: dict[str, Any]) -> TreeSettings:
-    """The tree's stored settings, overridden by the flags given on this command line."""
+def tree_settings(stored: dict[str, Any], quiet: bool = False) -> TreeSettings:
+    """The tree's settings, as `config` set them (plan CF); those an older version remembered and
+    that are now defaults or calibrated are left out, with a notice."""
     s = dict(stored)
-    if s.pop("chunk_style", None) == "markdown":  # retired in 0.6.0 (plan RA-02)
+    if s.pop("chunk_style", None) == "markdown" and not quiet:  # retired in 0.6.0 (plan RA-02)
         log.warning("the Markdown chunk style is retired: this tree's chunks will be plain text")
     retired = [k for k in RETIRED if s.pop(k, None) is not None]
-    if retired:  # heuristics are defaults, not settings (ADR-0027)
-        log.warning("this tree remembers settings that are now fixed defaults, and ignores them: %s",
+    if retired and not quiet:  # heuristics are defaults, not settings (ADR-0027); the rest is `config`'s
+        log.warning("this tree remembers settings that are now defaults or calibrated, and ignores them: %s",
                     ", ".join(sorted(retired)))
-    for key in SETTINGS:
-        v = getattr(args, key, None)
-        if v is not None:
-            s[key] = str(v.resolve()) if isinstance(v, Path) else v
-    if args.text_model or args.vision_model:
-        s["no_llm"] = False
-    if args.no_llm:
-        s["no_llm"] = True
-    if args.render is not None:
-        s["render"] = args.render
     return TreeSettings.from_stored(s)
 
 
@@ -522,22 +454,9 @@ def stored_settings(out: Path) -> dict[str, Any]:
         st.close()
 
 
-def llm_config(settings: TreeSettings) -> LLMConfig | None:
-    """The LLM settings, after loading the --env file; None, with the error printed, when the
-    file is missing or the settings are malformed."""
-    if settings.env:
-        env = Path(settings.env)
-        if not env.is_file():
-            print(f"error: --env file {env} not found", file=sys.stderr)
-            return None
-        load_env(env)
-    try:
-        parse_modules(settings.diagram_modules)  # a malformed --diagram-modules stops here
-    except ValueError as e:
-        print(f"error: {e}", file=sys.stderr)
-        return None
-    return LLMConfig.from_env(settings.text_model, settings.vision_model, timeout=settings.llm_timeout,
-                              retries=settings.llm_retries, max_calls=settings.llm_max_calls)
+def llm_config(settings: TreeSettings) -> LLMConfig:
+    """The tree's models and call budget, at $OPENAI_BASE_URL (plan CF)."""
+    return LLMConfig.from_env(settings.text_model, settings.vision_model, max_calls=settings.llm_max_calls)
 
 
 def check_endpoint(llm: EnrichmentSession) -> bool:
@@ -547,17 +466,15 @@ def check_endpoint(llm: EnrichmentSession) -> bool:
     err = llm.preflight()
     if err:
         print(f"error: LLM endpoint check failed ({cfg.base_url or 'OpenAI default endpoint'}): {err}\n"
-              "Check OPENAI_BASE_URL, OPENAI_API_KEY and the model name, or pass --no-preflight.", file=sys.stderr)
+              "Check OPENAI_BASE_URL and OPENAI_API_KEY, and the model's name (`cameo-ingest config test`).",
+              file=sys.stderr)
     return not err
 
 
 def run_tree(args: argparse.Namespace, argv: list[str]) -> int:
     out: Path = args.out
-    stored = stored_settings(out)
-    settings = effective_settings(args, stored)
+    settings = tree_settings(stored_settings(out))
     cfg = llm_config(settings)
-    if cfg is None:
-        return 2
     if settings.no_llm:
         cfg.text_model = cfg.vision_model = None
     elif not cfg.enabled:  # fail fast rather than silently skip enrichment (BASE-020)
@@ -576,12 +493,13 @@ def run_tree(args: argparse.Namespace, argv: list[str]) -> int:
         state.lock()
         if args.command == "ingest":
             add_inputs(state, args)
-        state.save_settings(settings.stored())
+        state.save_settings(settings.stored())  # without retired settings, once noticed
         progress = Progress(heartbeat=args.heartbeat)
 
         def prepare() -> ProjectOptions:  # after the scan: the models calibrated, if they aren't yet
             options = ProjectOptions.of(settings, cfg.text_model, cfg.vision_model, cfg.max_calls,
-                                        calibration_for_run(out, state, llm, settings, progress))
+                                        calibration_for_run(out, state, llm, settings, progress,
+                                                            calibrate=not args.no_calibrate))
             llm.image_first = options.image_first
             return options
 
@@ -607,9 +525,11 @@ def run_tree(args: argparse.Namespace, argv: list[str]) -> int:
 
 
 def calibration_for_run(out: Path, state: State, llm: EnrichmentSession, settings: TreeSettings,
-                        progress: Progress) -> dict[str, Any] | None:
+                        progress: Progress, calibrate: bool = True) -> dict[str, Any] | None:
     """The models' calibrations for a run, as settings: the text model's (plan TC), then the
-    vision model's (plan VA). None: the uncalibrated defaults."""
+    vision model's (plan VA). None: the uncalibrated defaults (`calibrate` off is for tests)."""
+    if not calibrate:
+        return None
     found = {**(text_calibration_for_run(out, state, llm, settings, progress) or {}),
              **(vision_calibration_for_run(out, state, llm, settings, progress) or {})}
     return found or None
@@ -622,14 +542,14 @@ def text_calibration_for_run(out: Path, state: State, llm: EnrichmentSession, se
     from . import textcal
 
     cfg = llm.cfg
-    if not settings.calibrate or not cfg.text_model:
+    if not cfg.text_model:
         return None
     found = textcal.recorded(state, cfg.base_url or "", cfg.text_model)
     if found is not None:
         return found
     n = 2 * textcal.GUARD_CARDS * len(textcal.GUARD_LENGTHS)
     print(f"calibrating to {cfg.text_model}, which this tree has no text calibration for: {n} requests of 6,000 to "
-          "24,000 characters; the answers are stored, so this happens once per model (--no-calibrate skips it)",
+          "24,000 characters; the answers are stored, so this happens once per model and endpoint",
           file=sys.stderr)
     result = textcal.calibrate_text(out, state, llm, settings.llm_concurrency or 1, progress)
     if result.problem or result.settings is None:
@@ -638,8 +558,8 @@ def text_calibration_for_run(out: Path, state: State, llm: EnrichmentSession, se
         return None
     if result.warning:
         log.warning("%s", result.warning)
-    print(f"calibrated to {cfg.text_model}: part_chars {result.part_chars:,}, since it {result.why} (the tree's own "
-          f"settings win; see {result.dest / 'report.md'})", file=sys.stderr)
+    print(f"calibrated to {cfg.text_model}: part_chars {result.part_chars:,}, since it {result.why} (see "
+          f"{result.dest / 'report.md'})", file=sys.stderr)
     return result.settings
 
 
@@ -650,7 +570,7 @@ def vision_calibration_for_run(out: Path, state: State, llm: EnrichmentSession, 
     from . import calibrate
 
     cfg = llm.cfg
-    if not settings.calibrate or not cfg.vision_model:
+    if not cfg.vision_model:
         return None
     row = state.calibration(cfg.base_url or "", cfg.vision_model, calibrate.SUITE_VERSION)
     if row is not None:
@@ -662,7 +582,7 @@ def vision_calibration_for_run(out: Path, state: State, llm: EnrichmentSession, 
     else:
         print(f"calibrating the sketches to {cfg.vision_model}, which this tree has no calibration for: about 90 eye "
               "charts, a few minutes on a hosted model; the answers are stored, so this happens once per model "
-              "(--no-calibrate skips it)", file=sys.stderr)
+              "and endpoint", file=sys.stderr)
         result = calibrate.calibrate_model(out, state, llm, "standard", settings.image_pixels or IMAGE_PIXELS,
                                            settings, settings.llm_concurrency or 1, progress, settings.image_first)
         if result.problem or result.settings is None:
@@ -698,14 +618,11 @@ def calibrate_text(out: Path, args: argparse.Namespace) -> int:
     from . import textcal
 
     stored = stored_settings(out)
-    settings = effective_settings(args, stored)
+    settings = tree_settings(stored)
     cfg = llm_config(settings)
-    if cfg is None:
-        return 2
     cfg.vision_model = None  # text only
     if settings.no_llm or not cfg.text_model:
-        print("error: calibrate-text needs a text model: --text-model, or CAMEO_INGEST_TEXT_MODEL (see `run`)",
-              file=sys.stderr)
+        print("error: calibrate-text needs a text model: cameo-ingest config set text-model NAME", file=sys.stderr)
         return 2
     llm = EnrichmentSession(cfg, shared_store(out, settings),
                             connect(cfg, args.llm_replay))
@@ -724,9 +641,7 @@ def calibrate_text(out: Path, args: argparse.Namespace) -> int:
         return 2
     finally:
         state.close()
-    own = TreeSettings.from_stored(stored).part_chars
-    print(f"part_chars: {result.part_chars:,}: the model {result.why}"
-          + (f"; the tree's own setting, {own:,}, overrides it" if own is not None else ""))
+    print(f"part_chars: {result.part_chars:,}: the model {result.why}")
     print(f"the measurements are in {result.dest / 'report.md'}")
     if result.problem:
         print(f"warning: {result.problem}; see the replies in {result.dest / 'results.json'}. Not recorded",
@@ -734,7 +649,7 @@ def calibrate_text(out: Path, args: argparse.Namespace) -> int:
         return 2
     if result.warning:
         print(f"warning: {result.warning}", file=sys.stderr)
-    print(f"recorded: runs with {cfg.text_model} use this part size, unless the tree sets it itself")
+    print(f"recorded: runs with {cfg.text_model} use this part size")
     return 0
 
 
@@ -744,14 +659,12 @@ def calibrate_vision(out: Path, args: argparse.Namespace) -> int:
     from . import calibrate
 
     stored = stored_settings(out)
-    settings = effective_settings(args, stored)
+    settings = tree_settings(stored)
     cfg = llm_config(settings)
-    if cfg is None:
-        return 2
     cfg.text_model = None  # images only
     if settings.no_llm or not cfg.vision_model:
-        print("error: calibrate-vision needs a vision model: --vision-model, or CAMEO_INGEST_VISION_MODEL or the "
-              "text model's settings (see `run`)", file=sys.stderr)
+        print("error: calibrate-vision needs a vision model: cameo-ingest config set vision-model NAME (or "
+              "text-model, which reads images too unless another is set)", file=sys.stderr)
         return 2
     llm = EnrichmentSession(cfg, shared_store(out, settings),
                             connect(cfg, args.llm_replay))
@@ -760,8 +673,7 @@ def calibrate_vision(out: Path, args: argparse.Namespace) -> int:
     state = State(out)
     try:
         state.lock()
-        own = TreeSettings.from_stored(stored)  # the tree's explicit settings
-        using = own.calibrated(calibrate.recorded(state, cfg))
+        using = settings.calibrated(calibrate.recorded(state, cfg))
         try:
             result = calibrate.calibrate_model(out, state, llm, args.suite, settings.image_pixels or IMAGE_PIXELS,
                                                using, settings.llm_concurrency or 1, Progress(heartbeat=args.heartbeat),
@@ -776,9 +688,7 @@ def calibrate_vision(out: Path, args: argparse.Namespace) -> int:
     finally:
         state.close()
     for r in result.recs:
-        mine = getattr(own, r.setting, None)
-        print(f"{r.setting}: {r.recommended}" + (f" (was {r.current})" if r.changes else "") + f": {r.why}"
-              + (f"; the tree's own setting, {mine}, overrides it" if mine is not None else ""))
+        print(f"{r.setting}: {r.recommended}" + (f" (was {r.current})" if r.changes else "") + f": {r.why}")
     print(f"the measurements are in {result.dest / 'report.md'}")
     if result.problem:
         print(f"warning: {result.problem}; see the replies in {result.dest / 'results.json'}. Not recorded",
@@ -791,14 +701,14 @@ def calibrate_vision(out: Path, args: argparse.Namespace) -> int:
     state = State(out)
     try:
         state.lock()
-        report_validation(state, llm, own.calibrated(result.settings), result.dest, settings.llm_concurrency or 1,
+        report_validation(state, llm, settings.calibrated(result.settings), result.dest, settings.llm_concurrency or 1,
                           Progress(heartbeat=args.heartbeat))
     except StateError as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
     finally:
         state.close()
-    if _sizes(own.calibrated(result.settings)) != _sizes(using):
+    if _sizes(settings.calibrated(result.settings)) != _sizes(using):
         sketches = sum(1 for _ in (out / tree.exports.PROJECTS).glob("*/diagrams/**/*.png"))
         print(f"the next run with {cfg.vision_model} draws the tree's {sketches:,} sketches again and asks again for "
               "their descriptions; the other LLM answers come from the store")
@@ -870,7 +780,7 @@ def configure(out: Path, args: argparse.Namespace) -> int:
             stored[field] = value
         else:
             stored.pop(field, None)
-        state.save_settings(TreeSettings.from_stored(stored).stored())
+        state.save_settings(tree_settings(stored).stored())  # retired settings go, with a notice
         print(f"{args.key} = {shown(args.key, state.settings())[0]}")
     finally:
         state.close()
@@ -881,10 +791,8 @@ def check_config(out: Path, action: str, text: str | None) -> int:
     """`config test` and `config models` (plan CF-03), on the tree's models at $OPENAI_BASE_URL."""
     from . import checks
 
-    settings = TreeSettings.from_stored(stored_settings(out))
+    settings = tree_settings(stored_settings(out), quiet=True)
     cfg = llm_config(settings)
-    if cfg is None:
-        return 2
     endpoint = cfg.base_url or "https://api.openai.com/v1 (OpenAI; $OPENAI_BASE_URL not set)"
     print(f"endpoint: {endpoint}; key: $OPENAI_API_KEY " + ("set" if os.environ.get("OPENAI_API_KEY") else "not set"))
     client = make_client(cfg)

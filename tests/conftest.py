@@ -31,7 +31,8 @@ def fake_chat(monkeypatch) -> list[FakeChat]:
 def fiction_tree(tmp_path_factory):
     """The six fictional projects, in their folders (three share one file name), ingested once
     per session without the LLM or sketches (plan RA-18c). Read it; don't write to it."""
-    from cameo_ingest.cli import main
+    from helpers import cli
+
     from cameo_ingest.evaluation.fiction import PROJECTS
 
     root = tmp_path_factory.mktemp("fiction")
@@ -41,5 +42,5 @@ def fiction_tree(tmp_path_factory):
         src.parent.mkdir(parents=True, exist_ok=True)
         src.write_bytes(project.mdzip())
     out = root / "out"
-    assert main([str(root / "in"), "-o", str(out), "--no-llm", "--no-render"]) == 0
+    assert cli([str(root / "in"), "-o", str(out), "--no-llm", "--no-render"]) == 0
     return out

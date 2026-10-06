@@ -7,12 +7,11 @@ import zipfile
 
 from fixture_model import make_mdzip
 from helpers import (
+    cli,
     project_dir,
     provenance,
     run,
 )
-
-from cameo_ingest.cli import main
 
 
 def test_nested_bundle(tmp_path):
@@ -34,7 +33,7 @@ def test_nested_bundle(tmp_path):
 def test_rejects_non_model(tmp_path):
     src = tmp_path / "x.mdzip"
     src.write_bytes(b"not a zip")
-    assert main([str(src), "-o", str(tmp_path / "out"), "--no-llm"]) == 3
+    assert cli([str(src), "-o", str(tmp_path / "out"), "--no-llm"]) == 3
 
 
 def test_decompression_budget(tmp_path, monkeypatch):
@@ -44,7 +43,7 @@ def test_decompression_budget(tmp_path, monkeypatch):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     out = tmp_path / "out"
-    assert main([str(src), "-o", str(out), "--no-llm", "--no-render"]) == 4
+    assert cli([str(src), "-o", str(out), "--no-llm", "--no-render"]) == 4
     failed = json.loads((out / "manifest.json").read_text())["failed"]
     assert "exceeds 1,000 decompressed bytes" in failed[0]["error"]
 

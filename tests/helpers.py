@@ -68,8 +68,39 @@ def ingest(tmp_path: Path, *sources: tuple[str, bytes] | Path, args: Sequence[st
             s = path
         paths.append(str(s))
     tree_dir = tmp_path / out
-    assert main([*paths, "-o", str(tree_dir), *args]) == status
+    assert cli([*paths, "-o", str(tree_dir), *args]) == status
     return tree_dir
+
+
+# Settings as the tests used to give them on a command line, before plan CF: `cli` sets them on the
+# tree with `config set` first, as a user would, then runs the rest.
+SETTING_SWITCHES = {"--no-llm": ("llm", "off"), "--no-render": ("render", "off"), "--render": ("render", "on"),
+                    "--rag-files": ("rag-files", "on"), "--no-rag-files": ("rag-files", "off")}
+SETTING_VALUES = {"--text-model": "text-model", "--vision-model": "vision-model", "--rag-source": "rag-source",
+                  "--llm-concurrency": "concurrency", "--llm-max-calls": "max-calls"}
+
+
+def cli(argv) -> int:
+    """`cameo-ingest ARGV`, its settings flags first set on the tree with `config set` (plan CF)."""
+    sets, rest, i = [], [], 0
+    argv = [str(a) for a in argv]
+    while i < len(argv):
+        if argv[i] in SETTING_SWITCHES:
+            sets.append(SETTING_SWITCHES[argv[i]])
+        elif argv[i] in SETTING_VALUES:
+            sets.append((SETTING_VALUES[argv[i]], argv[i + 1]))
+            i += 1
+        else:
+            rest.append(argv[i])
+        i += 1
+    if any(k in ("text-model", "vision-model") for k, _ in sets) and ("llm", "off") not in sets:
+        sets.insert(0, ("llm", "on"))  # naming a model meant using it
+    target = ["-o", rest[rest.index("-o") + 1]] if "-o" in rest else []
+    for key, value in sets:
+        code = main(["config", *target, "set", key, value])
+        if code:
+            return code
+    return main(rest)
 
 
 def run(tmp_path: Path, name: str, data: bytes) -> Path:

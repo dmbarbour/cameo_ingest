@@ -9,7 +9,7 @@ plan yet is in `docs/roadmap.md`. When a plan is done, its content goes to `docs
 
 | Plan | Prefix | Status |
 |---|---|---|
-| [Configuration through `cameo-ingest config`](configuration-2026-10-05.md) | CF | In progress: CP1 (0.20.2) and CP2 (0.20.3) done; before CP3, the maintainer's look |
+| [Configuration through `cameo-ingest config`](configuration-2026-10-05.md) | CF | In progress: CP1 to CP3 done (0.21.0); CP4, `config -i` and the docs, next |
 
 ## Archived
 

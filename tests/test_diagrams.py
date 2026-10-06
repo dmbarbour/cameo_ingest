@@ -6,12 +6,11 @@ import re
 from fixture_model import LAYOUT, MODEL, make_mdzip
 from helpers import (
     check_invariants,
+    cli,
     project_dir,
     run,
     store_db,
 )
-
-from cameo_ingest.cli import main
 
 # The Drone diagram again, with the «refine» abstraction drawn as Cameo stores it: the first
 # end of a directed path is its target (FU-001).
@@ -176,7 +175,7 @@ def large_layout() -> str:
     return LAYOUT.replace("</mdOwnedViews>", "\n".join(views) + "\n</mdOwnedViews>")
 
 
-def test_large_diagram_modules(tmp_path, fake_chat):
+def test_large_diagram_modules(tmp_path, fake_chat, monkeypatch):
     """A large diagram is split into modules, each drawn, described and chunked with its place
     in the diagram; the diagram is then described as a whole from them (plan DV)."""
     import sqlite3
@@ -186,7 +185,7 @@ def test_large_diagram_modules(tmp_path, fake_chat):
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip(layout=large_layout()))
     out = tmp_path / "out"
-    assert main([str(src), "-o", str(out), "--vision-model", "v", "--no-calibrate", "--no-preflight"]) == 0
+    assert cli([str(src), "-o", str(out), "--vision-model", "v", "--no-calibrate", "--no-preflight"]) == 0
     check_invariants(out)
     pdir = project_dir(out)
     page = (pdir / "diagrams/Drone_BDD.md").read_text()
@@ -216,11 +215,14 @@ def test_large_diagram_modules(tmp_path, fake_chat):
     assert "Module: M2 of 2" in rows[1][1] and "(in M" in rows[1][1]
     assert rows[2][1].count("A block definition diagram showing Drone") == 2 and rows[2][2] == "diagrams/Drone_BDD.png"
 
-    # The thresholds are a setting: N = 0 draws and describes every diagram whole.
-    assert main(["run", "-o", str(out), "--diagram-modules", "0:6:25", "--no-preflight"]) == 0
+    # The thresholds are the calibration's, or the default's (plan CF): N = 0 draws and describes
+    # every diagram whole.
+    from cameo_ingest import config
+
+    monkeypatch.setattr(config, "MODULES", (0, 6, 25))
+    assert cli(["run", "-o", str(out), "--no-preflight", "--no-calibrate"]) == 0
     page = (project_dir(out) / "diagrams/Drone_BDD.md").read_text()
     assert "## Module" not in page and "generated:module_description" not in (out / "chunks.jsonl").read_text()
-    assert main(["run", "-o", str(out), "--diagram-modules", "25:6"]) == 2
 
 
 # The Drone diagram with Battery's kinds drawn as Cameo draws a tree of generalizations (each

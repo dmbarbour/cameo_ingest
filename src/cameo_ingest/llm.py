@@ -1,12 +1,8 @@
 """Optional LLM enrichment through any OpenAI-compatible endpoint (e.g. a local gemma).
 
-Configuration (environment; the CLI flags of the same meaning take precedence):
-    OPENAI_API_KEY, OPENAI_BASE_URL   standard OpenAI client settings
-    CAMEO_INGEST_TEXT_MODEL           model for summaries, falling back to OPENAI_MODEL
-    CAMEO_INGEST_VISION_MODEL         model for image descriptions (default: text model)
-    CAMEO_INGEST_LLM_TIMEOUT          seconds per request (default 120)
-    CAMEO_INGEST_LLM_RETRIES          retries per request (default 2)
-    CAMEO_INGEST_LLM_MAX_CALLS        optional cap on requests per run (default: none)
+Configuration: the endpoint and its key from the OpenAI clients' own variables, OPENAI_BASE_URL
+and OPENAI_API_KEY; the models and the call budget from the tree's settings (`cameo-ingest
+config`, plan CF). Timeout and retries are fixed (`TIMEOUT`, `RETRIES`).
 
 Three pieces (AR-016R1): a `ChatClient` answers a request, from an endpoint (`OpenAIChat`) or
 from a recorded store (`ReplayChat`); a `ResponseStore` keeps answers and what each request
@@ -47,6 +43,10 @@ MAX_CONSECUTIVE_FAILURES = 3  # then enrichment is switched off for the run (BAS
 STORE_FILE = "llm.sqlite"
 
 
+TIMEOUT = 120.0  # seconds per request
+RETRIES = 2  # retries per request, by the OpenAI client
+
+
 @dataclass
 class LLMConfig:
     text_model: str | None
@@ -58,20 +58,10 @@ class LLMConfig:
 
     @classmethod
     def from_env(cls, text_model: str | None = None, vision_model: str | None = None, *,
-                 timeout: float | None = None, retries: int | None = None,
                  max_calls: int | None = None) -> LLMConfig:
-        env = os.environ.get
-        tm = text_model or env("CAMEO_INGEST_TEXT_MODEL") or env("OPENAI_MODEL") or None
-        vm = vision_model or env("CAMEO_INGEST_VISION_MODEL") or tm
-        mc = max_calls if max_calls is not None else env("CAMEO_INGEST_LLM_MAX_CALLS") or None
-        return cls(
-            text_model=tm,
-            vision_model=vm,
-            base_url=env("OPENAI_BASE_URL"),
-            timeout=float(timeout if timeout is not None else env("CAMEO_INGEST_LLM_TIMEOUT", "120")),
-            retries=int(retries if retries is not None else env("CAMEO_INGEST_LLM_RETRIES", "2")),
-            max_calls=int(mc) if mc is not None else None,
-        )
+        """The tree's models (the vision model defaults to the text model) at $OPENAI_BASE_URL."""
+        return cls(text_model=text_model or None, vision_model=vision_model or text_model or None,
+                   base_url=os.environ.get("OPENAI_BASE_URL"), timeout=TIMEOUT, retries=RETRIES, max_calls=max_calls)
 
     @property
     def enabled(self) -> bool:

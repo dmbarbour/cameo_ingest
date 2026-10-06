@@ -8,10 +8,9 @@ import pytest
 from helpers import (
     SAMPLES_DIR,
     check_invariants,
+    cli,
     provenance,
 )
-
-from cameo_ingest.cli import main
 
 SAMPLES = sorted(SAMPLES_DIR.glob("*.mdzip")) + sorted(SAMPLES_DIR.glob("resource_bundles/*.zip"))
 
@@ -44,7 +43,7 @@ PINNED = {
     pytest.param(s, id=s.name, marks=() if s.stat().st_size < SMALL else pytest.mark.slow) for s in SAMPLES])
 def test_samples(tmp_path, sample):
     out = tmp_path / "out"
-    assert main([str(sample), "-o", str(out), "--no-llm", "--no-render"]) == 0
+    assert cli([str(sample), "-o", str(out), "--no-llm", "--no-render"]) == 0
     check_invariants(out)
     expected = PINNED.get(sample.name)
     if expected:
@@ -131,7 +130,7 @@ def test_bundle_and_standalone_copies_share_projects(tmp_path):
     """BASE-017's evidence: three standalone samples are byte-identical to members of the
     SAF_Plugin bundle. Each is one project, seen twice."""
     out = tmp_path / "out"
-    assert main([*map(str, SAF), "-o", str(out), "--no-llm", "--no-render"]) == 0
+    assert cli([*map(str, SAF), "-o", str(out), "--no-llm", "--no-render"]) == 0
     check_invariants(out)
     records = provenance(out)
     for f in SAF[1:]:
@@ -146,10 +145,10 @@ def test_versions_among_the_samples(tmp_path, capsys):
     """Among all the samples, `groups` finds one group, TMT and TMT-2024x (different project ids,
     88% of their element ids shared), newest first (plan PV)."""
     out = tmp_path / "out"
-    assert main(["add", "-o", str(out), str(SAMPLES_DIR)]) == 0
-    assert main(["scan", "-o", str(out)]) == 0
+    assert cli(["add", "-o", str(out), str(SAMPLES_DIR)]) == 0
+    assert cli(["scan", "-o", str(out)]) == 0
     capsys.readouterr()
-    assert main(["groups", "-o", str(out)]) == 0
+    assert cli(["groups", "-o", str(out)]) == 0
     report = capsys.readouterr().out
     assert "1 group(s) of likely versions" in report and "## Related" not in report
     group = report.split("## Group 1: ")[1]

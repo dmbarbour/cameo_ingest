@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sqlite3
 import sys
 import tempfile
@@ -29,6 +30,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 from fixture_model import make_mdzip
 
+from cameo_ingest.cli import load_env
 from cameo_ingest.cli import main as ingest
 
 FIXTURE = ROOT / "tests" / "fixtures" / "llm-replay.sqlite"
@@ -38,19 +40,26 @@ SAMPLE = ROOT / "samples" / "Package_Delivery_Drone.mdzip"
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--env", help="dotenv file with the OPENAI_* settings, e.g. .env")
-    ap.add_argument("--model", help="model to record (default: CAMEO_INGEST_TEXT_MODEL or OPENAI_MODEL)")
+    ap.add_argument("--model", help="model to record (default: OPENAI_MODEL, this script's own)")
     args = ap.parse_args()
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp = Path(tmp_dir)
         fixture = tmp / "drone.mdzip"
         fixture.write_bytes(make_mdzip())
-        common = ["--no-render", "--no-calibrate", "--cache-dir", str(tmp / "store"), "--llm-concurrency", "4", "-v"]
-        common += ["--env", args.env] if args.env else []
-        common += ["--text-model", args.model] if args.model else []
+        if args.env:
+            load_env(Path(args.env))  # OPENAI_BASE_URL and OPENAI_API_KEY, for cameo-ingest
+        model = args.model or os.environ.get("OPENAI_MODEL")
+        if not model:
+            print("error: name the model to record: --model NAME, or OPENAI_MODEL", file=sys.stderr)
+            return 2
+        os.environ["CAMEO_INGEST_CACHE"] = str(tmp / "store")
+        settings = {"text-model": model, "render": "off", "concurrency": "4"}
         for i, src in enumerate([fixture] + ([SAMPLE] if SAMPLE.exists() else [])):
             out = tmp / f"out{i}"
-            rc = ingest([str(src), "-o", str(out), *common])
+            for key, value in settings.items():  # the tree's settings, as a user sets them (plan CF)
+                ingest(["config", "-o", str(out), "set", key, value])
+            rc = ingest([str(src), "-o", str(out), "--no-calibrate", "-v"])
             if rc != 0:
                 print(f"error: recording {src.name} failed (exit {rc})", file=sys.stderr)
                 return 1

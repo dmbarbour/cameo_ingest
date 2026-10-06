@@ -5,10 +5,9 @@ import json
 
 import xlsx
 from fixture_model import make_mdzip
-from helpers import ingest, project_dir
+from helpers import cli, ingest, project_dir
 
 from cameo_ingest.catalog import ProjectCatalog
-from cameo_ingest.cli import main
 from cameo_ingest.evaluation.fiction import PROJECTS
 from cameo_ingest.workbook import write_workbook
 
@@ -55,7 +54,7 @@ def test_workbook_from_the_tree(fiction_tree, tmp_path, capsys):
     """`export --workbook` writes every sheet from the tree's catalogs, with each item's source,
     and the same bytes each time (KX-03, KX-06)."""
     book = tmp_path / "catalog.xlsx"
-    assert main(["export", "-o", str(fiction_tree), "--workbook", str(book)]) == 0
+    assert cli(["export", "-o", str(fiction_tree), "--workbook", str(book)]) == 0
     assert f"wrote {book}" in capsys.readouterr().out
     sheets = xlsx.sheets(book)
     assert list(sheets) == ["About", "Find", "Search", "Requirements", "Identifiers", "Elements", "Relationships",
@@ -73,7 +72,7 @@ def test_workbook_from_the_tree(fiction_tree, tmp_path, capsys):
     find = sheets["Find"][6][0]
     assert isinstance(find, xlsx.Formula) and "FILTER(Search!$A$2:$H$" in find
     again = tmp_path / "again.xlsx"
-    assert main(["export", "-o", str(fiction_tree), "--workbook", str(again)]) == 0
+    assert cli(["export", "-o", str(fiction_tree), "--workbook", str(again)]) == 0
     assert again.read_bytes() == book.read_bytes()
 
 
@@ -95,7 +94,7 @@ def test_workbook_writes_text_as_text(tmp_path):
 def test_export_names_projects_without_a_catalog(tmp_path, capsys):
     out = ingest(tmp_path, ("drone.mdzip", make_mdzip()))
     (project_dir(out) / "index" / "catalog.jsonl").unlink()  # as a project made before 0.8.0
-    assert main(["export", "-o", str(out), "--workbook", str(tmp_path / "c.xlsx")]) == 0
+    assert cli(["export", "-o", str(out), "--workbook", str(tmp_path / "c.xlsx")]) == 0
     assert "drone.mdzip; `run` makes them again" in capsys.readouterr().err
 
 
@@ -142,7 +141,7 @@ def test_search_page_sketches(tmp_path):
     out = ingest(tmp_path, ("drone.mdzip", make_mdzip()))
     for fmt in ("svg", "webp"):
         page = tmp_path / f"{fmt}.html"
-        assert main(["export", "-o", str(out), "--search-page", str(page), "--sketches", fmt]) == 0
+        assert cli(["export", "-o", str(out), "--search-page", str(page), "--sketches", fmt]) == 0
         html = page.read_text()
         found = re.findall(r'<script type="application/octet-stream" data-sketch="([^"]+)" data-format="(\w+)">'
                            r'([^<]+)</script>', html)

@@ -7,10 +7,9 @@ import hashlib
 import json
 
 from fixture_model import make_mdzip
-from helpers import ingest
+from helpers import cli, ingest
 
 from cameo_ingest.calibrate import SUITE_VERSION, recommend
-from cameo_ingest.cli import main
 from cameo_ingest.config import IMAGE_PIXELS, ProjectOptions, TreeSettings
 from cameo_ingest.eyechart import Drawn, drawings, perfect, reading, render
 from cameo_ingest.sketch import SketchStyle
@@ -98,12 +97,12 @@ def reader(monkeypatch, policy, text_first_only=False, sketches=read_sketch) -> 
 
 
 def calibrate(out, *flags, suite="quick") -> int:
-    return main(["calibrate-vision", "-o", str(out), "--suite", suite, "--vision-model", MODEL, "--no-preflight",
+    return cli(["calibrate-vision", "-o", str(out), "--suite", suite, "--vision-model", MODEL, "--no-preflight",
                  *flags])
 
 
 def run_with_model(out, *flags) -> int:
-    return main(["run", "-o", str(out), "--vision-model", MODEL, "--no-preflight", *flags])
+    return cli(["run", "-o", str(out), "--vision-model", MODEL, "--no-preflight", *flags])
 
 
 def options(out) -> dict:
@@ -153,18 +152,26 @@ def test_a_calibration_is_recorded_and_runs_use_it(tmp_path, monkeypatch, capsys
     assert run_with_model(out) == 0
     assert options(out)["sketch"] == [8, 6.0, 1] and options(out)["modules"] == [36, 6, 36]
     assert sketches(out).keys() == before.keys() and sketches(out) != before
-    assert main(["run", "-o", str(out), "--no-llm"]) == 0
+    assert cli(["run", "-o", str(out), "--no-llm"]) == 0
     assert options(out)["sketch"] == [13, 10.0, 1] and sketches(out) == before
 
 
-def test_the_trees_own_settings_win(tmp_path, monkeypatch, capsys):
-    out = ingest(tmp_path, ("m.mdzip", make_mdzip()), args=("--no-llm", "--no-render", "--sketch-font-px", "15"))
+def test_sketch_sizes_are_the_calibrations(tmp_path, monkeypatch, capsys, caplog):
+    """Sketch sizes come from the calibration, or the defaults: one a tree remembers from before
+    0.21.0 is ignored, with a notice (plan CF)."""
+    from cameo_ingest.state import State
+
+    out = ingest(tmp_path, ("m.mdzip", make_mdzip()), args=("--no-llm", "--no-render"))
+    st = State(out)
+    st.save_settings({**st.settings(), "sketch_font_px": 15})  # as `--sketch-font-px 15` left it
+    st.close()
     reader(monkeypatch, lambda card, drawn: perfect(drawn))
     assert calibrate(out, suite="standard") == 0
     printed = capsys.readouterr().out
-    assert "sketch_font_px: 8 (was 15): " in printed and "the tree's own setting, 15, overrides it" in printed
+    assert "sketch_font_px: 8 (was 13): " in printed and "overrides" not in printed
+    assert "ignores them: sketch_font_px" in caplog.text
     assert run_with_model(out) == 0
-    assert options(out)["sketch"] == [15, 6.0, 1]
+    assert options(out)["sketch"] == [8, 6.0, 1]
 
 
 def test_misread_arrowheads_are_enlarged(tmp_path, monkeypatch, capsys):
@@ -240,7 +247,7 @@ def test_run_calibrates_the_model_first(tmp_path, monkeypatch, capsys):
     assert (settings["image_pixels"], settings["sketch_font_px"]) == (IMAGE_PIXELS // 2, 16)  # 1.3 x 11.8 px
     assert settings["diagram_modules"] == "9:6:9"  # no more boxes fit at 16 px in half the budget
     assert options(out)["image_pixels"] == IMAGE_PIXELS // 2 and options(out)["sketch"][0] == 16
-    assert main(["status", "-o", str(out)]) == 0
+    assert cli(["status", "-o", str(out)]) == 0
     assert f"calibrated (vision): {MODEL} on " in capsys.readouterr().out
 
 
@@ -249,14 +256,14 @@ def test_each_model_has_its_own_calibration(tmp_path, monkeypatch, capsys):
     readers = reader(monkeypatch, lambda card, drawn: perfect(drawn))
     assert run_with_model(out) == 0
     first = options(out)
-    assert main(["run", "-o", str(out), "--vision-model", "acme/other-vl", "--no-preflight"]) == 0
+    assert cli(["run", "-o", str(out), "--vision-model", "acme/other-vl", "--no-preflight"]) == 0
     state = State(out)
     assert {r["model"] for r in state.calibrations()} == {MODEL, "acme/other-vl"}
     state.close()
     assert options(out)["vision_model"] == "acme/other-vl" and options(out) != first
     # A rerun asks nothing: the calibration is recorded, and the answers stored.
     sent = sum(r.requests for r in readers)
-    assert main(["run", "-o", str(out), "--no-preflight"]) == 0
+    assert cli(["run", "-o", str(out), "--no-preflight"]) == 0
     assert sum(r.requests for r in readers) == sent
     assert json.loads((out / "run.json").read_text())["llm"]["calls"] == 0
 
@@ -293,8 +300,8 @@ def fiction_scanned(tmp_path, settings=None):
         src.parent.mkdir(parents=True, exist_ok=True)
         src.write_bytes(project.mdzip())
     out = tmp_path / "out"
-    assert main(["add", str(tmp_path / "in"), "-o", str(out)]) == 0
-    assert main(["scan", "-o", str(out)]) == 0
+    assert cli(["add", str(tmp_path / "in"), "-o", str(out)]) == 0
+    assert cli(["scan", "-o", str(out)]) == 0
     if settings:
         state = State(out)
         state.save_settings(settings)
@@ -318,7 +325,7 @@ def test_validation_on_the_trees_sketches(tmp_path, monkeypatch, capsys):
     assert set(summary["strata"]) == {"small", "medium", "modules"} and not summary["warnings"]
     assert len(list((dest / "validation").glob("*.png"))) == 12 and "| all | 12 |" in (dest / "validation.md").read_text()
     assert json.loads(record(out)["validation"])["overall"]["names"] == 1.0
-    assert main(["status", "-o", str(out)]) == 0
+    assert cli(["status", "-o", str(out)]) == 0
     assert "expected quality: on 12 of the tree's sketches, 100% of names read" in capsys.readouterr().out
 
 
