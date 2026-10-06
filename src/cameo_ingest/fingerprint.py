@@ -19,7 +19,7 @@ import sys
 from array import array
 from typing import TYPE_CHECKING, Any
 
-from lxml import etree
+from .xmi import read_events
 
 if TYPE_CHECKING:
     from .archive import Project
@@ -57,8 +57,7 @@ def element_ids(project: Project) -> list[str]:
     ids: list[str] = []
     for entry in project.model_entries:
         with project.open(entry) as f:
-            for _, el in etree.iterparse(f, events=("start",), huge_tree=True, resolve_entities=False,
-                                         no_network=True, load_dtd=False, remove_comments=True, remove_pis=True):
+            for _, el in read_events(f, ("start",), entry):  # the build reports what was recovered
                 for k, v in el.attrib.items():
                     if k.startswith("{http://www.omg.org/spec/XMI") and k.endswith("}id"):
                         ids.append(v)

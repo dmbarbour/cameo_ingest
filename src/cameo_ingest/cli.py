@@ -742,6 +742,11 @@ def print_status(state: State, as_json: bool) -> None:
             print(f"  expected quality: {one_line(c['validation'])}")
     for p in s["projects"]["failed"]:
         print(f"  failed: {p['name']} {p['token'][:23]} ({p['error']})")
+    for p in s["projects"]["recovered"]:
+        n = sum(e["names"] for e in p["entries"].values())
+        first = next(iter(p["entries"].values()))["first"]
+        print(f"  read with recovery: {p['name']} {p['token'][:23]} ({n} name(s) XML namespaces can't split, read "
+              f"as written; first, {first})")
     run = s["latest_run"]
     if run:
         print(f"latest run: {run['outcome'] or 'running or stopped'}, started {run['started']}"

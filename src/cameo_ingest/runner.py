@@ -301,6 +301,9 @@ def status(state: State) -> dict[str, Any]:
             "counts": state.counts("projects"),
             "failed": [{"token": f"sha256:{r['sha256']}", "name": r["name"], "error": r["error"]}
                        for r in state.project_rows("failed")],
+            "recovered": [{"token": f"sha256:{r['content_sha256']}", "name": r["name"], "entries": rec}
+                          for r in state.written()
+                          if (rec := json.loads(r["summary"] or "{}").get("recovered"))],
         },
         "calibrations": [{"model": r["model"], "kind": r["kind"], "endpoint": r["endpoint"], "created": r["created"],
                           "settings": json.loads(r["settings"]), "report": r["report"],

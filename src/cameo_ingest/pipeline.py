@@ -54,6 +54,9 @@ def parse_project(project: Project, progress: Progress = QUIET) -> ModelIndex:
             with project.open(entry) as f:
                 parse_into(ix, _Counting(f, ph.advance), entry)
         finalize(ix)
+    for entry, faults in ix.recovered.items():
+        log.warning("%s: %d name(s) in %s that XML namespaces can't split, read as written (first, %s); "
+                    "the model is otherwise read in full", project.display_name, len(faults), entry, faults[0])
     if ix.external_refs:  # names for references into used projects (plan UL)
         ix.external = proxy_names(project)
     log.info("%s: %s elements, %s diagrams, %s stereotype applications", project.display_name,
@@ -203,4 +206,6 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: Enri
         "requirements": sum(1 for e in ix.elements.values() if sem.is_requirement(ix, e)),
         "images": len(images),
     }
+    if ix.recovered:  # TR-001: shown by `status`
+        summary["recovered"] = {entry: {"names": len(f), "first": f[0]} for entry, f in ix.recovered.items()}
     return ProjectResult(summary)

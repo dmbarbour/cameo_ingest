@@ -36,7 +36,7 @@ many files, bundles or names it turns up under.
 | `cameo-ingest add -o OUT PATH... [--meta K=V] [--meta-file F]` | Adds files to the task list. A directory adds the ZIP archives and XMI documents under it. `--meta` values belong to these inputs. |
 | `cameo-ingest run -o OUT` | Checks the inputs for changes, scans new or changed ones, builds every project without up-to-date output, and rebuilds the root files. |
 | `cameo-ingest ingest -o OUT PATH... [--meta K=V]` | `add`, then `run`. It is the default command: `cameo-ingest FILE -o OUT`. |
-| `cameo-ingest status -o OUT [--json]` | Inputs and projects by status, failures, the latest run. Works while a run is going. |
+| `cameo-ingest status -o OUT [--json]` | Inputs and projects by status, failures, projects read with recovery (names XML namespaces can't split, read as written), the latest run. Works while a run is going. |
 | `cameo-ingest prune -o OUT [--dry-run]` | Drops missing inputs, and the projects that no remaining input contains. |
 | `cameo-ingest scan -o OUT` | Finds the projects in the task list's inputs, and what each says about itself (save time, Cameo version, element ids), building nothing. |
 | `cameo-ingest projects -o OUT [--csv FILE]` | Every project: status, save time, Cameo version, size, and every path where it was found. |

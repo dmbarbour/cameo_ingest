@@ -111,7 +111,14 @@ and `project_status`. Schema version 3 is migrated in place, and a newer schema 
     64 MiB (BASE-011);
   - the samples' maxima are a 54:1 ratio, a 38 MB member and 138 MB per input;
   - encrypted ZIPs are rejected.
-- **XML** is parsed with entity resolution and network access disabled.
+- **XML** is parsed with entity resolution and network access disabled, by one reader
+  (`xmi.read_events`) for the build and the fingerprint:
+  - names that namespaces can't split (`a:b:c`, `a:`), which libxml2 refuses, are read as written,
+    in recovery: every element, id and attribute is kept, and a literal `prefix:rest` tag splits at
+    its first colon (TR-001, 0.21.2);
+  - the project's README and `status` say so;
+  - any other fault (truncation, a bad character) fails the project, as "damaged XML in ENTRY,
+    line N".
 - **Exit codes:**
   - 0, success;
   - 2, a usage or configuration error;

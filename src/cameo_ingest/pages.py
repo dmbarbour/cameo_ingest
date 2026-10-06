@@ -351,8 +351,11 @@ class PageWriter:
                    "this token, in `INDEX.md` and `provenance.jsonl` at the root of the output tree)"),
                   f"- **Exporter:** {exp or 'unknown'}",
                   (f"- **Elements:** {len(ix.elements)}; **diagrams:** {len(ix.diagrams)}; "
-                   f"**relationships:** {len(self.view.rels)}; **stereotype applications:** {len(ix.stereotypes)}"),
-                  ""]
+                   f"**relationships:** {len(self.view.rels)}; **stereotype applications:** {len(ix.stereotypes)}")]
+        for entry, faults in ix.recovered.items():  # TR-001
+            lines.append(f"- **Read with recovery:** {len(faults)} name(s) in `{md_inline(entry)}` that XML namespaces "
+                         f"can't split were read as written (first, {md_inline(faults[0])})")
+        lines.append("")
         lines.append("## Top-level packages\n")
         for r in ix.roots:
             el = ix.elements[r]

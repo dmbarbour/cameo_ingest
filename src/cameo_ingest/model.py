@@ -64,6 +64,7 @@ class ModelIndex:
     namespaces: dict[str, str] = field(default_factory=dict)  # prefix -> uri
     exporter: dict[str, str] = field(default_factory=dict)
     external_refs: set[str] = field(default_factory=set)  # href targets outside this project
+    recovered: dict[str, list[str]] = field(default_factory=dict)  # entry: names read as written (TR-001)
     external: dict[str, str] = field(default_factory=dict)  # their names, by id (external.proxy_names)
     _qn_cache: dict[str, str] = field(default_factory=dict, repr=False)
 

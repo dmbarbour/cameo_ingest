@@ -40,7 +40,7 @@ def test_failed_project_does_not_stop_others(tmp_path, caplog):
     manifest = json.loads((out / "manifest.json").read_text())
     assert [p["name"] for p in manifest["projects"]] == ["good.mdzip"]
     assert [f["name"] for f in manifest["failed"]] == ["bad.mdzip"]
-    assert "XMLSyntaxError" in manifest["failed"][0]["error"]
+    assert "damaged XML in com.nomagic.magicdraw.uml_model.model, line 27" in manifest["failed"][0]["error"]
     assert "skipping nested member bundle.rdzip!corrupt.mdzip" in caplog.text
     check_invariants(out)
 

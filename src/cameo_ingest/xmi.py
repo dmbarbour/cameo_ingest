@@ -12,13 +12,17 @@ conventions that are stable across MagicDraw / Cameo versions:
 
 Attributes whose value is a space-separated list of known ids become references in a
 second pass, so metamodel changes between versions do not break reference detection.
+
+Names that XML namespaces can't split (`a:b:c`, `a:`) are read as written, and reported
+(`read_events`, TR-001); any other fault in the XML still fails the entry.
 """
 
 from __future__ import annotations
 
 import logging
 import re
-from typing import IO
+from collections.abc import Iterator
+from typing import IO, Any
 
 from lxml import etree
 
@@ -33,6 +37,29 @@ SCALAR_ATTRS_NEVER_REFS = {"name", "body", "value", "visibility", "aggregation",
 # http://schema.omg.org/spec/XMI/2.1. Cameo declares profiles below the UML namespace
 # (.../UML/20131001/StandardProfile, .../MagicDrawProfile); those must keep their own prefix.
 _OMG_NS = re.compile(r"https?://(?:www|schema)\.omg\.org/spec/(UML|XMI)/[\d.]+/?")
+
+
+class ModelReadError(ValueError):
+    """An entry's XML is damaged beyond names: truncated, a bad character, and so on."""
+
+
+def read_events(stream: IO[bytes], events: tuple[str, ...], entry: str,
+                recovered: dict[str, list[str]] | None = None) -> Iterator[tuple[str, Any]]:
+    """`etree.iterparse`'s events, recovering from names that XML namespaces can't split, such as
+    `a:b:c` or `a:` (TR-001): libxml2 refuses them, and in recovery keeps them as literal names,
+    with every element, id and attribute. Those faults go in `recovered[entry]`; any other fault
+    raises `ModelReadError` once the entry is read, as a damaged file did before."""
+    it = etree.iterparse(stream, events=events, recover=True, huge_tree=True, resolve_entities=False,
+                         no_network=True, load_dtd=False, remove_comments=True, remove_pis=True)
+    yield from it
+    names, other = [], []
+    for e in it.error_log:
+        if e.level_name in ("ERROR", "FATAL"):
+            (names if e.domain_name == "NAMESPACE" else other).append(f"line {e.line}: {e.message}")
+    if other:
+        raise ModelReadError(f"damaged XML in {entry}, {other[0]}" + (f" (and {len(other) - 1} more)" if len(other) > 1 else ""))
+    if names and recovered is not None:
+        recovered[entry] = names
 
 
 def _prefix_for(uri: str, uri2prefix: dict[str, str]) -> str:
@@ -58,6 +85,9 @@ class _Parser:
         if tag.startswith("{"):
             uri, local = tag[1:].split("}", 1)
             return _prefix_for(uri, self.uri2prefix), local
+        if ":" in tag:  # a name namespaces couldn't split, read as written (TR-001)
+            prefix, local = tag.split(":", 1)
+            return prefix, local
         return "", tag
 
     def xattr(self, node, name: str) -> str | None:
@@ -241,17 +271,7 @@ class _Parser:
 
 def parse_into(index: ModelIndex, stream: IO[bytes], entry: str) -> None:
     p = _Parser(index, entry)
-    events = etree.iterparse(
-        stream,
-        events=("start-ns", "start", "end"),
-        huge_tree=True,
-        resolve_entities=False,
-        no_network=True,
-        load_dtd=False,
-        remove_comments=True,
-        remove_pis=True,
-    )
-    for event, node in events:
+    for event, node in read_events(stream, ("start-ns", "start", "end"), entry, index.recovered):
         if event == "start-ns":
             prefix, uri = node
             p.uri2prefix.setdefault(uri, prefix or "")

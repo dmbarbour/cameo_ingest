@@ -7,6 +7,7 @@ import zipfile
 
 from fixture_model import make_mdzip
 from helpers import (
+    check_invariants,
     cli,
     project_dir,
     provenance,
@@ -103,3 +104,48 @@ def test_used_objects_list_what_a_table_shows(tmp_path):
     assert "Shown in diagrams: Req Table" in shown_in["r1"]
     assert "Shown in diagrams: Drone BDD, Req Table" in shown_in["b1"]
     assert "odd" not in shown_in  # in the BDD's list, not drawn
+
+
+def test_names_namespaces_cant_split(tmp_path, caplog):
+    """A tag or attribute name with two colons, or a trailing one, is read as written, the model
+    in full, and reported; other damage still fails the project (TR-001)."""
+    import logging
+
+    from fixture_model import MODEL
+
+    from cameo_ingest.model import ModelIndex
+    from cameo_ingest.xmi import ModelReadError, finalize, parse_into
+
+    odd = MODEL.replace(" <sysml:Block xmi:id='st2' base_Class='b2'/>",
+                        " <sysml:Block xmi:id='st2' base_Class='b2'/>\n <sysml:Block:Mark xmi:id='st9' base_Class='b2' Note='n'/>"
+                        ).replace("name='Drone'>", "name='Drone' sysml:a:b='1' sysml:='2'>")
+    ix = ModelIndex()
+    parse_into(ix, io.BytesIO(odd.encode()), "model")
+    finalize(ix)
+    assert ix.elements["b1"].name == "Drone" and "r1" in ix.elements and "d1" in ix.diagrams
+    assert ix.stereotypes["st9"].stereotype == "sysml:Block:Mark" and ix.stereotypes["st9"].base == "b2"
+    assert [f.split(": ", 1)[1] for f in ix.recovered["model"]] == [
+        "Failed to parse QName 'sysml:a:b'", "Failed to parse QName 'sysml:'", "Failed to parse QName 'sysml:Block:Mark'"]
+
+    src = tmp_path / "odd.mdzip"
+    src.write_bytes(make_mdzip(odd))
+    out = tmp_path / "out"
+    with caplog.at_level(logging.WARNING):
+        assert cli([str(src), "-o", str(out), "--no-llm", "--no-render"]) == 0
+    assert "cannot fingerprint" not in caplog.text and "read as written" in caplog.text
+    check_invariants(out)
+    assert "**Read with recovery:** 3 name(s)" in (project_dir(out) / "README.md").read_text()
+    from contextlib import redirect_stdout
+    status = io.StringIO()
+    with redirect_stdout(status):
+        assert cli(["status", "-o", str(out)]) == 0
+    assert "read with recovery: odd.mdzip" in status.getvalue()
+
+    try:
+        parse_into(ModelIndex(), io.BytesIO(odd.encode()[:-200]), "model")
+        raise AssertionError("a truncated model must fail")
+    except ModelReadError as e:
+        assert str(e).startswith("damaged XML in model, line")
+    bad = tmp_path / "bad.mdzip"
+    bad.write_bytes(make_mdzip(odd[:-200]))
+    assert cli([str(bad), "-o", str(tmp_path / "bad"), "--no-llm", "--no-render"]) == 4
