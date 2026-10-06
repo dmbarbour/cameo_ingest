@@ -46,8 +46,8 @@ COMMANDS = ("add", "run", "ingest", "status", "prune", "quality", "export", "sca
 NO_MODEL = """error: the tree uses the LLM, but names no model. Either
   - cameo-ingest config set text-model NAME (and vision-model, if another model reads images), or
   - cameo-ingest config set llm off, to ingest without summaries and descriptions,
-The endpoint is $OPENAI_BASE_URL (unset: OpenAI), its key $OPENAI_API_KEY; `cameo-ingest config
-models` lists the endpoint's models, and `cameo-ingest config test` checks them."""
+or set it all up with `cameo-ingest config -i`. The endpoint is $OPENAI_BASE_URL (unset: OpenAI),
+its key $OPENAI_API_KEY; `cameo-ingest config models` lists the endpoint's models."""
 
 # Settings a tree may remember from an older version, now fixed defaults or calibrated
 # (ADR-0027, 2026-10-05; plan CF, 0.21.0): ignored, with a notice.
@@ -151,8 +151,11 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("run", parents=[common, running], help="process pending inputs and unfinished projects")
     sub.add_parser("ingest", parents=[common, inputs, running], help="add inputs, then run (the default)")
     cf = sub.add_parser("config", parents=[common], help="show or change the tree's settings (plan CF)",
-                        description="The tree's settings: show them, set one, or unset one (back to its default). "
-                                    "The LLM endpoint and key are $OPENAI_BASE_URL and $OPENAI_API_KEY.")
+                        description="The tree's settings: show them, set one, or unset one (back to its default); "
+                                    "or -i, asked for one by one and tested. The LLM endpoint and key are "
+                                    "$OPENAI_BASE_URL and $OPENAI_API_KEY.")
+    cf.add_argument("-i", "--interactive", action="store_true",
+                    help="ask for each setting, list and test the endpoint's models, and save at the end")
     cfs = cf.add_subparsers(dest="action", metavar="ACTION")
     cfs.add_parser("show", help="each setting, its value, and whether it is the tree's own or the default")
     cset = cfs.add_parser("set", help="set a setting")
@@ -697,7 +700,7 @@ def calibrate_vision(out: Path, args: argparse.Namespace) -> int:
     if result.settings is None:
         print("the quick suite checks a model and is not recorded; runs use the standard suite's calibration")
         return 0
-    print(f"recorded: runs with {cfg.vision_model} use these settings, unless the tree sets them itself")
+    print(f"recorded: runs with {cfg.vision_model} use these settings")
     state = State(out)
     try:
         state.lock()
@@ -750,6 +753,13 @@ def configure(out: Path, args: argparse.Namespace) -> int:
     starts a tree, so that a tree can be configured before its first input."""
     from .config import BY_KEY, SETTINGS, parse_setting, shown
 
+    if args.interactive:
+        if args.action:
+            print("error: config -i takes no action", file=sys.stderr)
+            return 2
+        from .interactive import interview
+
+        return interview(out)
     action = args.action or "show"
     if action in ("test", "models"):
         return check_config(out, action, getattr(args, "filter", None))

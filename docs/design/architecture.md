@@ -38,8 +38,8 @@ export ─► catalog ─► workbook / searchpage
 | Views | `view`, `sections`, `files`, `diagram_graph`, `diagram_text`, `partition` | A project as pages and chunks see it; sections built once as data; where pages are; diagrams as graphs and text; modules and parts |
 | Writers | `emit`, `pages`, `tables`, `sink`, `chunks`, `plain`, `ledger`, `catalog`, `provenance`, `annotations` | Pages, tables, chunk records and their checks, the plain packer, ledgers, catalog records, provenance and the generated-by sentence |
 | Images | `sketch`, `sketch_svg`, `vision`, `eyechart` | Sketches for the vision model and for people; the pixel budget; eye charts |
-| LLM | `llm`, `sqlite_cache`, `prompts`, `prompt_values`, `enrich`, `calibrate`, `validate`, `quality` | Client, store and session; versioned templates and their values; enrichment in rounds; calibration and validation; spot-check sets |
-| Tree | `state`, `runner`, `exports`, `config`, `progress`, `cli`, `treediff`, `crossref`, `groups` | The state database (all SQL); runs; root files and `rag/`; settings and options; progress; commands; tree comparison; the identifier index; version groups |
+| LLM | `llm`, `sqlite_cache`, `checks`, `prompts`, `prompt_values`, `enrich`, `calibrate`, `validate`, `quality` | Client, store and session; checks of the endpoint and models; versioned templates and their values; enrichment in rounds; calibration and validation; spot-check sets |
+| Tree | `state`, `runner`, `exports`, `config`, `interactive`, `progress`, `cli`, `treediff`, `crossref`, `groups` | The state database (all SQL); runs; root files and `rag/`; settings and options (ADR-0030); `config -i`; progress; commands; tree comparison; the identifier index; version groups |
 | Exports | `workbook`, `searchpage` | The workbook and the search page (ADR-0021) |
 | Evaluation | `evaluation/*` | Retrieval evaluation, fictional projects, judges (ADR-0023); never imported by the ingest |
 
@@ -70,7 +70,7 @@ and `project_status`. Schema version 3 is migrated in place, and a newer schema 
 | `projects` | Each project's state: status, tool, options hash, summary |
 | `files` | Each written project's files, with their sha256 (the manifest's source) |
 | `runs` | Each run's command, times, outcome and LLM report |
-| `settings` | The tree's remembered settings (only those that differ from the defaults) |
+| `settings` | The tree's settings, set by `cameo-ingest config` (only those that differ from the defaults) |
 | `fingerprints` | Save time, project id, exporter, and element ids as sorted 64-bit hashes (ADR-0020) |
 | `removed` | Projects removed from the tree, kept apart from `contents` |
 | `calibrations` | Each model's calibration, by kind: a vision model's, with its validation (ADR-0015, ADR-0016), and a text model's part size (ADR-0024). Schema 4 added the kind |
@@ -123,7 +123,7 @@ and `project_status`. Schema version 3 is migrated in place, and a newer schema 
 ## How a change is shown to change only what it should
 
 Used for every refactoring and plan since plan RA:
-- **`treediff`:** `python -m cameo_ingest.treediff BEFORE AFTER` compares two `--no-llm` trees of
+- **`treediff`:** `python -m cameo_ingest.treediff BEFORE AFTER` compares two trees without the LLM of
   the samples and the fiction. It ignores run records, work directories and `rag/` stamps, and
   masks the tool version. Every difference must be expected and explained.
 - **Replay:** a replay from a copied answer store fails on any prompt that changed.

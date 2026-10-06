@@ -135,7 +135,7 @@ The search page can show it when exported with `--sketches svg`.
 
 ADR-0013 (`partition.py`).
 - **When:** a diagram of more than N shapes is split into modules of MIN to MAX shapes
-  (`--diagram-modules`, default 25:6:25, calibrated per model).
+  (default 25:6:25, calibrated per model).
 - **How:** Louvain community detection (`networkx`, seed 1) on the connections, weighted by how
   close the shapes are drawn:
   - a connection counts `1 + 2·exp(−d / (0.3 · median distance))`;

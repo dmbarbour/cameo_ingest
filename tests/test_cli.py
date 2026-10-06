@@ -327,3 +327,76 @@ def test_config_test_and_models(tmp_path, monkeypatch, capsys, caplog):
     assert "acme/text  [text model]" in listing and "acme/vision  [vision model]" in listing and "acme/embed" in listing
     assert cli(["config", "-o", str(out), "models", "vis"]) == 0
     assert "acme/text" not in capsys.readouterr().out
+
+
+def test_config_interactive(tmp_path, monkeypatch, capsys):
+    """`config -i` asks for each setting in turn, finds models by part of their names, tests them,
+    and saves only the changes, and only when told to; the input ending saves nothing (plan CF-06)."""
+    from cameo_ingest import cli as cli_module
+    from cameo_ingest.checks import CARD_NUMBER
+    from cameo_ingest.state import State
+
+    class Endpoint:
+        def __init__(self):
+            self.blind = {"acme/text"}  # models that take no images
+
+        def models(self):
+            return [("acme/text", 1), ("acme/vision", 2), ("acme/embed", 3)]
+
+        def complete(self, model, messages, temperature):
+            if isinstance(messages[0]["content"], list):
+                return "I can't see images." if model in self.blind else CARD_NUMBER
+            return "Ready."
+
+    endpoint = Endpoint()
+    monkeypatch.setattr(cli_module, "make_client", lambda cfg: endpoint)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    out = tmp_path / "tree"
+
+    def session(*replies: str) -> int:
+        queue = list(replies)
+
+        def answer(prompt=""):
+            if not queue:
+                raise EOFError
+            return queue.pop(0)
+        monkeypatch.setattr("builtins.input", answer)
+        return cli(["config", "-o", str(out), "-i"])
+
+    def settings() -> dict:
+        st = State(out)
+        try:
+            return st.settings()
+        finally:
+            st.close()
+
+    # LLM on; "acme" lists three, 1 picks the first; "vis" finds one, which Enter takes; render off;
+    # a bad count asked again; saved; no calibration now.
+    assert session("", "acme", "1", "vis", "", "n", "", "x", "4", "", "n") == 0
+    text = capsys.readouterr().out
+    assert "  1. acme/text" in text and "  3. acme/embed" in text
+    assert "ok   the vision model acme/vision reads an image" in text
+    assert "is a whole number" in text and "render: on -> off" in text and "the part size, to acme/text" in text
+    assert settings() == {"text_model": "acme/text", "vision_model": "acme/vision", "render": False, "llm_concurrency": 4}
+
+    # Keep everything: no changes, nothing to save, nothing asked about saving.
+    assert session("", "", "", "n", "", "", "n") == 0
+    assert "No changes." in capsys.readouterr().out
+
+    # The text model as the vision model fails its check, and is chosen again.
+    assert session("", "", "same", "y", "", "acme/vision", "", "", "", "n") == 0
+    text = capsys.readouterr().out
+    assert "FAIL the vision model acme/text" in text and "No changes." in text
+    endpoint.blind = set()
+    assert session("", "", "same", "n", "", "", "", "n") == 0
+    assert "vision-model: acme/vision -> the text model" in capsys.readouterr().out
+    assert "vision_model" not in settings()
+
+    # Declining to save, and the input ending, save nothing.
+    assert session("n", "y", "y", "n") == 0
+    assert "llm: on -> off" in capsys.readouterr().out and "no_llm" not in settings()
+    assert session("n", "y") == 130
+    assert settings()["text_model"] == "acme/text" and "no_llm" not in settings()
+    assert cli(["config", "-o", str(out), "-i", "show"]) == 2
+    assert cli(["config", "-o", str(out), "set", "max-calls", "0"]) == 0  # counts what a run would ask
+    assert cli(["config", "-o", str(out), "set", "concurrency", "0"]) == 2

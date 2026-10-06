@@ -155,6 +155,7 @@ class Setting:
     default: str  # how `config show` names the default
     choices: tuple[str, ...] = ()
     inverse: bool = False  # a switch held as its opposite (`llm on` is `no_llm` False)
+    least: int = 1  # a count's smallest value
 
 
 SETTINGS = (
@@ -165,7 +166,8 @@ SETTINGS = (
     Setting("rag-files", "rag_files", "switch", "write rag/: a file per chunk, for RAG tools that read files", "on"),
     Setting("rag-source", "rag_source", "choice", "how a rag/ file names its source", "trace", ("trace", "id")),
     Setting("concurrency", "llm_concurrency", "count", "LLM requests at once", "1"),
-    Setting("max-calls", "llm_max_calls", "count", "LLM requests per run, at most", "no limit"),
+    Setting("max-calls", "llm_max_calls", "count", "LLM requests per run, at most (0: count what a run would ask)",
+            "no limit", least=0),
 )
 BY_KEY = {s.key: s for s in SETTINGS}
 _ON, _OFF = ("on", "true", "yes", "1"), ("off", "false", "no", "0")
@@ -186,8 +188,8 @@ def parse_setting(key: str, text: str) -> Any:
             raise ValueError(f"{key} is one of {', '.join(s.choices)}, not {text!r}")
         return t
     if s.kind == "count":
-        if not t.isdigit() or int(t) < 1:
-            raise ValueError(f"{key} is a whole number of 1 or more, not {text!r}")
+        if not t.isdigit() or int(t) < s.least:
+            raise ValueError(f"{key} is a whole number of {s.least} or more, not {text!r}")
         return int(t)
     if not t:
         raise ValueError(f"{key} needs a value; `config unset {key}` returns it to its default")

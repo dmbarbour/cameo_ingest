@@ -1,7 +1,7 @@
 # Design: LLM enrichment
 
 What the LLM is asked, how, and how its answers are kept and judged. Decisions: ADR-0005, 0009 to
-0011, 0013, 0017, 0029.
+0011, 0013, 0017, 0029, 0030.
 
 ## What is asked
 
@@ -71,8 +71,8 @@ Named constants in `prompts.py`, interpolated into the slot descriptions:
 | `DIGEST_CHARS` | (8,000, 4,000) | The instance digest, and the package's other sections, at the default part size; they follow the part size in use (`digest_chars`: two thirds and a third), so calibration guards them too |
 | `enrich.INSTANCE_SHARE` | 0.8 | The share of instance specifications that calls for a digest |
 
-**The part size** is an option (`part_chars`, 0.16.0): `--part-chars` wins, then the text model's
-calibration, then 12,000. It bounds a part, and a package summarized in one request.
+**The part size** (`part_chars`, 0.16.0) is the text model's calibration, else 12,000 (the
+`--part-chars` flag that set it went in 0.21.0, ADR-0030). It bounds a part, and a package summarized in one request.
 
 **Nothing is cut to fit a part** (plan TC-01, 0.15.3). A part over the size is repacked
 (`enrich.repack`): its sections, in order, in as few requests as fit. A section longer than a part
@@ -163,7 +163,12 @@ ADR-0009.
 
 ADR-0010 (`llm.py`, `sqlite_cache.py`).
 - **The client:** `ChatClient` is `OpenAIChat` (any OpenAI-compatible endpoint) or `ReplayChat`
-  (`--llm-replay`, a miss fails the project); `connect()` makes the run's.
+  (`--llm-replay`, a developer's flag; a miss fails the project); `connect()` makes the run's.
+- **The endpoint and models** are `OPENAI_BASE_URL`, `OPENAI_API_KEY` and the tree's settings
+  (ADR-0030); timeout 120 s and 2 retries are fixed (`llm.TIMEOUT`, `RETRIES`). `checks.run_checks`
+  serves `config test` and `config -i`: the endpoint lists its models, the text model answers
+  "ready", the vision model reads a drawn 731. A tree notes each model's creation time from
+  `/models` in its `meta` table, and warns when it changes (`cli.note_models`).
 - **The preflight:** "Reply with the single word OK.", and the vision check sends a 32 × 32 white
   PNG. It bypasses the store and the budget, and failure exits 5.
 - **The store,** `ResponseStore` in `llm.sqlite`, per user and shared by every tree
@@ -178,7 +183,7 @@ ADR-0010 (`llm.py`, `sqlite_cache.py`).
   The committed replay fixture drops the log, so prompts built from third-party models never reach
   git. Replay matches on model and hash only.
 - **The session,** `EnrichmentSession`:
-  - a call budget (`--llm-max-calls`, none by default);
+  - a call budget (the tree's setting `max-calls`, none by default);
   - a breaker that switches enrichment off after 3 consecutive failures;
   - outcomes (`answered`, `cached`, `replayed`, `skipped_*`, `failed`, `truncated_input`) for
     `run.json`;
@@ -186,15 +191,15 @@ ADR-0010 (`llm.py`, `sqlite_cache.py`).
 
   A replayed answer bypasses the store, the budget and the breaker. A failed write to the store is
   logged, and the answer kept.
-- **Concurrency:** `--llm-concurrency`, default 1. Results attach in submission order, so the
+- **Concurrency:** the tree's setting `concurrency`, default 1. Results attach in submission order, so the
   output is byte-identical to a sequential run.
 - **Cost for reference** (gemma-4 at DeepInfra):
   - a text request takes about 0.5 s, a vision request about 11 s;
   - the samples and fiction come to about 6,100 requests, and a full rebuild of their descriptions
     (2,451 new requests) cost about $1.50 to $2 in 56 minutes at concurrency 8.
 
-  Counting what a change will cost: run with `--llm-max-calls 0` against a copy of the store; the
-  changed requests show as `skipped_budget`.
+  Counting what a change will cost: `config set max-calls 0` on a copy of the tree, with
+  `CAMEO_INGEST_CACHE` at a copy of the store; the changed requests show as `skipped_budget`.
 
 ## Measuring quality
 

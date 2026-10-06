@@ -37,3 +37,4 @@ date, what changed, and a commit that holds the text before (conventions in `doc
 | [0027](0027-heuristics-are-defaults-not-switches.md) | Heuristics are defaults, not switches; what shapes hold is shown |
 | [0028](0028-rag-leaves-out-generated-summaries.md) | `rag/` leaves out the LLM's summaries and diagram descriptions (superseded by 0029) |
 | [0029](0029-generated-text-says-what-things-are-for.md) | Generated text says what a package or diagram is about and for |
+| [0030](0030-configuration-lives-in-the-tree.md) | Configuration lives in the tree, set only through `config` |

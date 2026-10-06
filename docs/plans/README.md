@@ -9,11 +9,11 @@ plan yet is in `docs/roadmap.md`. When a plan is done, its content goes to `docs
 
 | Plan | Prefix | Status |
 |---|---|---|
-| [Configuration through `cameo-ingest config`](configuration-2026-10-05.md) | CF | In progress: CP1 to CP3 done (0.21.0); CP4, `config -i` and the docs, next |
+| (none) | | |
 
 ## Archived
 
-Retired on 2026-10-03; TC, CT and TH on 2026-10-04; IS, RM and GS on 2026-10-05.
+Retired on 2026-10-03; TC, CT and TH on 2026-10-04; IS, RM, GS and CF on 2026-10-05.
 
 | Plan | Prefix | Done | Its content now |
 |---|---|---|---|
@@ -35,6 +35,7 @@ Retired on 2026-10-03; TC, CT and TH on 2026-10-04; IS, RM and GS on 2026-10-05.
 | [What a drawn diagram shows inside its shapes](../archive/plans/inside-shapes-2026-10-05.md) | IS | 2026-10-05 (0.19.0); kept, with no switch | ADR-0027; design/diagrams; research/inside-shapes; roadmap |
 | [Retrieval's untested measures](../archive/plans/retrieval-measures-2026-10-05.md) | RM | 2026-10-05; generated summaries out of `rag/` | ADR-0028; design/evaluation, design/output-and-chunks; research/ledgers-and-generated, research/windows-over-pages; README |
 | [Generated text that serves search](../archive/plans/generated-for-search-2026-10-05.md) | GS | 2026-10-05 (0.20.0); about/context in use, in `rag/` | ADR-0029; design/llm-enrichment, design/output-and-chunks; research/generated-for-search; README |
+| [Configuration through `cameo-ingest config`](../archive/plans/configuration-2026-10-05.md) | CF | 2026-10-05 (0.21.1); four variables, the rest in the tree | ADR-0030; design/llm-enrichment; README |
 
 ## Reviews
 

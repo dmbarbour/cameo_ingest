@@ -1,6 +1,6 @@
 # ADR-0015: Calibrate sketches to the configured vision model
 
-- **Status:** Accepted, 2026-10-03 (plans VC and VA).
+- **Status:** Accepted, 2026-10-03 (plans VC and VA); updated on 2026-10-05 (Changes, below).
 - **Sources:**
   - `docs/archive/plans/vision-calibration-2026-10-03.md`;
   - `docs/archive/plans/vision-autocalibration-2026-10-03.md`;
@@ -21,8 +21,8 @@ Ideally, we can automatically calibrate to the vision model we've configured."
   - The charts are drawn with the sketches' own font, tags, lines and arrowheads, filled at random
     so that nothing can be guessed.
   - About 90 requests, once per endpoint and model; the answers are kept.
-- **Three tiers:** the tree's own settings win, then the calibration, then the uncalibrated
-  defaults.
+- **Two tiers:** the calibration, then the uncalibrated defaults. (A third, the tree's own
+  settings, came first until ADR-0030.)
   - The defaults are gemma-4's figures "for now" (the maintainer): 645,120 px, 13 px text, 10 px
     heads, 1 px lines, modules of 25, the image first.
 - **What is measured, in order, so that nothing depends on the tree's current sizes:**
@@ -44,3 +44,7 @@ Ideally, we can automatically calibrate to the vision model we've configured."
 - **Models differ:** gemma-4 calibrates to the defaults. Qwen3-VL gets 2 px lines and modules of
   36: it misses thin connections rather than reversing them.
 - **Switching models** redraws every sketch, and asks again for every description.
+
+## Changes
+
+- 2026-10-05: the tree's own sizes are gone; the calibration, then the defaults (ADR-0030). Before: `3c254db`.

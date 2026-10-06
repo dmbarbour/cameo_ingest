@@ -128,7 +128,7 @@ ADR-0007.
 - **Text:** `rag/text/<project>/<sha256 of the text>.txt`, one chunk per file, sized to one
   512-token window (`plain.WINDOW`, with 100 tokens kept for the source line). The file ends with
   its source line:
-  - with `--rag-source trace`, the project label and trace locator;
+  - with `rag-source trace`, the project label and trace locator;
   - with `id`, short ids.
 - **Metadata:** `rag/meta/<project>/<sha256>.json` beside it, carrying the chunk's metadata, its
   `source_id`, `source_file` and `source_files`. `rag/meta/_sources.json` resolves short ids to

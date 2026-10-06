@@ -1,6 +1,6 @@
 # ADR-0013: Large diagrams in modules, large packages in parts
 
-- **Status:** Accepted, 2026-09-30 (plan DV; the maintainer's decisions 1 to 4).
+- **Status:** Accepted, 2026-09-30 (plan DV; the maintainer's decisions 1 to 4); updated on 2026-10-05 (Changes, below).
 - **Sources:**
   - `docs/archive/plans/diagram-views-2026-09-30.md`;
   - FU-005, FU-011, FU-012, FU-022;
@@ -24,7 +24,7 @@
   - every shape is in exactly one module;
   - each module is drawn and described on its own, then the diagram as a whole from those
     descriptions;
-  - `--diagram-modules N:MIN:MAX`, default 25:6:25, calibrated per model (ADR-0015).
+  - thresholds N:MIN:MAX, default 25:6:25, calibrated per model (ADR-0015).
 - **Parts:**
   - a package over 12,000 characters is summarized in parts of 3,000 to 12,000 characters,
     grouped the same way, with document order in place of geometry;
@@ -48,3 +48,7 @@
 - **Sequence diagrams and swimlanes** are split like any other diagram, though time bands and
   partitions would be better boundaries (roadmap).
 - **The package thresholds** are constants, not settings.
+
+## Changes
+
+- 2026-10-05: `--diagram-modules` is gone: the thresholds are calibrated or the default (ADR-0030). Before: `3c254db`.

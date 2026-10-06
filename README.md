@@ -7,7 +7,7 @@ MagicDraw 18.x through Cameo 2026x, and it has been checked against 14 public sa
 
 ```sh
 uv sync
-uv run cameo-ingest config set text-model MODEL      # or: config set llm off (see "Configuration")
+uv run cameo-ingest config -i                       # choose and test the models (see "Configuration")
 uv run cameo-ingest MODEL.mdzip [--meta program=XYZ] [-v]   # ingest files or directories into ./ingest_tree
 
 uv run cameo-ingest add more/models/ --meta supplier=ACME   # add to the task list
@@ -45,7 +45,7 @@ many files, bundles or names it turns up under.
 | `cameo-ingest export -o OUT [--workbook FILE] [--search-page FILE]` | Writes the catalog of the tree's models for people to search without tools: a workbook, a self-contained search page, or both (see "Searching without tools"). Apart from `run`, since it is a distribution step. |
 | `cameo-ingest calibrate-vision -o OUT [--suite quick\|standard]` | Calibrates the sketches to the tree's vision model on demand, as the first run with a model does on its own (see "Calibrating sketches to the vision model"). |
 | `cameo-ingest calibrate-text -o OUT` | Calibrates the part size to the tree's text model on demand, as the first run with a model does on its own (see "Calibrating the part size to the text model"). |
-| `cameo-ingest config [show]` / `config set KEY VALUE` / `config unset KEY` | The tree's settings (see "Configuration"). Each can be set and unset, back to its default; setting one starts a tree, so a tree can be configured before its first input. |
+| `cameo-ingest config [show]` / `config set KEY VALUE` / `config unset KEY` / `config -i` | The tree's settings (see "Configuration"). Each can be set and unset, back to its default; setting one starts a tree, so a tree can be configured before its first input. |
 | `cameo-ingest config test` / `config models [TEXT]` | Checks the endpoint, the key and the tree's models; lists the endpoint's models, those the tree uses or has calibrated marked. |
 
 - **Which tree.** Every command works on `-o OUT`; without it, on `$CAMEO_INGEST_TREE`; without
@@ -76,12 +76,16 @@ tree's, set with `cameo-ingest config`:
 export OPENAI_BASE_URL=https://api.deepinfra.com/v1/openai   # any OpenAI-compatible endpoint; unset for OpenAI
 export OPENAI_API_KEY=...
 cd my-work
-cameo-ingest config models gemma                 # the endpoint's models
-cameo-ingest config set text-model google/gemma-4-31B-it   # saved in ./ingest_tree
-cameo-ingest config test                         # the endpoint, the key, each model
-cameo-ingest path/to/models/                     # ingest into ./ingest_tree
+cameo-ingest config -i            # choose and test the models, calibrate: saved in ./ingest_tree
+cameo-ingest path/to/models/      # ingest into ./ingest_tree
 cameo-ingest status
 ```
+
+`config -i` checks the endpoint and key, asks whether to use the LLM, offers the endpoint's models
+(type part of a name to list those that hold it), tests each, asks for the switches, and saves
+only when told to, after a summary of the changes. Then it offers to calibrate to the models
+(see "Calibrating sketches to the vision model"); otherwise the first run does. Without it:
+`config set text-model google/gemma-4-31B-it`, then `config test`.
 
 - **Another tree:** `-o DIR` on any command, or `export CAMEO_INGEST_TREE=DIR`.
 - **Without the LLM:** `cameo-ingest config set llm off` (and `on` again). A tree needs one or
@@ -98,9 +102,9 @@ cameo-ingest status
   | `rag-files` | `on` | The `rag/` directory (see "Using the output for RAG"). |
   | `rag-source` | `trace` | The form of `rag/` files' source line, `trace` or `id`. |
   | `concurrency` | 1 | LLM requests sent at once (see "Progress, logs and speed"). |
-  | `max-calls` | no limit | Stop calling the LLM after N requests in a run. |
+  | `max-calls` | no limit | Stop calling the LLM after N requests in a run; 0 counts what a run would ask (`skipped_budget` in `run.json`). |
 
-- **Checks:** `config test` checks the endpoint, the key and each model (the vision model reads
+- **Checks:** `config models [TEXT]` lists the endpoint's models; `config test` checks the endpoint, the key and each model (the vision model reads
   a drawn number). Every run with a model also sends one tiny request per model before any work
   starts, so a wrong key, URL or model name fails in seconds rather than hours later.
 - **A model's identity** is the endpoint and the model's id: OpenAI-compatible endpoints offer no

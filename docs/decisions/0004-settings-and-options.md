@@ -18,11 +18,12 @@ project's own files contain, and must make the project again when they change.
 - **`config.TreeSettings`:** the tree's remembered settings.
   - Stored in `state.sqlite`, and only where they differ from the defaults, so that a tree follows
     a default that changes with the tool.
-  - Flags given on a run become the settings. The rule of BASE-020 (name a model or pass
-    `--no-llm`) applies only while a tree has none.
+  - Set only with `cameo-ingest config` (ADR-0030). The rule of BASE-020 (name a model or turn
+    the LLM off) applies to every run.
   - Switches (`rag-files`, `rag-source`) apply to the whole tree when the root files are rebuilt.
 - **`config.ProjectOptions`:** what changes a project's output, hashed into its identity:
-  - rendering, models, call budget, pixel budget, modules, sketch sizes and image order;
+  - rendering, models, call budget, and the calibrated pixel budget, modules, sketch sizes and
+    image order;
   - the versions of the prompt templates in use.
 
   A change makes the project again; stored LLM answers make that cheap.
@@ -31,12 +32,13 @@ project's own files contain, and must make the project again when they change.
 
 ## Consequences
 
-- **Effective sizes:** the tree's own settings win, then the vision model's calibration
-  (ADR-0015), then the defaults.
-- **Settings are never secrets:** `--env` names a file, never its contents.
+- **Effective sizes:** the vision model's calibration (ADR-0015), then the defaults.
+- **Settings are never secrets:** the endpoint's key is the environment's, never stored.
 
 ## Changes
 
 - 2026-10-05: the switches `cross-index`, `threads` and `line-refs` (and `hierarchies`, added by
   ADR-0026) retired for fixed defaults (ADR-0027), and left out of the list of switches. Before:
   `f2b13e2`.
+
+- 2026-10-05: settings are set only with `config`, not by a run's flags; sizes are no longer settings, and `--env` is gone (ADR-0030). Before: `9bf1c07`.

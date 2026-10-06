@@ -1,6 +1,6 @@
 # ADR-0024: The text model's calibration guards the part size; it never enlarges it
 
-- **Status:** Accepted, 2026-10-04 (plan TC; the maintainer: "A is fine").
+- **Status:** Accepted, 2026-10-04 (plan TC; the maintainer: "A is fine"); updated on 2026-10-05 (Changes, below).
 - **Sources:**
   - `docs/archive/plans/text-calibration-2026-10-04.md`;
   - `docs/research/text-reading-2026-10-04.md`;
@@ -23,8 +23,7 @@ a 48,000-character part's.
 
 - **Inputs are cut by us, never truncated:** a section longer than a part goes in pieces, each
   headed by its title (0.15.3).
-- **The part size is an option,** `--part-chars`. An explicit setting wins, then the text
-  model's calibration, then 12,000.
+- **The part size** is the text model's calibration, else 12,000.
 - **Calibration is a guard:**
   - each text model is read on 30 requests of cards, of 6,000 to 24,000 characters, once per
     model and endpoint;
@@ -35,7 +34,10 @@ a 48,000-character part's.
 ## Consequences
 
 - A weaker model, or a small context window, gets smaller parts without a setting by hand.
-- A strong model's parts stay as fine as today's; larger parts remain a choice made with
-  `--part-chars`.
+- A strong model's parts stay as fine as today's.
 - Calibrations are recorded by kind (schema 4), since one model can be both the text and the
   vision model.
+
+## Changes
+
+- 2026-10-05: `--part-chars` is gone: the part size is calibrated or the default (ADR-0030). Before: `3e88bb9`.

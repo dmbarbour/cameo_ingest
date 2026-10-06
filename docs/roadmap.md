@@ -158,4 +158,4 @@ After plan TC (the text model's calibration, a guard; ADR-0024):
   - none of the maintainer's 282 Cameo files is an `.mdzipx`, and no public sample exists;
   - taken up again only if one turns up.
 - **A zip bundle beside the search page** (KX's D8), unless the trial asks for it.
-- **Rendering cost:** about 40 s for TMT's sketches; accepted, and `--no-render` skips it.
+- **Rendering cost:** about 40 s for TMT's sketches; accepted, and `config set render off` skips it.

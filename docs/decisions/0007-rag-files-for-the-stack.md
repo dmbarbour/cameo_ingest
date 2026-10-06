@@ -21,7 +21,7 @@
   left out the LLM's summaries and diagram descriptions (ADR-0028).
 - **Sized to one window:** a file fits one 512-token window (`plain.WINDOW`, with 100 tokens kept
   for the source line), by an estimate fitted to e5's tokenizer.
-- **The source line:** `--rag-source trace` (the default) gives the project and trace locator;
+- **The source line:** `rag-source trace` (the default) gives the project and trace locator;
   `id` gives short ids that `rag/meta/_sources.json` resolves to files.
 - **No paths or file names in chunk text** (ADR-0003). `rag/meta` carries `source_id`,
   `source_file` and `source_files`.
@@ -41,3 +41,5 @@
 - 2026-10-05: every kind in `rag/` again, since 0.20.0 (ADR-0029). Before: `80de425`.
 - 2026-10-05: the output tree from `CAMEO_INGEST_TREE` or `./ingest_tree`, where it came from
   `CAMEO_INGEST_DEST` (plan CF). Before: `463e42e`.
+
+- 2026-10-05: `--rag-source` is now the tree's setting `rag-source` (ADR-0030). Before: `a7b80f5`.

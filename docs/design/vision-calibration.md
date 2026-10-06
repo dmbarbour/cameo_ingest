@@ -6,18 +6,18 @@ gives the user's view.
 
 ## Where sizes come from
 
-Three tiers, applied in `ProjectOptions.of` (`TreeSettings.calibrated`):
-1. **The tree's own settings:** `--image-pixels`, `--diagram-modules`, `--sketch-font-px`,
-   `--sketch-arrow-px`, `--sketch-line-px`, `--image-first` or `--image-last`.
-2. **The configured vision model's calibration,** from `state.sqlite` (`calibrations`). It fills
-   only what the tree leaves unset (`config.CALIBRATED`).
-3. **The uncalibrated defaults,** gemma-4's figures at DeepInfra "for now" (the maintainer):
+Two tiers, applied in `ProjectOptions.of` (`TreeSettings.calibrated`); the tree's own sizes,
+which came first, went in 0.21.0 (ADR-0030):
+1. **The configured vision model's calibration,** from `state.sqlite` (`calibrations`), for the
+   sizes in `config.CALIBRATED`.
+2. **The uncalibrated defaults,** gemma-4's figures at DeepInfra "for now" (the maintainer):
    - `IMAGE_PIXELS` 645,120;
    - `SKETCH` (13, 10.0, 1);
    - `MODULES` (25, 6, 25);
    - the image first.
 
-A run without a vision model, or with `--no-calibrate`, draws to the defaults. Every size is in
+A run without a vision model, or with `--no-calibrate` (a developer's flag), draws to the
+defaults. Every size is in
 each project's options, so a change of model redraws its sketches (ADR-0004).
 
 ## When a run calibrates
