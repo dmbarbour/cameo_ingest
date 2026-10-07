@@ -3,9 +3,12 @@
 - **E1, intruder:** five members of a group and one of another group of the same family,
   shuffled; the judge names the one that doesn't belong. Chance is 1 in 6.
 - **E2, label fit:** a diagram and the split's labels, shuffled; the judge says which subject it
-  is in. Scored against the split, and corrected for chance (1 in the number of groups).
+  is in. Scored against the split, and corrected for chance (1 in the number of groups). The
+  labels are made without the diagrams E2 asks about (`labels_heldout`): a label made from a
+  diagram's own words gives it away, which let random splits score 0.17 over chance.
 - **E3, preference:** two splits of a family, as labels, sizes and three example names a group;
-  asked in both orders, ties allowed.
+  asked in both orders, ties allowed. A verdict counts only when a judge gives it in both orders:
+  two of the three judges chose the split shown first about 76% of the time.
 
 A diagram is shown by its name, its kind and its about text, **never its package path**: the
 package split would win E1 and E2 on the path alone. E3 shows each split as its labels, and a
@@ -95,7 +98,7 @@ def label_tasks(rec: dict[str, Any], split: str, n: int = 20) -> list[dict[str, 
     rng = random.Random(f"{SEED}:{rec['family']}:{split}:labels")
     s = rec["splits"][split]
     where = {k: g for g, ms in s["groups"].items() for k in ms}
-    keys = rng.sample(sorted(where), min(n, len(where)))
+    keys = rec["e2_sample"][:n]
     out = []
     for k in keys:
         order = sorted(s["labels"])
@@ -147,7 +150,7 @@ def run(llm: EnrichmentSession, recs: dict[str, dict[str, Any]], tasks: list[dic
             got = _number(res[0], "odd") if res else None
             return {**t, "reply": got, "correct": str(got) == str(t["answer"]) if got is not None else None}
         if t["test"] == "E2":
-            labels = rec["splits"][t["split"]]["labels"]
+            labels = rec["splits"][t["split"]]["labels_heldout"]
             subjects = "\n".join(f"{i}. {labels[g]}" for i, g in enumerate(t["order"], 1))
             res = llm.ask(LABEL_FIT, {"SUBJECTS": subjects, "DIAGRAM": describe(rec["items"][t["key"]])},
                           project="study:subjects", inputs=(t["family"],))

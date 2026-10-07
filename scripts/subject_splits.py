@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import re
 from collections import Counter
 from pathlib import Path
@@ -20,6 +21,7 @@ from pathlib import Path
 from cameo_ingest.evaluation.subjects import SPLITS, families, label, measures, target
 
 MIN_ITEMS = 8  # smaller families aren't split
+LABEL_SAMPLE = 20  # diagrams E2 asks about: the labels it shows are made without them
 
 # The known version cases (plan SB): file names, and how many of each a family must hold.
 KNOWN = {
@@ -79,11 +81,16 @@ def main() -> int:
                "items": {key: {"name": it.name, "owner": it.owner, "kind": it.kind, "package": it.package,
                                "about": it.about, "versions": len(it.versions)} for key, it in sorted(f.items.items())},
                "splits": {}}
+        rec["e2_sample"] = random.Random(f"e2:{f.label}").sample(sorted(f.items), min(LABEL_SAMPLE, len(f.items)))
         for name, s in splits.items():
             groups = sorted(set(s.values()), key=lambda g: -sum(1 for x in s.values() if x == g))
             labels = {g: (_package_label(f, s, g) if name == "P" else label(f, s, g)) for g in groups}
+            held = {k_: g for k_, g in s.items() if k_ not in set(rec["e2_sample"])}  # E2's labels: not from its items
+            heldout = {g: ((_package_label(f, held, g) if name == "P" else label(f, held, g))
+                           if g in set(held.values()) else "(no other diagrams)") for g in groups}
             rec["splits"][name] = {"groups": {str(g): sorted(k_ for k_, x in s.items() if x == g) for g in groups},
-                                   "labels": {str(g): labels[g] for g in groups}, "measures": ms[name]}
+                                   "labels": {str(g): labels[g] for g in groups},
+                                   "labels_heldout": {str(g): heldout[g] for g in groups}, "measures": ms[name]}
             page += [f"## {name}: {ms[name]['groups']} groups, the largest {ms[name]['largest']:.0%}", ""]
             for g in groups:
                 members = sorted((f.items[k_] for k_, x in s.items() if x == g), key=lambda it: it.name)

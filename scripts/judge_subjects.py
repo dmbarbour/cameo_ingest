@@ -105,18 +105,23 @@ def summarize(results: list[dict], splits: list[str], judges: list[str]) -> str:
         lines.append("")
     rows = [r for r in results if r["test"] == "E3"]
     if rows:
-        lines += ["## E3, preference: wins, losses and ties, both orders, every judge", "",
-                  "| Pair | Wins of the first | Wins of the second | Ties | Unread | Same answer both orders |",
-                  "|---|---|---|---|---|---|"]
+        lines += ["## E3, preference: verdicts given in both orders, every judge and family", "",
+                  "| Pair | First preferred | Second preferred | Tie | Inconsistent (the order decided) |",
+                  "|---|---|---|---|---|"]
         for pair in sorted({r["pair"] for r in rows}):
             a, b = pair.split("-")
-            got = [r for r in rows if r["pair"] == pair]
-            c = Counter(r["better"] for r in got)
             both: dict[tuple, list] = defaultdict(list)
-            for r in got:
-                both[(r["judge"], r["family"])].append(r["better"])
-            same = sum(1 for v in both.values() if len(v) == 2 and v[0] == v[1])
-            lines.append(f"| {a} vs {b} | {c[a]} | {c[b]} | {c['tie']} | {c[None]} | {same} of {len(both)} |")
+            for r in rows:
+                if r["pair"] == pair:
+                    both[(r["judge"], r["family"])].append(r["better"])
+            c = Counter(v[0] if len(v) == 2 and v[0] == v[1] and v[0] else "inconsistent" for v in both.values())
+            lines.append(f"| {a} vs {b} | {c[a]} | {c[b]} | {c['tie']} | {c['inconsistent']} |")
+        first = sum(1 for r in rows if r["better"] == r["A"]) / len(rows)
+        lines += ["", f"The split shown first was preferred in {first:.0%} of answers."]
+        for j in judges:
+            rr = [r for r in rows if r["judge"] == j]
+            if rr:
+                lines.append(f"- {j.split('/')[-1]}: {sum(1 for r in rr if r['better'] == r['A']) / len(rr):.0%}")
         lines.append("")
     return "\n".join(lines)
 
