@@ -2,6 +2,7 @@
 """Write the fictional projects and their questions (plan RE-10, `cameo_ingest.evaluation.fiction`).
 
     uv run python scripts/make_fictional_projects.py out/eval/fiction
+    uv run python scripts/make_fictional_projects.py --versions out/sb/versions   # plan SB
 
 Writes one .mdzip per project (the same bytes every time) and DIR/questions.jsonl, every
 project's questions, for `scripts/retrieval_eval.py --questions DIR/questions.jsonl`. Their
@@ -16,14 +17,25 @@ from pathlib import Path
 
 from cameo_ingest.evaluation import records
 from cameo_ingest.evaluation.fiction import ACROSS, PROJECTS
+from cameo_ingest.evaluation.fiction.versions import VERSIONS, shared
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("dir", type=Path)
     ap.add_argument("--only", nargs="+", choices=sorted(PROJECTS), help="only these projects (by prefix)")
+    ap.add_argument("--versions", action="store_true",
+                    help="write the versions of fictional projects instead (plan SB): no questions")
     args = ap.parse_args()
     args.dir.mkdir(parents=True, exist_ok=True)
+    if args.versions:
+        for name, (base, build) in VERSIONS.items():
+            v = build()
+            (args.dir / v.path).parent.mkdir(parents=True, exist_ok=True)
+            (args.dir / v.path).write_bytes(v.mdzip())
+            a, b = shared(PROJECTS[base](), v)
+            print(f"{v.path}: {name}, a version of {base}: {a:.0%} of its ids, {b:.0%} of the version's, shared")
+        return 0
     questions = []
     for prefix in args.only or PROJECTS:
         project = PROJECTS[prefix]()

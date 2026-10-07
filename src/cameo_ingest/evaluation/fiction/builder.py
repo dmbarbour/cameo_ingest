@@ -575,11 +575,13 @@ class Project:
                 "<xmi:exporterVersion>2024x</xmi:exporterVersion></xmi:Documentation>\n"
                 + self.model.render() + "\n " + "\n ".join(self.applications) + "\n</xmi:XMI>\n")
 
+    saved = (2026, 1, 1, 0, 0, 0)  # the entries' time, which is the save time a version is ordered by
+
     def mdzip(self) -> bytes:
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
             def entry(name: str) -> zipfile.ZipInfo:  # fixed times: the same bytes, so the same token
-                return zipfile.ZipInfo(name, date_time=(2026, 1, 1, 0, 0, 0))
+                return zipfile.ZipInfo(name, date_time=self.saved)
             z.writestr(entry("com.nomagic.magicdraw.uml_model.model"), self.xmi())
             for stream, text in sorted(self.layouts.items()):
                 z.writestr(entry(stream), text)
