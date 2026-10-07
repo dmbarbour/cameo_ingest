@@ -581,7 +581,6 @@ saved copy. Opened from inside a zip without extracting it first, it says so.
 | Sheet | Holds |
 |---|---|
 | `About` | How to search it, and what was left out |
-| `Find` | Type words; it lists the rows holding them all, ids and names first (Excel 2021, Microsoft 365 or Excel for the web) |
 | `Search` | Every item, for Ctrl+F |
 | `Requirements` | Requirements, with what satisfies, verifies, derives and refines them |
 | `Identifiers` | Every id, and each place it appears, across models |

@@ -59,7 +59,7 @@ def test_workbook_from_the_tree(fiction_tree, tmp_path, capsys):
     assert cli(["export", "-o", str(fiction_tree), "--workbook", str(book)]) == 0
     assert f"wrote {book}" in capsys.readouterr().out
     sheets = xlsx.sheets(book)
-    assert list(sheets) == ["About", "Find", "Search", "Requirements", "Identifiers", "Elements", "Relationships",
+    assert list(sheets) == ["About", "Search", "Requirements", "Identifiers", "Elements", "Relationships",
                             "Diagrams", "Subjects", "Summaries", "Projects"]
     subjects = [dict(zip(sheets["Subjects"][0], r, strict=False)) for r in sheets["Subjects"][1:]]
     assert subjects and {r["View"] for r in subjects} >= {"By shared elements (suggested)", "By package"}
@@ -77,8 +77,6 @@ def test_workbook_from_the_tree(fiction_tree, tmp_path, capsys):
     assert len(sheets["Projects"]) == 1 + len(PROJECTS)
     ids = [r for r in sheets["Identifiers"][1:] if r[0] == "RWT-REG-003"]
     assert len({r[1] for r in ids}) == 3  # the id in all three Riverbend proposals
-    find = sheets["Find"][6][0]
-    assert isinstance(find, xlsx.Formula) and "FILTER(Search!$A$2:$H$" in find
     again = tmp_path / "again.xlsx"
     assert cli(["export", "-o", str(fiction_tree), "--workbook", str(again)]) == 0
     assert again.read_bytes() == book.read_bytes()

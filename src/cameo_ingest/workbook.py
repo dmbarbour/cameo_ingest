@@ -1,10 +1,10 @@
 """The catalog as a workbook that people search with Excel alone (plan KX-03).
 
 One row per item, across sheets by kind, with a `Search` sheet that holds every item, so that
-Ctrl+F on one sheet finds anything wherever Find's scope ends, and a `Find` sheet whose
-formulas list the rows that hold all the words typed into it (Excel 2021, Microsoft 365 and
-Excel for the web). Text is written as text, never as a formula, number or link, and long
-text is cut at `LIMITS`.
+Ctrl+F on one sheet finds anything wherever Find's scope ends. Searching is Excel's own (Ctrl+F,
+the column filters) or the search page's: a sheet of search formulas (`Find`, until 0.24.2)
+took over 15 seconds on a 16 MB workbook, without a sign of work (TR-007). Text is written as
+text, never as a formula, number or link, and long text is cut at `LIMITS`. It has no formulas.
 
 XlsxWriter writes it row by row (constant memory), a project at a time, so memory stays flat
 whatever the corpus. Its document properties are fixed, so the same catalog gives the same bytes.
@@ -116,7 +116,6 @@ def write_workbook(path: Path, projects: Iterable[ProjectCatalog], version: str,
                          "created": dt.datetime(2000, 1, 1)})  # noqa: DTZ001 (fixed, for reproducible bytes)
     head = book.add_format({"bold": True, "bg_color": "#DDEBF7", "border": 1})
     about = book.add_worksheet("About")  # first in the book, written last: it reports the totals
-    find = book.add_worksheet("Find")
     sheets = {name: _Sheet(book, name, cols, head) for name, cols in SHEETS.items()}
     left_out: Counter[str] = Counter()
     tables: Counter[str] = Counter()
@@ -134,7 +133,6 @@ def write_workbook(path: Path, projects: Iterable[ProjectCatalog], version: str,
     for s in sheets.values():
         s.close()
     rows = {name: s.row for name, s in sheets.items()}
-    _find_sheet(find, book, head, rows["Search"])
     _about_sheet(about, book, rows, left_out, n_projects, version, [n for n, s in sheets.items() if s.full], tables)
     book.close()
     return rows
@@ -241,41 +239,6 @@ def _project_rows(p: ProjectCatalog, sheets: dict[str, _Sheet], suggested: dict[
                            LIMITS["search"])
 
 
-def _find_sheet(ws, book: xlsxwriter.Workbook, head, n: int) -> None:
-    """Words in B2:D2, a project in B3 and a type in B4; the rows of `Search` that hold every
-    word, those whose id or name holds the first word first."""
-    ws.set_column(0, 0, 26)
-    ws.set_column(1, 7, 24)
-    note = book.add_format({"italic": True, "font_color": "#555555"})
-    entry = book.add_format({"bg_color": "#FFF2CC", "border": 1})
-    ws.write_string(0, 0, "Find rows of the Search sheet", book.add_format({"bold": True, "font_size": 14}))
-    ws.write_string(1, 0, "Words (each must appear):", head)
-    for col in (1, 2, 3):
-        ws.write_blank(1, col, None, entry)
-    ws.write_string(2, 0, "Project (optional):", head)
-    ws.write_blank(2, 1, None, entry)
-    ws.write_string(3, 0, "Type (optional):", head)
-    ws.write_blank(3, 1, None, entry)
-    ws.write_string(4, 0, "Needs Excel 2021, Microsoft 365 or Excel for the web; elsewhere, use Ctrl+F or the "
-                          "Search sheet's filters. * and ? are wildcards.", note)
-    for i, (col, _) in enumerate(SHEETS["Search"]):
-        ws.write_string(5, i, col, head)
-    last = n + 1
-    rng = lambda c: f"Search!${c}$2:${c}${last}"
-
-    def has(word: str) -> str:
-        hits = "+".join(f"ISNUMBER(SEARCH({word},{rng(c)}))" for c in ("C", "D", "F", "G"))
-        return f"IF({word}=\"\",1,({hits})>0)"
-
-    keep = "*".join([has("$B$2"), has("$C$2"), has("$D$2"),
-                     f"IF($B$3=\"\",1,{rng('E')}=$B$3)", f"IF($B$4=\"\",1,{rng('A')}=$B$4)"])
-    score = f"ISNUMBER(SEARCH($B$2,{rng('C')}))+ISNUMBER(SEARCH($B$2,{rng('D')}))"
-    formula = (f"=IF(AND($B$2=\"\",$C$2=\"\",$D$2=\"\"),\"Type a word in B2\","
-               f"IFERROR(SORTBY(FILTER(Search!$A$2:$H${last},{keep}),FILTER({score},{keep}),-1),\"No match\"))")
-    ws.write_dynamic_array_formula(6, 0, 6, 0, formula)
-    ws.freeze_panes(6, 0)
-
-
 def _about_sheet(ws, book: xlsxwriter.Workbook, rows: dict[str, int], left_out: Counter[str], n_projects: int,
                  version: str, full: list[str], tables: Counter[str] | None = None) -> None:
     bold = book.add_format({"bold": True})
@@ -287,11 +250,13 @@ def _about_sheet(ws, book: xlsxwriter.Workbook, rows: dict[str, int], left_out: 
         ("What this is", (f"Every requirement, diagram, package, named or documented element, relationship and "
                           f"generated summary of {plural(n_projects, 'model')}, one row each, made by "
                           f"cameo-ingest {version}."), bold),
-        ("Search everything", ("Desktop Excel: Ctrl+F, then Options, Within: Workbook, and Find All. Where Find "
-                               "searches only the open sheet, use the Search sheet: it holds every item."), bold),
-        ("Find several words", ("The Find sheet lists the rows that hold all the words typed into it, ids and names "
-                                "first (Excel 2021, Microsoft 365 or Excel for the web)."), bold),
-        ("Filter a column", "Each sheet's header has filters: Text Filters, Contains, for one column.", bold),
+        ("Search everything", ("Ctrl+F, then Options, Within: Workbook, and Find All: every match, listed, each a "
+                               "click away. Where Find searches only the open sheet (Excel for the web), use the "
+                               "Search sheet: it holds every item."), bold),
+        ("Filter a column", ("Each sheet's header has filters: type into the filter's search box, or use Text "
+                             "Filters, Contains; filter several columns to narrow down."), bold),
+        ("Search by words", ("The search page made with this workbook (search.html) finds items by several words "
+                             "at once, ranked, in a moment, and shows their diagrams."), bold),
         ("Browse by subject", ("The Subjects sheet puts each model's diagrams in subjects, several ways (views): "
                                "filter Model and View, then read down Subject. The suggested view comes first; the "
                                "Diagrams sheet's Subject column is its subject. Subjects proposed by an LLM are "

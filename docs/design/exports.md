@@ -27,17 +27,17 @@ per-project file the exports read (AR-012). The records come in this order:
 - **Text stays text:** `strings_to_formulas`, `strings_to_numbers` and `strings_to_urls` are off,
   so ids like `1.2.3` and text starting with `=` stay as written.
 - **Sheets:**
-  - About, Find, Search;
+  - About, Search;
   - Requirements, Identifiers, Elements, Relationships, Diagrams, Subjects, Summaries;
   - Projects.
 - **Cell limits** (`LIMITS`): Search 1,000 characters, Requirements 4,000, Elements 2,000,
   Summaries 8,000; at most 32,767 in a cell.
 - **Rows:** `MAX_ROWS` = 1,048,575; the About sheet notes any sheet cut short.
-- **Find:**
-  - words go in B2:D2, a project in B3, a type in B4;
-  - a dynamic-array `SORTBY(FILTER(…))` matches with `SEARCH` over Id, Name, Where and Text;
-  - rows whose id or name holds the first word rank first;
-  - untested in Excel itself: LibreOffice 24.2 lacks `FILTER`.
+- **No Find sheet** (removed in 0.24.2, TR-007): its `SORTBY(FILTER(SEARCH …))` took over 15
+  s on the maintainer's 16 MB workbook, with no sign of work, and no formula search can index
+  as the page does (`docs/research/excel-find-2026-10-07.md`). The About sheet points to Ctrl+F
+  (Find All, within the workbook), the column filters, and the search page. The workbook holds
+  no formulas, so it reads alike in every Excel.
 
 ## The search page (`searchpage.py`, `assets/search.*`)
 
