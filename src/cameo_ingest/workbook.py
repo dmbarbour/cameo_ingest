@@ -26,6 +26,7 @@ from .text import plural, xml_safe
 # Characters per cell, by sheet; Excel's own limit is 32,767.
 LIMITS = {"search": 1_000, "requirements": 4_000, "elements": 2_000, "summaries": 8_000, "cell": 32_767}
 MAX_ROWS = 1_048_575  # a sheet's rows below its header
+ROW_HEIGHT = 45  # points: three lines of wrapped text a row; a double-click on the row's border shows it all
 
 SHEETS: dict[str, list[tuple[str, int]]] = {  # name -> columns (header, width)
     "Search": [("Type", 12), ("Kind", 16), ("Id", 16), ("Name", 40), ("Project", 28), ("Where", 50),
@@ -68,34 +69,43 @@ def saved_by(header: dict[str, Any]) -> str:
 
 
 class _Sheet:
-    def __init__(self, book: xlsxwriter.Workbook, name: str, columns: list[tuple[str, int]], header_fmt):
+    """A sheet of rows under a header, the header `top` rows down (a band above it for slicers,
+    plan WT); text wrapped and top-aligned, in rows of `ROW_HEIGHT` (TR-007: legible as opened)."""
+
+    def __init__(self, book: xlsxwriter.Workbook, name: str, columns: list[tuple[str, int]], header_fmt,
+                 text_fmt=None, number_fmt=None, top: int = 0):
         self.ws = book.add_worksheet(name)
         self.columns = [c for c, _ in columns]
-        self.row = 0
+        self.top = top
+        self.row = 0  # data rows written
         self.full = False
+        self.text_fmt, self.number_fmt = text_fmt, number_fmt
         for i, (head, width) in enumerate(columns):
             self.ws.set_column(i, i, width)
-            self.ws.write_string(0, i, head, header_fmt)
-        self.ws.freeze_panes(1, 0)
+            self.ws.write_string(top, i, head, header_fmt)
+        self.ws.freeze_panes(top + 1, 0)
 
     def add(self, values: dict[str, Any], limit: int) -> None:
-        if self.row >= MAX_ROWS:
+        if self.row >= MAX_ROWS - self.top:
             self.full = True
             return
         self.row += 1
+        r = self.top + self.row
+        self.ws.set_row(r, ROW_HEIGHT)
         for i, col in enumerate(self.columns):
             v = values.get(col)
             if isinstance(v, int) and not isinstance(v, bool):
-                self.ws.write_number(self.row, i, v)
+                self.ws.write_number(r, i, v, self.number_fmt)
             elif v not in (None, ""):
-                self.ws.write_string(self.row, i, cut(v, limit))
+                self.ws.write_string(r, i, cut(v, limit), self.text_fmt)
 
     def close(self) -> None:
-        self.ws.autofilter(0, 0, max(self.row, 1), len(self.columns) - 1)
+        self.ws.autofilter(self.top, 0, self.top + max(self.row, 1), len(self.columns) - 1)
 
 
 def write_workbook(path: Path, projects: Iterable[ProjectCatalog], version: str,
-                   subjects: dict[str, Any] | None = None, facts: dict[str, dict[str, Any]] | None = None) -> dict[str, int]:
+                   subjects: dict[str, Any] | None = None, facts: dict[str, dict[str, Any]] | None = None,
+                   bands: dict[str, int] | None = None) -> dict[str, int]:
     """Write the workbook; returns the rows per sheet. `subjects`: the tree's `subjects.json`, if any
     (ADR-0031): the Subjects sheet, and each diagram's subject in the suggested view."""
     families = (subjects or {}).get("families", [])
@@ -116,7 +126,10 @@ def write_workbook(path: Path, projects: Iterable[ProjectCatalog], version: str,
                          "created": dt.datetime(2000, 1, 1)})  # noqa: DTZ001 (fixed, for reproducible bytes)
     head = book.add_format({"bold": True, "bg_color": "#DDEBF7", "border": 1})
     about = book.add_worksheet("About")  # first in the book, written last: it reports the totals
-    sheets = {name: _Sheet(book, name, cols, head) for name, cols in SHEETS.items()}
+    text = book.add_format({"text_wrap": True, "valign": "top"})
+    number = book.add_format({"valign": "top"})
+    sheets = {name: _Sheet(book, name, cols, head, text, number, (bands or {}).get(name, 0))
+              for name, cols in SHEETS.items()}
     left_out: Counter[str] = Counter()
     tables: Counter[str] = Counter()
     n_projects = 0

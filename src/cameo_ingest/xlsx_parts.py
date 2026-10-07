@@ -62,6 +62,7 @@ class Table:
     columns: list[str]  # the header row's text, left to right
     rows: int  # data rows below the header (at least one row is kept, empty if need be)
     style: str = "TableStyleMedium2"
+    top: int = 0  # rows above the header (a band for slicers)
 
 
 @dataclass
@@ -72,6 +73,8 @@ class Slicer:
     row: int
     width: int = 192  # pixels
     height: int = 260
+    col_off: int = 0  # pixels, right of the column's left edge
+    row_off: int = 0  # pixels, below the row's top edge
     caption: str | None = None
     columns: int = 1  # buttons across
 
@@ -125,7 +128,7 @@ def _insert_before(root: etree._Element, new: etree._Element, before: tuple[str,
 
 
 def table_xml(t: Table, table_id: int) -> bytes:
-    ref = f"A1:{_col(len(t.columns) - 1)}{max(t.rows, 1) + 1}"
+    ref = f"A{t.top + 1}:{_col(len(t.columns) - 1)}{t.top + max(t.rows, 1) + 1}"
     cols = "".join(f'<tableColumn id="{i}" name={quoteattr(c)}/>' for i, c in enumerate(t.columns, 1))
     return (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
             f'<table xmlns="{MAIN}" id="{table_id}" name={quoteattr(t.name)} displayName={quoteattr(t.name)} '
@@ -160,8 +163,8 @@ def drawing_xml(frames: list[tuple[str, Slicer]]) -> bytes:
     for k, (name, s) in enumerate(frames, 2):
         x, y = 0, 0
         anchors.append(
-            f'<xdr:oneCellAnchor><xdr:from><xdr:col>{s.col}</xdr:col><xdr:colOff>0</xdr:colOff>'
-            f'<xdr:row>{s.row}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>'
+            f'<xdr:oneCellAnchor><xdr:from><xdr:col>{s.col}</xdr:col><xdr:colOff>{s.col_off * EMU}</xdr:colOff>'
+            f'<xdr:row>{s.row}</xdr:row><xdr:rowOff>{s.row_off * EMU}</xdr:rowOff></xdr:from>'
             f'<xdr:ext cx="{s.width * EMU}" cy="{s.height * EMU}"/>'
             f'<mc:AlternateContent xmlns:mc="{MC}"><mc:Choice xmlns:sle15="{SLE15}" Requires="sle15">'
             f'<xdr:graphicFrame macro=""><xdr:nvGraphicFramePr><xdr:cNvPr id="{k}" name={quoteattr(name)}/>'

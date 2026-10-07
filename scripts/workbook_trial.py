@@ -5,7 +5,8 @@
 
 Writes, from TREE's export, DIR/trial-tables.xlsx (every sheet but About an Excel Table) and
 DIR/trial-slicers.xlsx (the same, with slicers on the Diagrams sheet for Project, Type and
-Subject). Two files, so that a repair prompt in one tells tables from slicers.
+Subject, in a band above its table). Two files, so that a repair prompt in one tells tables from
+slicers. Text is wrapped, in rows of three lines.
 """
 
 from __future__ import annotations
@@ -20,6 +21,19 @@ from cameo_ingest.progress import Progress
 from cameo_ingest.provenance import ContentInfo
 from cameo_ingest.state import State
 from cameo_ingest.xlsx_parts import Slicer, Table, add_parts
+
+BAND = 15  # rows above the Diagrams table, for its slicers (20 pixels each)
+HEIGHT = BAND * 20 - 16
+
+
+def _at(column: str, x: int, width: int = 280) -> Slicer:
+    """A slicer for Diagrams' `column`, its left edge `x` pixels from the sheet's, in the band."""
+    widths = [w * 7 + 5 for _, w in workbook.SHEETS["Diagrams"]]  # pixels, as Excel draws a column width
+    col = 0
+    while col < len(widths) - 1 and x >= widths[col]:
+        x -= widths[col]
+        col += 1
+    return Slicer("Diagrams", column, col, 0, width=width, height=HEIGHT, col_off=x, row_off=8)
 
 
 def main() -> int:
@@ -38,17 +52,15 @@ def main() -> int:
                 facts[f"sha256:{r['content_sha256']}"]["label"] = ContentInfo(r["content_sha256"], r["name"]).label
         tables_file = args.dir / "trial-tables.xlsx"
         rows = workbook.write_workbook(tables_file, catalog.tree_catalogs(state, args.tree, [], Progress()),
-                                       __version__, families, facts)
+                                       __version__, families, facts, bands={"Diagrams": BAND})
     finally:
         state.close()
-    tables = [Table(name, name, [c for c, _ in workbook.SHEETS[name]], n) for name, n in rows.items()]
+    tables = [Table(name, name, [c for c, _ in workbook.SHEETS[name]], n, top=BAND if name == "Diagrams" else 0)
+              for name, n in rows.items()]
     slicers_file = args.dir / "trial-slicers.xlsx"
     shutil.copyfile(tables_file, slicers_file)
     add_parts(tables_file, tables)
-    width = len(workbook.SHEETS["Diagrams"])
-    add_parts(slicers_file, tables, [Slicer("Diagrams", "Project", width + 1, 1, columns=1),
-                                     Slicer("Diagrams", "Type", width + 1 + 3, 1),
-                                     Slicer("Diagrams", "Subject", width + 1 + 6, 1, width=260, height=420)])
+    add_parts(slicers_file, tables, [_at("Project", 8), _at("Type", 300), _at("Subject", 592, 420)])
     for f in (tables_file, slicers_file):
         print(f"{f}: {f.stat().st_size / 1e6:.1f} MB")
     return 0
