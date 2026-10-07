@@ -31,7 +31,8 @@ first), the judge panel, and TMT-2024x as a test of confusion between versions.
 ## Comparing models
 
 - **Diffs, between versions and between rivals** (the maintainer, 2026-10-07: "support for
-  analyzing diffs (both rivals and versions)"), after plan LN tells them apart:
+  analyzing diffs (both rivals and versions)"), after plan LN tells them apart. Taken up by plan SH
+  (`docs/plans/shared-items-2026-10-07.md`) with TR-004:
   - **between versions:** what a later version added, removed, renamed, moved or changed (text,
     tagged values, relationships, diagrams' contents), by element id, which a version keeps;
   - **between rivals on a shared root:** what each bidder kept, changed and added on the
