@@ -57,6 +57,8 @@ async function run(session, body) {
   out.first = await run(s, "return await wait(() => (document.querySelector('.result-name') || {}).textContent);");
   await run(s, `location.hash = '#d${doc}'; return true;`);
   out.linked = await run(s, "return await wait(() => document.querySelectorAll('.sketch svg .linked').length);");
+  out.tags = await run(s, "return document.querySelectorAll('#detail a.tag').length;");
+  out.fullText = await run(s, "return [...document.querySelectorAll('#detail h3')].map((h) => h.textContent);");
   out.tooltip = await run(s, `const g = document.querySelector('.sketch svg g.linked[data-k="${key}"]');
                                return g ? g.querySelector('title').textContent : null;`);
   out.heading = await run(s, `const before = document.querySelector('#detail h2').textContent;
@@ -78,8 +80,10 @@ async function run(session, body) {
   out.subjects = await run(s, "return document.querySelectorAll('#results .group').length;");
   out.opened = await run(s, `document.querySelector('#results .group-head').click();
     return await wait(() => document.querySelectorAll('#results .group .result').length);`);
+  out.chooserClosed = await run(s, "return getComputedStyle(document.getElementById('chooser')).display === 'none';");
   out.chooser = await run(s, `document.getElementById('models').click();
-    return await wait(() => document.querySelectorAll('#mlist .mrow').length);`);
+    await wait(() => getComputedStyle(document.getElementById('chooser')).display !== 'none');
+    return [...document.querySelectorAll('#mlist .mrow')].filter((r) => r.offsetParent !== null).length;`);
   out.button = await run(s, "return document.getElementById('models').textContent;");
   if (process.env.SHOT) {
     const shot = await send("Page.captureScreenshot", { format: "png" }, s);

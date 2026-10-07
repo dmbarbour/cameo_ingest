@@ -561,9 +561,10 @@ everything it shows is inside the file, compressed.
   with rivals, or sharing a part such as a library (see "Versions and removal"). Group them by
   lineage, by folder, by name or by date; filter them by name, folder or metadata; and choose
   all, none, or the newest of each model. The choice applies to searching and browsing.
-- **Reading an item:** its full text, as the RAG reads it, and its relationships as links to
-  the related items. Its source is shown too, and the generated summaries about it, marked as
-  such.
+- **Reading an item:** its full text (everything the page searches for it), and its
+  relationships as links to the related items. Its source is shown too, and the generated
+  summaries about it, marked as such. In a diagram's text, each shape's number, `[3]`, links to
+  its element, as a click on the shape in its sketch does.
 - **Linking:** `search.html#q=REQ-1` opens the page with that search.
 - **Browsing by subject:** with nothing typed, the page lists the models; choose one to see its
   diagrams in subjects, and choose how they are split (see "Subjects", below).

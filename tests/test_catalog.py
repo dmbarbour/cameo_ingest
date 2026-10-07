@@ -29,6 +29,8 @@ def test_catalog_records(fiction_tree):
     assert r2["text"] == "Brine Valve K7 shall close within 340 milliseconds of a leak signal."
     assert ["_kois_satisfy__k7__r2", "Satisfy", "in", "satisfied by", "_kois_k7", "Brine Valve K7"] in r2["relations"]
     assert r2["diagrams"] == [["_kois_d_req", "KOIS Requirements"]] and r2["chunks"]
+    tags = by_key["_kois_d_req"]["tags"]  # the diagram's number tags, for links at "[n]" (TR-005)
+    assert "_kois_r2" in tags.values() and "_kois_k7" in tags.values() and all(k.isdigit() for k in tags)
     part = by_key["_kois_kois__p_brine_valve_k7"]  # a part property: no chunk of its own
     assert part["listed_in"] == ["_kois_kois", "Kestrel Orchard Irrigation System"]
     assert part["chunks"] == by_key["_kois_kois"]["chunks"][:len(part["chunks"])]

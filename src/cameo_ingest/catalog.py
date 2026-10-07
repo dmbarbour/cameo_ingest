@@ -88,6 +88,10 @@ def project_catalog(view: ProjectView, sink: ChunkSink, root: Path | None = None
             elif el.id not in view.layouts and (why := ct.not_computed(ix, el.id)) is not None:
                 rec["table"] = f"not computed: {why[0]}"
                 tables["not computed"] += 1
+            if (g := view.graph(el.id)) is not None:  # its number tags, for links at "[n]" in its text (TR-005)
+                tags = {str(n.num): n.view.element for n in g.nodes if n.view.element}
+                if tags:
+                    rec["tags"] = tags
             images = [a for a in view.ann.get(el.id, []) if a.image]
             for a in images:  # its sketch, and a large diagram's modules (plan KX-05)
                 if a.module is None:

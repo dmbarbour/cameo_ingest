@@ -31,4 +31,10 @@ assert.strictEqual(Engine.lineageNote(projects[1], labelOf),
   "newest of 2 versions; derived by others from Tender [aaaa]; shares a root with Aquila [dddd]");
 assert.strictEqual(Engine.lineageNote(projects[2], labelOf), "older version, 1 of 2; derived by others from Tender [aaaa]");
 assert.strictEqual(Engine.lineageNote(projects[4], labelOf), "shares a part with Aquila [dddd]");
+
+// A diagram's "[n]" tags (TR-005): known numbers become links, others stay text.
+assert.deepStrictEqual(Engine.tagPieces("[1] «Block» Pump; [2] Valve; [9] ghost.", { 1: "k1", 2: "k2" }),
+  [{ text: "[1]", tag: "k1" }, { text: " «Block» Pump; " }, { text: "[2]", tag: "k2" }, { text: " Valve; [9] ghost." }]);
+assert.deepStrictEqual(Engine.tagPieces("no tags", undefined), [{ text: "no tags" }]);
+assert.deepStrictEqual(Engine.tagPieces("[1]", { 1: "k" }), [{ text: "[1]", tag: "k" }]);
 console.log("ok");

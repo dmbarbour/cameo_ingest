@@ -112,6 +112,9 @@ def test_page_in_a_browser(tmp_path):
     assert seen["heading"] == "Brine Valve K7" and seen["hash"].startswith("#d")
     assert seen["zoomed"] is True and seen["errors"] == []
     assert seen["models"] == 1 and seen["views"] >= 1 and seen["subjects"] >= 1 and seen["opened"] >= 1  # browsing
+    assert seen["tags"] >= 13 and "Full text" in seen["fullText"]  # "[n]" links (TR-005); no RAG wording (TR-006)
+    assert not any("RAG" in h for h in seen["fullText"])
+    assert seen["chooserClosed"] is True  # until asked for
     assert seen["chooser"] == 1 and seen["button"].startswith("Models: all 1")  # the model chooser (plan LN-07)
 
 

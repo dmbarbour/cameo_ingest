@@ -16,6 +16,7 @@ objects with short keys to keep the page small:
     l listed in [key, label] (a member, which borrows its owner's chunks: not repeated here)
     m model (generated text)   of [key, label] (what a summary is of)   pt its module or parts
     sk the ids of a diagram's sketch blocks (`--sketches`), the whole diagram first
+    tg a diagram's number tags {"n": element key}: the "[n]" in its text and its modules' (TR-005)
 
 Sketches, when asked for (plan KX-05), follow in blocks of their own, decoded only when their
 diagram is opened: `webp`, the tree's PNG sketches (and a large diagram's modules) re-encoded
@@ -109,6 +110,8 @@ def page_items(p: ProjectCatalog, sketch_ids: dict[str, list[str]] | None = None
                 it["c"] = "\n\n".join(p.chunks[c] for c in r.get("chunks", []) if c in p.chunks)
             if sketch_ids and r["key"] in sketch_ids:
                 it["sk"] = sketch_ids[r["key"]]
+            if r.get("tags"):
+                it["tg"] = r["tags"]
         out.append({k: v for k, v in it.items() if v not in (None, "", [])})
     return out
 
