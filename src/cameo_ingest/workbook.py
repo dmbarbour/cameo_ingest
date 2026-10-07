@@ -1,10 +1,11 @@
 """The catalog as a workbook that people search with Excel alone (plan KX-03).
 
-One row per item, across sheets by kind, with a `Search` sheet that holds every item, so that
-Ctrl+F on one sheet finds anything wherever Find's scope ends. Searching is Excel's own (Ctrl+F,
-the column filters) or the search page's: a sheet of search formulas (`Find`, until 0.24.2)
-took over 15 seconds on a 16 MB workbook, without a sign of work (TR-007). Text is written as
-text, never as a formula, number or link, and long text is cut at `LIMITS`. It has no formulas.
+One row per item, across sheets by kind, each sheet an Excel Table (`xlsx_parts`, plan WT) with
+columns to group, sort and filter by. Searching is Excel's own: Ctrl+F, and the tables' filters.
+(A sheet of search formulas, `Find`, took over 15 seconds on a 16 MB workbook without a sign of
+work, and went in 0.24.2 with the `Search` sheet it searched, TR-007.) Text is written as text,
+never as a formula, number or link, wrapped in rows of three lines, and long text is cut at
+`LIMITS`. The workbook has no formulas, and stands alone.
 
 XlsxWriter writes it row by row (constant memory), a project at a time, so memory stays flat
 whatever the corpus. Its document properties are fixed, so the same catalog gives the same bytes.
@@ -28,23 +29,29 @@ LIMITS = {"search": 1_000, "requirements": 4_000, "elements": 2_000, "summaries"
 MAX_ROWS = 1_048_575  # a sheet's rows below its header
 ROW_HEIGHT = 45  # points: three lines of wrapped text a row; a double-click on the row's border shows it all
 
+# Columns to group, sort and filter by (plan WT-04): `Newest` (the model's newest version, by
+# lineage), `Package 1` to `3` (a package path's first levels), `Subject` (the suggested view's:
+# a diagram's own, an element's or requirement's where most of its diagrams are), `Coverage` (what
+# relates to a requirement), `Shows` (a diagram's shapes) and `Diagrams` (where an element is shown).
+PACKAGES = [("Package 1", 24), ("Package 2", 24), ("Package 3", 24)]
 SHEETS: dict[str, list[tuple[str, int]]] = {  # name -> columns (header, width)
-    "Search": [("Type", 12), ("Kind", 16), ("Id", 16), ("Name", 40), ("Project", 28), ("Where", 50),
-               ("Text", 80), ("Source", 40)],
     "Requirements": [("Id", 18), ("Database number", 10), ("Name", 40), ("Text", 80), ("Project", 28),
-                     ("Package", 40), ("Satisfied by", 30), ("Verified by", 30), ("Derived from", 30),
-                     ("Derived into", 30), ("Refined by", 30), ("Traces", 30), ("Other relationships", 40),
-                     ("Diagrams", 30), ("Source", 40)],
-    "Identifiers": [("Id", 18), ("Project", 28), ("Element", 40), ("How", 22), ("Snippet", 80)],
-    "Elements": [("Kind", 16), ("Name", 40), ("Where", 50), ("Project", 28), ("Stereotypes", 20),
-                 ("Documentation", 80), ("Listed in", 30)],
-    "Relationships": [("Source", 40), ("Relationship", 18), ("Target", 40), ("Kind", 16), ("Project", 28)],
-    "Diagrams": [("Name", 40), ("Type", 28), ("Owner", 40), ("Project", 28), ("Elements shown", 10),
-                 ("Table", 24), ("Subject", 30), ("Description (generated)", 80)],
+                     ("Newest", 9), ("Package", 40), *PACKAGES, ("Subject", 30), ("Coverage", 24),
+                     ("Satisfied by", 30), ("Verified by", 30), ("Derived from", 30), ("Derived into", 30),
+                     ("Refined by", 30), ("Traces", 30), ("Other relationships", 40), ("Diagrams", 30),
+                     ("Source", 40)],
+    "Identifiers": [("Id", 18), ("Project", 28), ("Newest", 9), ("Element", 40), ("How", 22), ("Snippet", 80)],
+    "Elements": [("Kind", 16), ("Name", 40), ("Where", 50), ("Project", 28), ("Newest", 9), *PACKAGES,
+                 ("Subject", 30), ("Stereotypes", 20), ("Documentation", 80), ("Diagrams", 40), ("Listed in", 30)],
+    "Relationships": [("Source", 40), ("Relationship", 18), ("Target", 40), ("Kind", 16), ("Project", 28),
+                      ("Newest", 9)],
+    "Diagrams": [("Name", 40), ("Type", 28), ("Owner", 40), ("Project", 28), ("Newest", 9), *PACKAGES,
+                 ("Subject", 30), ("Elements shown", 10), ("Shows", 60), ("Table", 24),
+                 ("Description (generated)", 80)],
     "Subjects": [("Model", 30), ("View", 30), ("Subject", 34), ("What it holds", 60), ("Diagram", 40),
                  ("Versions", 9)],
-    "Summaries": [("Of", 40), ("What", 18), ("Project", 28), ("Summary (generated)", 100), ("Model", 24),
-                  ("Part", 10)],
+    "Summaries": [("Of", 40), ("What", 18), ("Project", 28), ("Newest", 9), ("Summary (generated)", 100),
+                  ("Model", 24), ("Part", 10)],
     "Projects": [("Project", 30), ("Label", 30), ("Content", 24), ("Source", 60), ("Metadata", 30),
                  ("Saved", 20), ("Saved by", 24), ("Versions", 34), ("Lineage", 60), ("Requirements", 10), ("Elements", 10), ("Diagrams", 10), ("Packages", 10),
                  ("Relationships", 10), ("Summaries", 10), ("Left out", 40)],
@@ -104,8 +111,8 @@ class _Sheet:
 
 
 def write_workbook(path: Path, projects: Iterable[ProjectCatalog], version: str,
-                   subjects: dict[str, Any] | None = None, facts: dict[str, dict[str, Any]] | None = None,
-                   bands: dict[str, int] | None = None) -> dict[str, int]:
+                   subjects: dict[str, Any] | None = None, facts: dict[str, dict[str, Any]] | None = None
+                   ) -> dict[str, int]:
     """Write the workbook; returns the rows per sheet. `subjects`: the tree's `subjects.json`, if any
     (ADR-0031): the Subjects sheet, and each diagram's subject in the suggested view."""
     families = (subjects or {}).get("families", [])
@@ -128,8 +135,7 @@ def write_workbook(path: Path, projects: Iterable[ProjectCatalog], version: str,
     about = book.add_worksheet("About")  # first in the book, written last: it reports the totals
     text = book.add_format({"text_wrap": True, "valign": "top"})
     number = book.add_format({"valign": "top"})
-    sheets = {name: _Sheet(book, name, cols, head, text, number, (bands or {}).get(name, 0))
-              for name, cols in SHEETS.items()}
+    sheets = {name: _Sheet(book, name, cols, head, text, number) for name, cols in SHEETS.items()}
     left_out: Counter[str] = Counter()
     tables: Counter[str] = Counter()
     n_projects = 0
@@ -148,6 +154,9 @@ def write_workbook(path: Path, projects: Iterable[ProjectCatalog], version: str,
     rows = {name: s.row for name, s in sheets.items()}
     _about_sheet(about, book, rows, left_out, n_projects, version, [n for n, s in sheets.items() if s.full], tables)
     book.close()
+    from .xlsx_parts import Table, add_parts
+
+    add_parts(path, [Table(name, name, [c for c, _ in SHEETS[name]], n) for name, n in rows.items()])
     return rows
 
 
@@ -190,51 +199,77 @@ def _lineage(fact: dict[str, Any], labels: dict[str, str]) -> tuple[str, str]:
     return versions, "; ".join(notes)
 
 
+COVERAGE = (("Satisfied by", "satisfied"), ("Verified by", "verified"), ("Refined by", "refined"),
+            ("Derived from", "derived"), ("Traces", "traced"))
+
+
+def _packages(path: str | None) -> dict[str, str]:
+    """`Package 1` to `3`: a package path's first three levels."""
+    parts = (path or "").split("::") if path else []
+    return {name: parts[i] for i, (name, _) in enumerate(PACKAGES) if i < len(parts)}
+
+
 def _project_rows(p: ProjectCatalog, sheets: dict[str, _Sheet], suggested: dict[tuple[str, str], str],
                   facts: dict[str, dict[str, Any]]) -> None:
     project, source = p.label, p.source_text()
+    token = p.header.get("token") or ""
+    newest = "no" if facts.get(token, {}).get("rank") else "yes"
     described = {r["key"]: r["text"] for r in p.records
                  if r["type"] == "summary" and r["label"] == "Diagram description" and "module" not in r}
+    shows: dict[str, list[str]] = {}  # a diagram's key -> the names of what it shows
+    for r in p.records:
+        if r["type"] in ("element", "requirement", "package"):
+            for d, _ in r.get("diagrams") or []:
+                shows.setdefault(d, []).append(r["name"])
+
+    def subject_of(r: dict[str, Any]) -> str | None:
+        """An item's subject in the suggested view: where most of its diagrams are (the first, on a tie)."""
+        votes: dict[str, int] = {}
+        for d, _ in r.get("diagrams") or []:
+            if (lab := suggested.get((token, d))) is not None:
+                votes[lab] = votes.get(lab, 0) + 1
+        return max(votes, key=lambda k: votes[k]) if votes else None
+
     for r in p.records:
         t = r["type"]
-        if t in ("requirement", "element", "diagram", "package"):
-            sheets["Search"].add({"Type": t.capitalize(), "Kind": r.get("kind"), "Id": r.get("id"), "Name": r["name"],
-                                  "Project": project, "Where": r.get("where"), "Text": r.get("text"),
-                                  "Source": source}, LIMITS["search"])
         if t == "requirement":
             cols: dict[str, list[str]] = {}
             for _, kind, direction, phrase, _, other in r.get("relations", []):
                 col = REQUIREMENT_COLUMNS.get((kind.lower(), direction))
                 cols.setdefault(col or "Other relationships", []).append(other if col else f"{phrase} {other}")
+            covered = [word for col, word in COVERAGE if cols.get(col)]
             sheets["Requirements"].add({"Id": r.get("id"), "Database number": r.get("db"), "Name": r["name"],
-                                        "Text": r.get("text"), "Project": project, "Package": r.get("package"),
+                                        "Text": r.get("text"), "Project": project, "Newest": newest,
+                                        "Package": r.get("package"), **_packages(r.get("package")),
+                                        "Subject": subject_of(r), "Coverage": ", ".join(covered) or "none",
                                         **{c: "; ".join(v) for c, v in cols.items()},
                                         "Diagrams": "; ".join(d[1] for d in r.get("diagrams", [])),
                                         "Source": source}, LIMITS["requirements"])
         elif t == "element":
             sheets["Elements"].add({"Kind": r.get("kind"), "Name": r["name"], "Where": r.get("where"),
-                                    "Project": project, "Stereotypes": ", ".join(r.get("stereotypes", [])),
+                                    "Project": project, "Newest": newest, **_packages(r.get("package")),
+                                    "Subject": subject_of(r), "Stereotypes": ", ".join(r.get("stereotypes", [])),
                                     "Documentation": r.get("text"),
+                                    "Diagrams": "; ".join(d[1] for d in r.get("diagrams", [])),
                                     "Listed in": (r.get("listed_in") or [None, None])[1]}, LIMITS["elements"])
         elif t == "diagram":
             owner = (r.get("owner") or [None, None])[1]
             sheets["Diagrams"].add({"Name": r["name"], "Type": r.get("kind"), "Owner": owner,
-                                    "Project": project, "Elements shown": r.get("shapes"), "Table": r.get("table"),
-                                    "Subject": suggested.get((p.header.get("token") or "", r["key"])),
+                                    "Project": project, "Newest": newest, **_packages(r.get("package")),
+                                    "Subject": suggested.get((token, r["key"])), "Elements shown": r.get("shapes"),
+                                    "Shows": "; ".join(shows.get(r["key"], [])), "Table": r.get("table"),
                                     "Description (generated)": described.get(r["key"])}, LIMITS["summaries"])
         elif t == "relationship":
             sheets["Relationships"].add({"Source": r["source"][1], "Relationship": r["phrase"],
-                                         "Target": r["target"][1], "Kind": r["kind"], "Project": project},
-                                        LIMITS["search"])
+                                         "Target": r["target"][1], "Kind": r["kind"], "Project": project,
+                                         "Newest": newest}, LIMITS["search"])
         elif t == "summary":
             part = f"M{r['module']}" if "module" in r else (f"{r['parts'][0]}–{r['parts'][1]}" if "parts" in r else "")
-            sheets["Summaries"].add({"Of": r["of"][1], "What": r["label"], "Project": project,
+            sheets["Summaries"].add({"Of": r["of"][1], "What": r["label"], "Project": project, "Newest": newest,
                                      "Summary (generated)": r["text"], "Model": r.get("model"), "Part": part},
                                     LIMITS["summaries"])
-            sheets["Search"].add({"Type": "Summary", "Kind": f"{r['label']} (generated)", "Name": r["of"][1],
-                                  "Project": project, "Text": r["text"], "Source": source}, LIMITS["search"])
     for rec in p.ids:
-        sheets["Identifiers"].add({"Id": rec["term"], "Project": project, "Element": rec.get("what"),
+        sheets["Identifiers"].add({"Id": rec["term"], "Project": project, "Newest": newest, "Element": rec.get("what"),
                                    "How": rec.get("how"), "Snippet": rec.get("snippet")}, LIMITS["search"])
     c = p.header.get("counts", {})
     fact = facts.get(p.header.get("token") or "", {})
@@ -264,12 +299,16 @@ def _about_sheet(ws, book: xlsxwriter.Workbook, rows: dict[str, int], left_out: 
                           f"generated summary of {plural(n_projects, 'model')}, one row each, made by "
                           f"cameo-ingest {version}."), bold),
         ("Search everything", ("Ctrl+F, then Options, Within: Workbook, and Find All: every match, listed, each a "
-                               "click away. Where Find searches only the open sheet (Excel for the web), use the "
-                               "Search sheet: it holds every item."), bold),
-        ("Filter a column", ("Each sheet's header has filters: type into the filter's search box, or use Text "
-                             "Filters, Contains; filter several columns to narrow down."), bold),
-        ("Search by words", ("The search page made with this workbook (search.html) finds items by several words "
-                             "at once, ranked, in a moment, and shows their diagrams."), bold),
+                               "click away."), bold),
+        ("Filter and sort", ("Each sheet is a table: its header's buttons filter and sort. Type into a filter's "
+                             "search box, or use Text Filters, Contains; filter several columns to narrow down. "
+                             "Insert, Slicer adds buttons for a column's values."), bold),
+        ("Group by", ("Newest: yes for the newest version of each model (filter it to see each model once). "
+                      "Package 1 to 3: the first levels of an item's package. Subject: a diagram's subject in the "
+                      "suggested view (see the Subjects sheet), and an element's or requirement's, where most of the "
+                      "diagrams that show it are. Coverage: what relates to a requirement (satisfied, verified, "
+                      "refined, derived, traced), or none."), bold),
+        ("Read a row", "Rows show three lines; double-click a row's lower border to see all of it.", bold),
         ("Browse by subject", ("The Subjects sheet puts each model's diagrams in subjects, several ways (views): "
                                "filter Model and View, then read down Subject. The suggested view comes first; the "
                                "Diagrams sheet's Subject column is its subject. Subjects proposed by an LLM are "
@@ -277,9 +316,9 @@ def _about_sheet(ws, book: xlsxwriter.Workbook, rows: dict[str, int], left_out: 
         ("Generated text", ("Summaries and diagram descriptions were written by an LLM, named in the Summaries "
                             "sheet; they are not part of the source models."), bold),
         ("Source", "Where each model was found when it was ingested: its path and the metadata given then.", bold),
-        ("Long text", (f"Cut at {LIMITS['search']:,} characters in Search, {LIMITS['requirements']:,} in "
-                       f"Requirements, {LIMITS['elements']:,} in Elements and {LIMITS['summaries']:,} in Summaries; "
-                       f"the search page and the output tree hold it whole."), bold),
+        ("Long text", (f"Cut, with \u2026, at {LIMITS['requirements']:,} characters in Requirements, "
+                       f"{LIMITS['elements']:,} in Elements, {LIMITS['summaries']:,} in Diagrams and Summaries, and "
+                       f"{LIMITS['search']:,} elsewhere."), bold),
         ("", "", None),
         ("Rows", "", title),
     ]

@@ -11,11 +11,10 @@ plan yet is in `docs/roadmap.md`. When a plan is done, its content goes to `docs
 |---|---|---|
 | [Subjects for discovery](subjects-2026-10-06.md) | SB | CP1 to CP3 done (0.22.0); the maintainer's trial, then CP4 |
 | [Lineage of models, and choosing them](lineage-2026-10-07.md) | LN | CP1 to CP4 done (0.24.0); the maintainer's trial |
-| [The workbook as a set of tables](workbook-tables-2026-10-07.md) | WT | CP1: the trial files with the maintainer |
 
 ## Archived
 
-Retired on 2026-10-03; TC, CT and TH on 2026-10-04; IS, RM, GS and CF on 2026-10-05.
+Retired on 2026-10-03; TC, CT and TH on 2026-10-04; IS, RM, GS and CF on 2026-10-05; WT on 2026-10-07.
 
 | Plan | Prefix | Done | Its content now |
 |---|---|---|---|
@@ -38,6 +37,7 @@ Retired on 2026-10-03; TC, CT and TH on 2026-10-04; IS, RM, GS and CF on 2026-10
 | [Retrieval's untested measures](../archive/plans/retrieval-measures-2026-10-05.md) | RM | 2026-10-05; generated summaries out of `rag/` | ADR-0028; design/evaluation, design/output-and-chunks; research/ledgers-and-generated, research/windows-over-pages; README |
 | [Generated text that serves search](../archive/plans/generated-for-search-2026-10-05.md) | GS | 2026-10-05 (0.20.0); about/context in use, in `rag/` | ADR-0029; design/llm-enrichment, design/output-and-chunks; research/generated-for-search; README |
 | [Configuration through `cameo-ingest config`](../archive/plans/configuration-2026-10-05.md) | CF | 2026-10-05 (0.21.1); four variables, the rest in the tree | ADR-0030; design/llm-enrichment; README |
+| [The workbook as a set of tables](../archive/plans/workbook-tables-2026-10-07.md) | WT | 2026-10-07 (0.25.0); slicers set aside | ADR-0021; design/exports; README |
 
 ## Reviews
 

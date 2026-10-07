@@ -27,12 +27,21 @@ per-project file the exports read (AR-012). The records come in this order:
 - **Text stays text:** `strings_to_formulas`, `strings_to_numbers` and `strings_to_urls` are off,
   so ids like `1.2.3` and text starting with `=` stay as written.
 - **Sheets:**
-  - About, Search;
+  - About;
   - Requirements, Identifiers, Elements, Relationships, Diagrams, Subjects, Summaries;
   - Projects.
 - **Cell limits** (`LIMITS`): Search 1,000 characters, Requirements 4,000, Elements 2,000,
   Summaries 8,000; at most 32,767 in a cell.
 - **Rows:** `MAX_ROWS` = 1,048,575; the About sheet notes any sheet cut short.
+- **Tables** (plan WT): each data sheet is an Excel Table, added after writing by `xlsx_parts`
+  (XlsxWriter makes none in constant-memory mode); the sheet's own autofilter gives way to it.
+  Slicers were tried (Excel opened them cleanly) and set aside: a table lets a user add one.
+- **Legible as opened:** text wraps, top-aligned, in rows of `ROW_HEIGHT` (45 points, three lines).
+- **Columns to group and filter by** (WT-04): Newest (by `lineage.facts`), Package 1 to 3, Subject
+  (`subjects.json`'s suggested view; an element's by most of its diagrams), Coverage, Shows,
+  Diagrams.
+- **No Search sheet** (0.25.0): it repeated every item's text for the Find sheet and for Excel
+  for the web; without it, the samples' workbook is 7.1 MB, from 9.5.
 - **No Find sheet** (removed in 0.24.2, TR-007): its `SORTBY(FILTER(SEARCH …))` took over 15
   s on the maintainer's 16 MB workbook, with no sign of work, and no formula search can index
   as the page does (`docs/research/excel-find-2026-10-07.md`). The About sheet points to Ctrl+F

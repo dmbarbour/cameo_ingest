@@ -1,6 +1,6 @@
 # Plan: the workbook as a set of tables, 2026-10-07
 
-- **Status:** In progress: CP1, the trial files are with the maintainer (WT-02).
+- **Status:** Done, 2026-10-07 (0.25.0): tables, columns to group by, no Search sheet; slicers set aside.
 - **Step prefix:** `WT`, so steps are `WT-01`, `WT-02` and so on.
 - **Addresses:** TR-007 (`docs/reviews/trial-2026-10-06.md`), after the Find sheet's removal
   (0.24.2), and the maintainer, 2026-10-07:
@@ -46,12 +46,12 @@ panels of buttons that filter a table by a column's values).
 | Step | What | Status |
 |---|---|---|
 | WT-01 | **The trial file:** `xlsx_parts.py` adds tables and table slicers to a written workbook; `scripts/workbook_trial.py` writes two files from the study tree: every sheet a table, and the same with slicers on the Diagrams sheet (Project, Type, Subject). Well-formedness tests; opened in LibreOffice. | Done: `xlsx_parts.add_parts`; `scripts/workbook_trial.py`, run on the samples-and-fiction tree (9 tables, 3 slicers, 9.5 MB each): every part well formed, every relationship resolved, each table's columns its header row, opened by LibreOffice; `out/workbook-trial/`. `tests/test_catalog.py::test_tables_and_slicers_added` |
-| WT-02 | **The maintainer's look:** repair prompts, and whether slicers are what was imagined. | |
-| WT-03 | **The Search sheet goes** (its uses went with the Find sheet); the About sheet says what each sheet holds. | |
-| WT-04 | **Columns to group, sort and filter by:** on each item's row, the model's newest-version mark and lineage; Subject (the suggested view; elements by their diagrams); Package 1, 2, 3; requirements' Satisfied, Verified and Traced marks and counts; a diagram's Shows and an element's Shown in. | |
-| WT-05 | **Every sheet a table,** in the export, by `xlsx_parts`. | |
-| WT-06 | **Slicers,** on the sheets and columns the trial settles. | |
-| WT-07 | **Docs and release:** design/exports, README; a release check. | |
+| WT-02 | **The maintainer's look:** repair prompts, and whether slicers are what was imagined. | Done: both files opened without a repair prompt (after Protected View's "Enable Editing"). The slicers, moved to a band above the table in a second trial, aren't worth it: "I think it will be easier to drop them and let users who excel at Excel figure it out". Kept from the trial: tables, and text wrapped ("it isn't very legible by default") |
+| WT-03 | **The Search sheet goes** (its uses went with the Find sheet); the About sheet says what each sheet holds. | Done: the samples' workbook 7.1 MB, from 9.5; the About sheet on Ctrl+F, the tables' filters, the grouping columns, and reading a row |
+| WT-04 | **Columns to group, sort and filter by:** on each item's row, the model's newest-version mark and lineage; Subject (the suggested view; elements by their diagrams); Package 1, 2, 3; requirements' Satisfied, Verified and Traced marks and counts; a diagram's Shows and an element's Shown in. | Done: Newest, Package 1 to 3, Subject, Coverage (one column: satisfied, verified, refined, derived, traced, or none), Shows, Diagrams; `tests/test_catalog.py` |
+| WT-05 | **Every sheet a table,** in the export, by `xlsx_parts`. | Done: `write_workbook` ends with `xlsx_parts.add_parts`; text wrapped, rows three lines; `tests/test_catalog.py::test_every_sheet_a_table` |
+| WT-06 | **Slicers,** on the sheets and columns the trial settles. | Dropped (WT-02). What they took, for another time: per slicer a cache part bound by `x15:tableSlicerCache` (table id, column id; extension `{2F2917AC-EB37-4324-AD4E-5DD8C200BD13}`), a slicers part, a drawing frame requiring `sle15`, the worksheet's list (`{3A4CF648-6AED-40f4-86FF-DC5316D8AED3}`), the workbook's caches (`{46BE6895-7355-4a93-B00E-2C351335B9C9}`) and a `Slicer_` name of `#N/A`; the code is in commit `2c4a021` |
+| WT-07 | **Docs and release:** design/exports, README; a release check. | Done (0.25.0): design/exports, README, ADR-0021 updated; default and slow suites |
 
 ## Checkpoints
 

@@ -59,7 +59,7 @@ def test_workbook_from_the_tree(fiction_tree, tmp_path, capsys):
     assert cli(["export", "-o", str(fiction_tree), "--workbook", str(book)]) == 0
     assert f"wrote {book}" in capsys.readouterr().out
     sheets = xlsx.sheets(book)
-    assert list(sheets) == ["About", "Search", "Requirements", "Identifiers", "Elements", "Relationships",
+    assert list(sheets) == ["About", "Requirements", "Identifiers", "Elements", "Relationships",
                             "Diagrams", "Subjects", "Summaries", "Projects"]
     subjects = [dict(zip(sheets["Subjects"][0], r, strict=False)) for r in sheets["Subjects"][1:]]
     assert subjects and {r["View"] for r in subjects} >= {"By shared elements (suggested)", "By package"}
@@ -71,6 +71,15 @@ def test_workbook_from_the_tree(fiction_tree, tmp_path, capsys):
     row = dict(zip(req[0], next(r for r in req if r[0] == "KOIS-R2"), strict=False))
     assert row["Satisfied by"] == "Brine Valve K7" and row["Derived from"] == "Leak Shutdown (KOIS-R5)"
     assert row["Source"].endswith("Kestrel_Orchard_Irrigation.mdzip")
+    # columns to group, sort and filter by (plan WT-04)
+    assert row["Coverage"] == "satisfied, derived" and row["Newest"] == "yes" and row["Package 1"] == "Kestrel Orchard Irrigation"
+    dia = sheets["Diagrams"]
+    req_dia = dict(zip(dia[0], next(r for r in dia if r[0] == "KOIS Requirements"), strict=False))
+    assert "Brine Valve K7" in req_dia["Shows"] and "Valve Closing Time (KOIS-R2)" in req_dia["Shows"]
+    els = sheets["Elements"]
+    k7 = dict(zip(els[0], next(r for r in els if r[1] == "Brine Valve K7"), strict=False))
+    assert "KOIS Requirements" in k7["Diagrams"]
+    assert any(dict(zip(els[0], r, strict=False)).get("Subject") for r in els[1:])
     rwt = hashlib.sha256(PROJECTS["rwt"]().mdzip()).hexdigest()[:8]  # three proposals share the id
     doors = dict(zip(req[0], next(r for r in req if r[0] == "RWT-REG-001" and rwt in r[4]), strict=False))
     assert doors["Database number"] == "16001"
@@ -159,40 +168,28 @@ def test_search_page_sketches(tmp_path):
         assert {i for it in items for i in it.get("sk", [])} == {i for i, _, _ in found}
 
 
-def test_tables_and_slicers_added(fiction_tree, tmp_path):
-    """`xlsx_parts` adds Excel Tables and table slicers to a written workbook: every part well
-    formed and every relationship resolved, each table's columns the sheet's header row, the
-    sheet's own filter given way, and the slicers' caches named and listed (plan WT-01)."""
+def test_every_sheet_a_table(fiction_tree, tmp_path):
+    """Each data sheet is an Excel Table (plan WT): every part well formed, each table's columns
+    the sheet's header row, and the sheet's own filter given way to the table's."""
     import zipfile
 
     from lxml import etree
 
-    from cameo_ingest.xlsx_parts import Slicer, Table, add_parts
+    from cameo_ingest.workbook import SHEETS
+    from cameo_ingest.xlsx_parts import MAIN
 
     book = tmp_path / "catalog.xlsx"
     assert cli(["export", "-o", str(fiction_tree), "--workbook", str(book)]) == 0
-    rows = {name: len(data) - 1 for name, data in xlsx.sheets(book).items() if name != "About"}
-    from cameo_ingest.workbook import SHEETS
-    tables = [Table(name, name, [c for c, _ in SHEETS[name]], n) for name, n in rows.items()]
-    add_parts(book, tables, [Slicer("Diagrams", "Project", 9, 1), Slicer("Diagrams", "Type", 12, 1)])
     with zipfile.ZipFile(book) as z:
         names = set(z.namelist())
         for n in names:
             if n.endswith((".xml", ".rels")):
                 etree.fromstring(z.read(n))
-        assert sum(n.startswith("xl/tables/") for n in names) == len(tables)
-        assert {"xl/slicers/slicer1.xml", "xl/slicerCaches/slicerCache1.xml", "xl/slicerCaches/slicerCache2.xml",
-                "xl/drawings/drawing1.xml"} <= names
-        wb = z.read("xl/workbook.xml").decode()
-        assert "Slicer_Diagrams_Project" in wb and "{46BE6895-7355-4a93-B00E-2C351335B9C9}" in wb
-        assert "_xlnm._FilterDatabase" not in wb  # the tables filter now
-        cache = z.read("xl/slicerCaches/slicerCache1.xml").decode()
-        assert 'sourceName="Project"' in cache and 'column="4"' in cache  # Diagrams: Name, Type, Owner, Project
-        sheets = [n for n in names if n.startswith("xl/worksheets/sheet") and n.endswith(".xml")]
-        for n in sheets:
-            root = etree.fromstring(z.read(n))
-            kids = [etree.QName(c).localname for c in root]
-            assert "autoFilter" not in kids or "tableParts" not in kids
-            if "drawing" in kids:
-                assert kids[-3:] == ["drawing", "tableParts", "extLst"]
-    assert xlsx.sheets(book)["Diagrams"][0][:4] == [c for c, _ in SHEETS["Diagrams"]][:4]  # still readable
+        tables = {etree.fromstring(z.read(n)).get("name"): etree.fromstring(z.read(n))
+                  for n in names if n.startswith("xl/tables/")}
+        assert set(tables) == set(SHEETS)
+        for name, t in tables.items():
+            assert [c.get("name") for c in t.iter(f"{{{MAIN}}}tableColumn")] == [c for c, _ in SHEETS[name]]
+        assert "_xlnm._FilterDatabase" not in z.read("xl/workbook.xml").decode()
+    sheets = xlsx.sheets(book)
+    assert all(sheets[name][0] == [c for c, _ in SHEETS[name]] for name in SHEETS)  # still readable

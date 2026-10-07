@@ -576,17 +576,28 @@ SharePoint downloads HTML files rather than showing them, so readers save the pa
 saved copy. Opened from inside a zip without extracting it first, it says so.
 
 **The workbook** has one row per item, with its source: the path the model was found at
-(which mirrors the SharePoint folders it was copied from) and its `--meta` values. Its sheets:
+(which mirrors the SharePoint folders it was copied from) and its `--meta` values. Each sheet is
+an Excel Table, whose header filters and sorts. Text wraps in rows of three lines (double-click a
+row's border for all of it). It has no formulas, and works alike in every Excel. Ctrl+F's Find
+All, within the workbook, searches it all; the filters narrow down. Columns to group and filter
+by:
+- **Newest:** yes on the newest version of each model (by lineage, see "Versions and removal");
+  filter it to see each model once;
+- **Package 1, 2, 3:** the first levels of an item's package;
+- **Subject:** a diagram's, in the suggested view (see "Subjects", below), and an element's or
+  requirement's, where most of the diagrams that show it are;
+- **Coverage:** what relates to a requirement (satisfied, verified, refined, derived, traced),
+  or "none";
+- **Shows** (a diagram's shapes) and **Diagrams** (where an element is shown).
 
 | Sheet | Holds |
 |---|---|
 | `About` | How to search it, and what was left out |
-| `Search` | Every item, for Ctrl+F |
 | `Requirements` | Requirements, with what satisfies, verifies, derives and refines them |
 | `Identifiers` | Every id, and each place it appears, across models |
 | `Elements` | Elements with a name or documentation |
 | `Relationships` | Each relationship, as the pages word it |
-| `Diagrams` | Diagrams, with their subject and their generated descriptions |
+| `Diagrams` | Diagrams, with what they show, their subject and their generated descriptions |
 | `Subjects` | Each model's diagrams by subject, a row per view, subject and diagram: filter Model and View |
 | `Summaries` | Generated summaries, marked with the model that wrote them |
 | `Projects` | Each model: its source, metadata, save time, Cameo version, versions and lineage, and counts |
