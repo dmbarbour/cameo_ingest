@@ -20,7 +20,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from . import exports
+from . import exports, subjects
 from .archive import UnsupportedInput, discover
 from .config import ProjectOptions
 from .fingerprint import fingerprint
@@ -49,6 +49,7 @@ class Runner:
         self.failed_inputs: list[str] = []
         self.failed_projects: list[str] = []
         self.written: list[str] = []
+        self.subjects: dict[str, Any] = {}
 
     def run(self, command: list[str]) -> int:
         run_id = uuid.uuid4().hex
@@ -61,13 +62,15 @@ class Runner:
                 self.options = self.prepare()
                 self.opt_hash = self.options.hash()
             self.build()
+            # The families' subjects (ADR-0031): asked of the LLM where missing, changed or incomplete.
+            self.subjects = subjects.update(self.state, self.out, self.llm, self.concurrency, self.progress)
             outcome = "finished"
         except KeyboardInterrupt:
             outcome = "interrupted"
             self.llm.close()
             raise
-        finally:
-            exports.rebuild(self.state, self.out)
+        finally:  # subjects without the LLM unless the run got that far
+            exports.rebuild(self.state, self.out, with_subjects=outcome != "finished")
             self.state.finish_run(run_id, outcome, self.llm.report())
             self.write_run_json(run_id)
         if self.failed_projects:
@@ -283,6 +286,7 @@ class Runner:
             "projects": {"written": len(self.written), "failed": len(self.failed_projects)},
             "failed_inputs": self.failed_inputs,
             "llm": self.llm.report(),
+            "subjects": self.subjects,
         }
         (self.out / "run.json").write_text(json.dumps(record, ensure_ascii=False, indent=1), encoding="utf-8")
 
@@ -305,6 +309,7 @@ def status(state: State) -> dict[str, Any]:
                           for r in state.written()
                           if (rec := json.loads(r["summary"] or "{}").get("recovered"))],
         },
+        "subjects": subjects.summary(state.out),
         "calibrations": [{"model": r["model"], "kind": r["kind"], "endpoint": r["endpoint"], "created": r["created"],
                           "settings": json.loads(r["settings"]), "report": r["report"],
                           "validation": json.loads(r["validation"]) if r["validation"] else None}

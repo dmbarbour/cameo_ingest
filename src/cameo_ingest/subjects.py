@@ -35,6 +35,7 @@ from typing import Any
 import networkx as nx
 
 from . import groups as version_groups
+from .llm import ReplayMiss
 from .progress import QUIET, Progress
 from .prompts import SUBJECTS_ASSIGN, SUBJECTS_PROPOSE
 
@@ -382,7 +383,15 @@ def llm_ways(llm: Any, f: Family, concurrency: int = 1, advance: Any = None) -> 
     failed (no answer, or none that can be read)."""
     k = target(len(f.items))
     project = f"subjects:{f.name}"
-    got = llm.ask(SUBJECTS_PROPOSE, {"MODEL": f.name, "COUNT": str(len(f.items)), "WAYS": str(WAYS), "K": str(k),
+
+    def ask(*a: Any, **kw: Any) -> Any:
+        try:
+            return llm.ask(*a, **kw)
+        except ReplayMiss as e:  # a replayed run: at the root, a miss is an unanswered request, not a failure
+            log.debug("subjects of %s: %s", f.name, e)
+            return None
+
+    got = ask(SUBJECTS_PROPOSE, {"MODEL": f.name, "COUNT": str(len(f.items)), "WAYS": str(WAYS), "K": str(k),
                                       "OUTLINE": outline(f)}, project=project, inputs=(f.tokens[0],))
     if advance:
         advance(1)
@@ -398,8 +407,8 @@ def llm_ways(llm: Any, f: Family, concurrency: int = 1, advance: Any = None) -> 
 
         def one(batch: list[str], listing: str = listing) -> dict[str, Any]:
             text = "\n".join(f"{i}. {f.items[key].describe()}" for i, key in enumerate(batch, 1))
-            r = llm.ask(SUBJECTS_ASSIGN, {"SUBJECTS": listing, "DIAGRAMS": text}, project=project,
-                        inputs=(f.tokens[0],))
+            r = ask(SUBJECTS_ASSIGN, {"SUBJECTS": listing, "DIAGRAMS": text}, project=project,
+                    inputs=(f.tokens[0],))
             if advance:
                 advance(1)
             reply = _json(r) or {}
@@ -462,11 +471,17 @@ def load(out: Path) -> dict[str, dict[str, Any]]:
     return {rec["tokens"][0]: rec for rec in data.get("families", [])}
 
 
+def summary(out: Path) -> dict[str, Any]:
+    """For `status`: how many families, and how their ways stand."""
+    recs = load(out)
+    return {"families": len(recs), **dict(sorted(Counter(r.get("ways") for r in recs.values()).items()))}
+
+
 def update(state: Any, out: Path, llm: Any = None, concurrency: int = 1, progress: Progress = QUIET) -> dict[str, Any]:
     """Write `subjects.json`. With a session that has a text model, ask for the ways of each family
     that lacks complete ones; without, keep each unchanged family's record and give others the
     fallback. Returns counts for the run's record."""
-    fams = families(state, out)
+    fams = [f for f in families(state, out) if f.items]
     before = load(out)
     can_ask = llm is not None and getattr(llm.cfg, "text_model", None)
     records = []

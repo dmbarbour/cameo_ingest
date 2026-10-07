@@ -163,3 +163,26 @@ def test_batches_follow_packages(versions_tree):
     for pkg, n in by_pkg.items():  # a package under a batch's size is never cut
         if n < subjects.BATCH:
             assert sum(1 for b in parts if any(f.items[k].package == pkg for k in b)) == 1, pkg
+
+
+def test_a_run_writes_subjects(tmp_path, fake_chat, capsys):
+    """`run` asks for the families' ways after building; an answer that can't be read is a failed
+    proposal, so the fallback is shown first, and `status` says so (ADR-0031)."""
+    from helpers import cli
+
+    from cameo_ingest.evaluation.fiction import PROJECTS
+
+    p = PROJECTS["pct"]()
+    src = tmp_path / p.path
+    src.write_bytes(p.mdzip())
+    out = tmp_path / "out"
+    assert cli([str(src), "-o", str(out), "--text-model", "acme/text", "--no-render", "--no-calibrate"]) == 0
+    asked = [m for m in fake_chat[0].requests if "Propose 3 different ways" in json.dumps(m[1])]
+    assert len(asked) == 1  # the fake's answer isn't JSON
+    run = json.loads((out / "run.json").read_text())
+    assert run["subjects"] == {"families": 1, "failed": 1}
+    [rec] = json.loads((out / "subjects.json").read_text())["families"]
+    assert rec["default"] == "shared" and rec["ways"] == "failed"
+    capsys.readouterr()
+    assert cli(["status", "-o", str(out)]) == 0
+    assert "subjects: 1 family of versions (1 failed); a run asks again" in capsys.readouterr().out

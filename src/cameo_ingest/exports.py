@@ -96,8 +96,9 @@ class Tree:
     assembly: Assembly = field(default_factory=Assembly)
 
 
-def rebuild(state: State, out: Path, assembly: Assembly | None = None) -> None:
-    """Every root file, one function each (AR-014R1)."""
+def rebuild(state: State, out: Path, assembly: Assembly | None = None, with_subjects: bool = True) -> None:
+    """Every root file, one function each (AR-014R1). `subjects.json` without the LLM, keeping what a
+    run found for unchanged families (`with_subjects`: a finished run has written it already)."""
     rows = state.project_rows()
     tree = Tree(out, rows, {r["content_sha256"]: r for r in state.written()},
                 {r["sha256"]: sightings(state, r["sha256"]) for r in rows}, TreeSettings.from_stored(state.settings()),
@@ -118,6 +119,10 @@ def rebuild(state: State, out: Path, assembly: Assembly | None = None) -> None:
         write_rag(out, projects, tree_chunks, tree.settings.rag_source, threads, tree.assembly.rag_without)
     elif (out / RAG).exists():
         shutil.rmtree(out / RAG)
+    if with_subjects:
+        from . import subjects
+
+        subjects.update(state, out)
 
 
 def write_manifest(tree: Tree, state: State) -> None:
