@@ -158,3 +158,44 @@ def test_scan_reports_what_it_is_on(tmp_path, caplog, monkeypatch):
     beats = [r.getMessage() for r in caplog.records if "now: reading slow.mdzip" in r.getMessage()]
     assert beats and "scanning 1 input: 0.0 MB of 0.0 MB" in beats[0] and "(0.0 MB, 1/1)" in beats[0]
     assert any("found 1 project(s) in slow.mdzip, 1 not seen before" in r.getMessage() for r in caplog.records)
+
+
+def test_ids_makers_and_days(tmp_path, capsys):
+    """Each id's maker (its hex id) and day, where its shape carries them, kept beside the hashes in
+    their order; a tree fingerprinted before plan LN gets them on `scan` (LN-01)."""
+    from cameo_ingest.fingerprint import NO_MAKER, parse_id, unpack_list, unpack_marks
+
+    assert parse_id("_18_5_1_412017e_1551451291598_995181_232897") == ("412017e", 1551451291598)
+    assert parse_id("_2021x_2_1b400495_1713965184493_25401_6804") == ("1b400495", 1713965184493)
+    assert parse_id("eee_1045467100313_135436_1") == (None, 1045467100313)
+    for odd in ("_kois_k7", "_2ca33d85-e793-40fa-9f3a-b3c90e37fd87", "PROJECT-39602c53", "_18_5_1_zzz_1551451291598_1_2"):
+        assert parse_id(odd) == (None, None), odd
+
+    a = [f"_2024x_2_abc1234_{1700000000000 + k * 86_400_000}_{k}_{k}" for k in range(5)]
+    b = [f"_2024x_2_def5678_1710000000000_{k}_{k}" for k in range(3)]
+    src = tmp_path / "m.mdzip"
+    src.write_bytes(model("m", a + b + ["_plain_1"]))
+    out = ingest(tmp_path, src, args=("--no-llm", "--no-render"))
+    st = State(out)
+    try:
+        [(sha, (makers, who, when))] = st.id_marks().items()
+        hashes = unpack_list(st.fingerprint(sha)["ids"])
+    finally:
+        st.close()
+    assert makers == ["abc1234", "def5678"]
+    who, when = unpack_marks(who, when)
+    assert len(who) == len(when) == len(hashes)
+    from collections import Counter
+    assert Counter(who) == Counter({0: 5, 1: 3, NO_MAKER: 3})  # the model, its package and "_plain_1" have none
+    assert sorted(d for d in when if d)[:2] == [1700000000000 // 86_400_000, 1700000000000 // 86_400_000 + 1]
+
+    st = State(out)  # as a tree from before plan LN: fingerprints, but no marks
+    st.db.execute("DELETE FROM id_marks")
+    st.close()
+    assert cli(["scan", "-o", str(out)]) == 0
+    assert "1 fingerprinted from earlier scans" in capsys.readouterr().out
+    st = State(out)
+    try:
+        assert next(iter(st.id_marks().values()))[0] == ["abc1234", "def5678"]
+    finally:
+        st.close()

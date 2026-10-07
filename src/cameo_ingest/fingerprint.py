@@ -8,6 +8,12 @@
 - **The project id** (`PROJECT-…`) and **the Cameo version:** shown for reference only. A
   project id alone can't be used: a model made from a template keeps the template's, and a
   migrated model may get a new one.
+- **Each id's maker and day** (plan LN-01): most Cameo ids read
+  `_<tool version>_<hex id>_<creation time, epoch ms>_<random>_<counter>`, and MagicDraw's older
+  ones `eee_<epoch ms>_<random>_<counter>`. The hex id is taken for the maker (a user or an
+  installation: inferred from the shape, not documented). Kept beside the hashes, in their order:
+  a maker's index (`array('H')`, `NO_MAKER` for none) and the day (`array('I')`, days since 1970,
+  0 for none). On the samples, 57% to 99% of a model's ids carry a maker.
 """
 
 from __future__ import annotations
@@ -65,10 +71,66 @@ def element_ids(project: Project) -> list[str]:
     return ids
 
 
+_VERSION = re.compile(r"\d+x?")
+_HEX = re.compile(r"[0-9a-f]{4,8}")
+_MS = re.compile(r"\d{12,13}")
+NO_MAKER = 0xFFFF
+DAY_MS = 86_400_000
+
+
+def parse_id(xid: str) -> tuple[str | None, int | None]:
+    """An id's maker (its hex id) and creation time (epoch ms), where its shape carries them."""
+    t = xid.lstrip("_").split("_")
+    if (len(t) >= 5 and _MS.fullmatch(t[-3]) and _HEX.fullmatch(t[-4]) and t[-2].isdigit() and t[-1].isdigit()
+            and all(_VERSION.fullmatch(x) for x in t[:-4])):
+        return t[-4], int(t[-3])
+    if len(t) == 4 and _MS.fullmatch(t[1]) and t[2].isdigit() and t[3].isdigit():
+        return None, int(t[1])  # eee_<ms>_<random>_<counter>: no maker
+    return None, None
+
+
+def _hash(xid: str) -> int:
+    return int.from_bytes(hashlib.blake2b(xid.encode("utf-8"), digest_size=8).digest(), "little")
+
+
+def marks(ids: list[str]) -> tuple[list[str], bytes, bytes]:
+    """Each distinct id's maker and day, in `pack`'s order: the makers, then their indexes
+    (`array('H')`) and the days (`array('I')`), little-endian."""
+    by_hash: dict[int, tuple[str | None, int | None]] = {}
+    for xid in ids:
+        by_hash.setdefault(_hash(xid), parse_id(xid))
+    makers = sorted({m for m, _ in by_hash.values() if m})
+    index = {m: i for i, m in enumerate(makers)}
+    who = array("H", (index[m] if m else NO_MAKER for _, (m, _t) in sorted(by_hash.items())))
+    when = array("I", ((t // DAY_MS) if t else 0 for _, (_m, t) in sorted(by_hash.items())))
+    if sys.byteorder != "little":
+        who.byteswap()
+        when.byteswap()
+    return makers, who.tobytes(), when.tobytes()
+
+
+def unpack_marks(blob_who: bytes, blob_when: bytes) -> tuple[array, array]:
+    who, when = array("H"), array("I")
+    who.frombytes(blob_who)
+    when.frombytes(blob_when)
+    if sys.byteorder != "little":
+        who.byteswap()
+        when.byteswap()
+    return who, when
+
+
+def unpack_list(blob: bytes) -> array:
+    """The hashes, in their stored (sorted) order."""
+    a = array("Q")
+    a.frombytes(blob)
+    if sys.byteorder != "little":
+        a.byteswap()
+    return a
+
+
 def pack(ids: list[str]) -> bytes:
     """Ids as their sorted, distinct 64-bit hashes."""
-    hashes = sorted({int.from_bytes(hashlib.blake2b(i.encode("utf-8"), digest_size=8).digest(), "little")
-                     for i in ids})
+    hashes = sorted({_hash(i) for i in ids})
     a = array("Q", hashes)
     if sys.byteorder != "little":
         a.byteswap()
@@ -112,6 +174,9 @@ def fingerprint(project: Project) -> dict[str, Any]:
         with project.open(METAMODEL) as f:
             m = _PROJECT_ID.search(f.read(2048))
         project_id = m.group(1).decode("ascii", "replace") if m else None
-    ids = pack(element_ids(project))
+    all_ids = element_ids(project)
+    ids = pack(all_ids)
+    makers, who, when = marks(all_ids)
     return {"saved": saved, "saved_raw": raw, "saved_from": source, "project_id": project_id,
-            "exporter": _exporter(project), "elements": len(ids) // 8, "ids": ids}
+            "exporter": _exporter(project), "elements": len(ids) // 8, "ids": ids,
+            "makers": makers, "who": who, "when": when}

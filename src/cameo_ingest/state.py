@@ -20,7 +20,8 @@ from .provenance import utc_now
 
 STATE_FILE = "state.sqlite"
 LOCK_FILE = "state.lock"
-SCHEMA_VERSION = 4  # 2: fingerprints and removed (plan PV); 3: calibrations (plan VA); 4: their kind (plan TC)
+SCHEMA_VERSION = 5  # 2: fingerprints and removed (plan PV); 3: calibrations (plan VA); 4: their kind (plan TC);
+# 5: id_marks, each id's maker and day (plan LN-01)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -81,6 +82,12 @@ CREATE TABLE IF NOT EXISTS runs (
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
 -- What each content says about itself, for finding versions of a model (plan PV).
+CREATE TABLE IF NOT EXISTS id_marks (               -- each fingerprinted id's maker and day (plan LN-01)
+    content_sha256 TEXT PRIMARY KEY REFERENCES contents(sha256) ON DELETE CASCADE,
+    makers TEXT NOT NULL,                         -- JSON: the hex ids taken for makers, sorted
+    who BLOB NOT NULL,                            -- per id, in fingerprints.ids' order: the maker's index (array 'H'; 65535 none)
+    whence BLOB NOT NULL                          -- per id: the creation day, days since 1970 (array 'I'; 0 none)
+);
 CREATE TABLE IF NOT EXISTS fingerprints (
     content_sha256 TEXT PRIMARY KEY REFERENCES contents(sha256) ON DELETE CASCADE,
     saved TEXT,                                   -- when Cameo saved it, ISO 8601 (with its offset when known)
@@ -354,15 +361,23 @@ class State:
         return self.db.execute("SELECT * FROM fingerprints WHERE content_sha256 = ?", (sha256,)).fetchone()
 
     def save_fingerprint(self, sha256: str, fp: dict[str, Any]) -> None:
-        self.db.execute("INSERT OR REPLACE INTO fingerprints VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        (sha256, fp["saved"], fp["saved_raw"], fp["saved_from"], fp["project_id"], fp["exporter"],
-                         fp["elements"], fp["ids"], utc_now()))
+        with self.tx() as db:
+            db.execute("INSERT OR REPLACE INTO fingerprints VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                       (sha256, fp["saved"], fp["saved_raw"], fp["saved_from"], fp["project_id"], fp["exporter"],
+                        fp["elements"], fp["ids"], utc_now()))
+            db.execute("INSERT OR REPLACE INTO id_marks VALUES (?, ?, ?, ?)",
+                       (sha256, json.dumps(fp["makers"]), fp["who"], fp["when"]))
 
     def unfingerprinted(self) -> list[str]:
-        """Contents still to be fingerprinted (those scanned before plan PV)."""
+        """Contents still to be fingerprinted: those scanned before plan PV, or, for their ids' makers
+        and days, before plan LN."""
         return [r[0] for r in self.db.execute(
             "SELECT sha256 FROM contents WHERE sha256 NOT IN (SELECT content_sha256 FROM fingerprints) "
-            "ORDER BY name, sha256")]
+            "OR sha256 NOT IN (SELECT content_sha256 FROM id_marks) ORDER BY name, sha256")]
+
+    def id_marks(self) -> dict[str, tuple[list[str], bytes, bytes]]:
+        """Each fingerprinted content's makers, and its ids' makers and days (plan LN-01)."""
+        return {r[0]: (json.loads(r[1]), r[2], r[3]) for r in self.db.execute("SELECT * FROM id_marks")}
 
     def catalog(self) -> list[sqlite3.Row]:
         """Every content, with its status and fingerprint (without the ids), by name."""
