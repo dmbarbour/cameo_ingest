@@ -44,6 +44,7 @@ def main() -> int:
     ap.add_argument("--splits", nargs="+", default=["R", "P", "G", "T"])
     ap.add_argument("--families", type=int, default=12)
     ap.add_argument("--tests", nargs="+", default=["E1", "E2", "E3"])
+    ap.add_argument("--e3-splits", nargs="+", help="the splits E3 pairs (default: --splits)")
     ap.add_argument("--judges", nargs="+", default=JUDGES)
     ap.add_argument("--concurrency", type=int, default=8)
     args = ap.parse_args()
@@ -60,7 +61,7 @@ def main() -> int:
             if "E2" in args.tests:
                 tasks += label_tasks(r, s)
         if "E3" in args.tests:
-            tasks += preference_tasks(r, args.splits)
+            tasks += preference_tasks(r, args.e3_splits or args.splits)
     print(f"{len(recs)} families: {', '.join(r['family'] for r in recs)}")
     print(f"{len(tasks):,} tasks a judge: {dict(Counter(t['test'] for t in tasks))}")
     results = []
