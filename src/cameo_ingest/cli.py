@@ -387,7 +387,10 @@ def versions_command(out: Path, args: argparse.Namespace) -> int:
                                     r["elements"] or "", "; ".join(paths.get(r["sha256"], []))])
             return 0
         if args.command == "groups":
-            report = gp.find(state.catalog(), state.fingerprint_ids(), _paths(state), args.include_removed)
+            from . import lineage
+
+            report = gp.find(state.catalog(), state.fingerprint_ids(), _paths(state), args.include_removed,
+                             lineage.pairs(state, args.include_removed))
             print(gp.render(report, out))
             if args.csv:
                 gp.write_csv(report, args.csv)

@@ -16,7 +16,8 @@ from 2021 to 2024, Jaccard 0.31). With the older first, it is:
   else (a bid on a customer's model);
 - **related:** much of each side's own predates the shared part: a part, such as a library,
   taken into models made before it;
-- **unknown:** too few of the own ids carry makers (`PARSED`) to tell.
+- **unknown:** too few of the own ids carry makers (`PARSED`) to tell: ADR-0020's rule decides
+  (`groups.find`).
 
 The thresholds are first guesses, measured on synthetic and public cases
 (`docs/research/lineage-2026-10-07.md`). What a hex id identifies is inferred from Cameo's id
@@ -42,6 +43,7 @@ OWN_MIN = 20
 AFTER = 0.6  # of a side's own ids with a day: made after the shared part's latest
 SAME = 0.15  # of the newer's own ids with a maker: made by the older's makers, for a version
 BRANCH = 0.6  # of each side's own ids with a maker: made by the other's makers, for branches
+KEPT = 0.5  # Jaccard, at least, for a newer with nothing of its own to be a version that dropped the rest
 PARSED = 0.3  # of a side's own ids: carrying a maker, for the makers to tell
 LATEST = 0.95  # the shared part's latest day: this quantile of its days (a few late ids aside)
 
@@ -165,20 +167,20 @@ def classify(p: Pair) -> tuple[str, str]:
 
     if few(a) and few(b):
         return "copy", f"each has {a.own:,} and {b.own:,} ids of its own: the same model, saved again"
+    if few(b) and p.jaccard >= KEPT:
+        return "version", f"the newer has only {b.own:,} ids of its own, and dropped {a.own:,} of the older's: a later version"
+    if b.parsed < PARSED:
+        return "unknown", f"too few of the newer's {b.own:,} ids of its own name their makers ({b.parsed:.0%}) to tell"
     if substantial(a) and substantial(b) and a.after >= AFTER and b.after >= AFTER:
-        if min(a.parsed, b.parsed) < PARSED:
-            return "unknown", "each has much of its own, made after the shared part, but too few ids name their makers"
+        if a.parsed < PARSED:
+            return "unknown", f"too few of the older's {a.own:,} ids of its own name their makers ({a.parsed:.0%}) to tell"
         if a.same >= BRANCH and b.same >= BRANCH:
             return "branches", (f"each has much of its own ({a.own:,} and {b.own:,} ids), made after the shared part, "
                                 "by makers both share: one team's branches")
         return "root", (f"each has much of its own ({a.own:,} and {b.own:,} ids), made after the shared part "
                         f"(to {p.shared_latest}), by makers the other lacks ({', '.join(a.makers[:2])}; "
                         f"{', '.join(b.makers[:2])}): rivals on a shared root")
-    if few(b):
-        return "version", f"the newer has only {b.own:,} ids of its own, and dropped {a.own:,} of the older's: a later version"
     if b.after >= AFTER and a.after < AFTER:
-        if b.parsed < PARSED:
-            return "unknown", f"the newer's {b.own:,} ids of its own mostly don't name their makers"
         if b.same >= SAME:
             return "version", (f"the newer's {b.own:,} ids of its own were made after the shared part, "
                                f"{b.first} to {b.last}, {b.same:.0%} by the older's makers: a later version")
@@ -188,25 +190,29 @@ def classify(p: Pair) -> tuple[str, str]:
                        "predates them: a part, such as a library")
 
 
-def models(state: Any) -> list[Model]:
-    """The tree's written models, with their ids' makers and days (those fingerprinted with them)."""
+def models(state: Any, include_removed: bool = False) -> list[Model]:
+    """The tree's fingerprinted models, with their ids' makers and days; a model fingerprinted
+    before plan LN has none (its pairs are `unknown`, and ADR-0020's rule decides)."""
     ids = state.fingerprint_ids()
     marks = state.id_marks()
     out = []
     for r in state.catalog():
         sha = r["sha256"]
-        if r["status"] == "removed" or sha not in ids or sha not in marks:
+        if (r["status"] == "removed" and not include_removed) or sha not in ids:
             continue
-        makers, who, when = marks[sha]
-        w, d = unpack_marks(who, when)
-        out.append(Model(sha, r["name"], r["saved"], [s["path"] for s in state.sightings(sha)],
-                         unpack_list(ids[sha]), makers, w, d))
+        hashes = unpack_list(ids[sha])
+        if sha in marks:
+            makers, who, when = marks[sha]
+            w, d = unpack_marks(who, when)
+        else:
+            makers, w, d = [], array("H", [NO_MAKER] * len(hashes)), array("I", [0] * len(hashes))
+        out.append(Model(sha, r["name"], r["saved"], [s["path"] for s in state.sightings(sha)], hashes, makers, w, d))
     return out
 
 
-def pairs(state: Any) -> list[Pair]:
+def pairs(state: Any, include_removed: bool = False) -> list[Pair]:
     """Every related pair of the tree's models, with its lineage."""
-    ms = sorted(models(state), key=lambda m: (m.name.lower(), m.sha))
+    ms = sorted(models(state, include_removed), key=lambda m: (m.name.lower(), m.sha))
     sets = {m.sha: set(m.hashes) for m in ms}
     out = []
     for x, y in itertools.combinations(ms, 2):

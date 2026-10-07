@@ -1,6 +1,7 @@
 # ADR-0020: Versions found by shared element ids; the tool reports, the maintainer removes
 
-- **Status:** Accepted, 2026-10-03 (plan PV; the maintainer: "Plan is go").
+- **Status:** Accepted, 2026-10-03 (plan PV; the maintainer: "Plan is go"); updated on 2026-10-07 (Changes,
+  below).
 - **Sources:**
   - `docs/archive/plans/project-versions-2026-10-03.md`;
   - `docs/design/versions.md`.
@@ -17,7 +18,9 @@ fork).
 - **Nothing is decided for the maintainer.** `scan`, `projects` and `groups` report; `remove` and
   `restore` act.
 - **Versions are found by shared element ids:** Cameo keeps `xmi:id` across saves. Project ids
-  are not used alone, since a model made from a template keeps the template's.
+  are not used alone, since a model made from a template keeps the template's. Since 0.23.0, who
+  made each side's own ids, and when, decides whether two models are versions or rivals (ADR-0032);
+  this rule (Jaccard 0.5, or 80% of the smaller) serves where ids name no makers.
 - **Newest by save time,** from `Records.properties`, which copying doesn't change. The zip's
   dates are a flagged fallback.
 - **Removals outlive their inputs,** in a `removed` table: `run` skips a removed project even when
@@ -32,3 +35,8 @@ shares more than one id.
 
 `groups` warns of possible forks, and of missing save times, and suggests a `remove` line only for
 groups without warnings.
+
+## Changes
+
+- 2026-10-07: versions told from rivals by who made the ids and when (ADR-0032); this rule is the
+  fallback. Before: `3c254db`.

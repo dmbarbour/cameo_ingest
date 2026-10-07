@@ -1,7 +1,8 @@
 """Subjects for discovery (plan SB, ADR-0031): each family of versions of a model, its diagrams
 split into subjects a person can browse, and group search results by.
 
-- **A family** is a set of versions of one model (ADR-0020's groups), or one model alone. Its
+- **A family** is a set of versions of one model (copies and versions by lineage, ADR-0032), or
+  one model alone: rivals on a shared root stay apart, each with its own diagrams. Its
   **items** are its diagrams, each once, however many versions hold it (by id), the newest's copy.
 - **Views** of a family, the default first:
   - **the LLM's ways:** the tree's text model proposes about `WAYS` ways to organize the diagrams,
@@ -120,7 +121,9 @@ def _catalog(out: Path, token: str) -> list[dict[str, Any]]:
 
 def families(state: Any, out: Path) -> list[Family]:
     """The tree's families, from its version groups and its projects' catalogs."""
-    report = version_groups.find(state.catalog(), state.fingerprint_ids(), {})
+    from . import lineage
+
+    report = version_groups.find(state.catalog(), state.fingerprint_ids(), {}, pairs=lineage.pairs(state))
     written = {r["content_sha256"]: r["name"] for r in state.written()}
     grouped = {m.sha for g in report.groups for m in g.members}
     sets = [[m.sha for m in g.members if m.sha in written] for g in report.groups]

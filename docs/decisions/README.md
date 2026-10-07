@@ -39,3 +39,4 @@ date, what changed, and a commit that holds the text before (conventions in `doc
 | [0029](0029-generated-text-says-what-things-are-for.md) | Generated text says what a package or diagram is about and for |
 | [0030](0030-configuration-lives-in-the-tree.md) | Configuration lives in the tree, set only through `config` |
 | [0031](0031-subjects-for-discovery.md) | Subjects for discovery: the LLM proposes ways, shared elements are the fallback |
+| [0032](0032-lineage-by-makers-and-times.md) | Lineage of models, told by who made their ids and when |

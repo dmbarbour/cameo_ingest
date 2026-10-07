@@ -58,6 +58,8 @@ class Runner:
         try:
             self.check_inputs()
             self.scan()
+            if self.state.unfingerprinted():  # once, for contents fingerprinted before plan PV or LN (ADR-0032)
+                log.info("fingerprinted %d project(s) from earlier scans", self.fingerprint_missing())
             if self.prepare is not None:
                 self.options = self.prepare()
                 self.opt_hash = self.options.hash()

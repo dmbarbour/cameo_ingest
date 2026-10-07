@@ -1,6 +1,7 @@
 # ADR-0031: Subjects for discovery: the LLM proposes ways, shared elements are the fallback
 
-- **Status:** Accepted, 2026-10-07 (plan SB; the maintainer: "Yes, write the ADR and start CP3").
+- **Status:** Accepted, 2026-10-07 (plan SB; the maintainer: "Yes, write the ADR and start CP3"); updated on
+  2026-10-07 (Changes, below).
 - **Sources:**
   - `docs/plans/subjects-2026-10-06.md`, its steps SB-01 to SB-06;
   - `docs/research/subjects-2026-10-07.md`;
@@ -23,7 +24,8 @@
 
 ## Decision
 
-- **Version families first:** a corpus is grouped into versions of a model (ADR-0020's groups);
+- **Version families first:** a corpus is grouped into versions of a model (chains of copies and
+  versions, ADR-0032; rivals on a shared root stay apart);
   in a family, a diagram held by several versions is one item, listed with its versions.
 - **With the LLM, its ways:** for each family, the tree's text model proposes about three ways to
   organize its diagrams, each on its own principle, with labelled subjects; then it assigns each
@@ -49,3 +51,7 @@
   on real models is for the maintainer's trial.
 - **A model without diagrams** has no subjects. Elements are placed by the diagrams that show
   them.
+
+## Changes
+
+- 2026-10-07: families from lineage (ADR-0032), so that rival bids keep their own diagrams. Before: `9536e4d`.

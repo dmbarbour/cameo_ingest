@@ -1,10 +1,16 @@
-"""Versions of one model, found by the element ids they share (plan PV-03).
+"""Versions of one model, found by the element ids they share (plan PV-03), and by who made them
+and when (plan LN, ADR-0032).
 
-Two projects are **likely versions** when half or more of their ids are shared (their Jaccard
-index), or 80% of the smaller one's when that is at least 50 ids. Projects so linked, directly or
-through others (a model growing over many versions), make a group, newest first. **Related**
-projects share less, at least 20% of the smaller one's ids and at least 20 ids, as two models
-made from one template do. They are listed, not grouped.
+With lineage (`lineage.pairs`), two projects are versions when one is a **copy** or a later
+**version** of the other; projects so linked, directly or through others, make a group (a
+family), newest first. Models **derived** from one another by others, **rivals on a shared
+root** and **branches** are **kin**: listed with their evidence, never grouped, so that each
+keeps its own diagrams (ADR-0031). **Related** projects share a part, such as a library.
+
+Without lineage, or for a pair whose ids name no makers, ADR-0020's rule: two projects are
+likely versions when half or more of their ids are shared (their Jaccard index), or 80% of the
+smaller one's when that is at least 50 ids; related when they share at least 20% of the smaller
+one's ids and at least 20 ids, as two models made from one template do.
 
 Nothing is decided here: the report shows each group, warns where a member has many elements the
 newest lacks (a fork, or much deleted since), and suggests a `remove` command for the maintainer
@@ -52,6 +58,8 @@ class Report:
     groups: list[Group]
     related: list[tuple[Member, Member, int, float]]  # (a, b, shared ids, share of the smaller)
     without: list[str]  # names of projects without a fingerprint
+    kin: list[tuple[Member, Member, str, str]] = field(default_factory=list)  # (older, newer, kind, why) (plan LN)
+    related_why: dict[tuple[str, str], str] = field(default_factory=dict)  # (sha, sha) -> why, by lineage
 
 
 def _when(m: Member) -> tuple[int, str]:
@@ -70,9 +78,14 @@ def _utc(iso: str) -> str:
     return when.isoformat()
 
 
+SAME_FAMILY = ("copy", "version")
+KIN = ("derived", "root", "branches")
+
+
 def find(catalog: list[Any], ids: dict[str, bytes], paths: dict[str, list[str]],
-         include_removed: bool = False) -> Report:
-    """`catalog`: the state's rows (status and fingerprint); `ids`: each content's packed ids."""
+         include_removed: bool = False, pairs: list[Any] | None = None) -> Report:
+    """`catalog`: the state's rows (status and fingerprint); `ids`: each content's packed ids;
+    `pairs`: `lineage.pairs`, when the families come from lineage (else ADR-0020's rule)."""
     members = {r["sha256"]: Member(r["sha256"], r["name"], r["status"], r["saved"], r["saved_raw"], r["saved_from"],
                                    r["elements"] or 0, paths.get(r["sha256"], []))
                for r in catalog if r["sha256"] in ids and (include_removed or r["status"] != "removed")}
@@ -87,8 +100,21 @@ def find(catalog: list[Any], ids: dict[str, bytes], paths: dict[str, list[str]],
         return x
 
     related = []
+    kin: list[tuple[Member, Member, str, str]] = []
+    related_why: dict[tuple[str, str], str] = {}
     shas = sorted(members, key=lambda s: -len(sets[s]))
+    by_pair = {frozenset((p.a.sha, p.b.sha)): p for p in pairs or []}
     for a, b in itertools.combinations(shas, 2):
+        p = by_pair.get(frozenset((a, b)))
+        if p is not None and p.kind != "unknown":  # lineage decides; "unknown" falls to the rule below
+            if p.kind in SAME_FAMILY:
+                parent[root(a)] = root(b)
+            elif p.kind in KIN:
+                kin.append((members[p.a.sha], members[p.b.sha], p.kind, p.why))
+            else:
+                related.append((members[p.a.sha], members[p.b.sha], p.shared, p.cover))
+                related_why[p.a.sha, p.b.sha] = p.why
+            continue
         sa, sb = sets[a], sets[b]
         if not sa or not sb:
             continue
@@ -125,7 +151,7 @@ def find(catalog: list[Any], ids: dict[str, bytes], paths: dict[str, list[str]],
         groups.append(g)
     groups.sort(key=lambda g: (g.members[0].name.lower(), g.members[0].sha))
     related = [r for r in related if root(r[0].sha) != root(r[1].sha)]
-    return Report(groups, related, without)
+    return Report(groups, related, without, kin, related_why)
 
 
 def _row(m: Member, newest: bool) -> str:
@@ -147,10 +173,18 @@ def render(report: Report, out: Path) -> str:
                   "| Token | Project | Saved | Elements | Ids | Found at |", "|---|---|---|---|---|---|"]
         lines += [_row(m, i == 0) for i, m in enumerate(g.members)]
         lines += [""] + [f"- **Check:** {w}" for w in g.warnings] + ([""] if g.warnings else [])
+    if report.kin:
+        lines += ["## Built on one another, kept apart", "",
+                  ("Models made from one another by different makers (a bid on a customer's model), rivals on a shared "
+                   "root, and branches: each keeps its own diagrams. Told by who made each side's own elements, and "
+                   "when (`docs/design/versions.md`)."), ""]
+        lines += [f"- **{_KINDS[kind]}:** {_named(a)} and {_named(b)}: {why}" for a, b, kind, why in report.kin]
+        lines.append("")
     if report.related:
         lines += ["## Related, not grouped", "",
                   "These share some elements, as models made from one template, or from parts of one model, do.", ""]
         lines += [f"- {a.name} (`{a.sha[:8]}`) and {b.name} (`{b.sha[:8]}`): {n:,} elements, {c:.0%} of the smaller"
+                  + (f"; {report.related_why[a.sha, b.sha]}" if (a.sha, b.sha) in report.related_why else "")
                   for a, b, n, c in report.related]
         lines.append("")
     if report.without:
@@ -165,6 +199,15 @@ def render(report: Report, out: Path) -> str:
         lines += ["Groups with warnings are left out of that command. Their older members, once checked: "
                   + " ".join(f"`{m.sha[:12]}`" for m in checked), ""]
     return "\n".join(lines)
+
+
+_KINDS = {"derived": "Derived by others", "root": "Rivals on a shared root", "branches": "Branches"}
+
+
+def _named(m: Member) -> str:
+    """A member by name, token and folder: rivals often share a file name."""
+    folder = str(Path(m.paths[0]).parent) if m.paths else ""
+    return f"{m.name} (`{m.sha[:8]}`" + (f", in {folder}" if folder else "") + ")"
 
 
 def write_csv(report: Report, path: Path) -> None:

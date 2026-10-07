@@ -33,3 +33,28 @@ def test_lineage_of_the_synthetic_cases(tmp_path):
     rivals = got["lineage/bids/halvorsen/Riverbend_Water_Treatment_Works.mdzip",
                  "lineage/bids/aquila/Riverbend_Water_Treatment_Works.mdzip"]
     assert "rivals on a shared root" in rivals.why and rivals.folder.endswith("lineage/bids")
+
+
+def test_families_keep_rivals_apart(tmp_path, capsys):
+    """Families are chains of versions (ADR-0032): Halvorsen's two versions are one family, while
+    the customer's tender and the two bids on it stay apart, each with its own diagrams; `groups`
+    lists them as kin, with their folders and evidence."""
+    import json
+
+    for c in corpus():
+        src = tmp_path / "in" / c.path
+        src.parent.mkdir(parents=True, exist_ok=True)
+        src.write_bytes(c.mdzip)
+    out = tmp_path / "tree"
+    assert cli(["config", "-o", str(out), "set", "llm", "off"]) == 0
+    assert cli(["config", "-o", str(out), "set", "render", "off"]) == 0
+    assert cli([str(tmp_path / "in"), "-o", str(out)]) == 0
+    fams = json.loads((out / "subjects.json").read_text())["families"]
+    riverbend = sorted(len(f["tokens"]) for f in fams if f["name"] == "Riverbend_Water_Treatment_Works.mdzip")
+    assert riverbend == [1, 1, 2]  # the tender, Aquila's bid, Halvorsen's two versions
+    capsys.readouterr()
+    assert cli(["groups", "-o", str(out)]) == 0
+    report = capsys.readouterr().out
+    kin = report.split("## Built on one another, kept apart")[1].split("## Related")[0]
+    assert kin.count("**Rivals on a shared root:**") == 2 and kin.count("**Derived by others:**") == 3
+    assert "in " in kin and "lineage/bids/aquila" in kin

@@ -1,7 +1,7 @@
 # Design: versions of a model, and removing projects
 
-How the tool finds versions of one model among many files, and how projects leave a tree. Decision:
-ADR-0020. The README's "Versions and removal" gives the steps for a messy folder.
+How the tool finds versions of one model among many files, and how projects leave a tree. Decisions:
+ADR-0020, ADR-0032. The README's "Versions and removal" gives the steps for a messy folder.
 
 ## What a project says about itself (`fingerprint.py`)
 
@@ -18,11 +18,37 @@ Read during the scan, and by `scan` alone, which builds nothing and needs no LLM
   sorted, distinct 64-bit blake2b hashes, packed as a little-endian `array('Q')` blob (8 bytes an
   id, not compressed).
 
-These go in `state.sqlite` (`fingerprints`), so `groups` re-reads nothing.
+- **Each id's maker and day** (plan LN-01): `_<tool version>_<hex id>_<epoch ms>_<random>_<counter>`
+  ids give a maker (the hex id) and a day; MagicDraw's older `eee_<epoch ms>_…` a day. Kept in
+  `id_marks`, in the hashes' order: the maker's index (`array('H')`) and the day (`array('I')`).
+
+These go in `state.sqlite` (`fingerprints`, `id_marks`), so `groups` re-reads nothing. `run` and
+`scan` fill what a tree from an older version lacks.
+
+## Lineage (`lineage.py`)
+
+Each pair sharing at least 20% of the smaller model's ids (and 20) gets a kind, from who made
+each side's own ids (those the other lacks), and when, against the shared part's latest day
+(its 95th percentile) and the other's save time:
+
+| Kind | When | Family |
+|---|---|---|
+| copy | neither side has more than 0.1% (or 2) of its own | same |
+| version | the newer's own made after the shared part (60%), the older's own mostly before; at least 15% of the newer's own by the older's makers. Or the newer has nothing of its own and keeps half the older (Jaccard) | same |
+| derived | the same, with under 15% by the older's makers: built on it by others | kin |
+| root | each side has much of its own (3%, 20), mostly made after the shared part, by makers the other lacks: rivals | kin |
+| branches | the same, by makers both share (60%) | kin |
+| related | much of each side's own predates the shared part: a library | listed |
+| unknown | under 30% of the deciding side's own carry a maker: ADR-0020's rule decides | by the rule |
+
+Every kind comes with a sentence of evidence, shown by `groups`. Measured: synthetic 9 of 9, real
+histories 15 of 16 (`docs/research/lineage-2026-10-07.md`).
 
 ## Groups (`groups.py`)
 
-Projects are compared pairwise, by the ids they share.
+Projects are compared pairwise, by the ids they share; with lineage, families are the chains
+of copies and versions, and kin are listed apart ("Built on one another, kept apart"). Without
+it, or for an `unknown` pair, ADR-0020's rule:
 
 | Link | Rule | Constants |
 |---|---|---|

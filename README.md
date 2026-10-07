@@ -518,7 +518,10 @@ cameo-ingest run -o OUT                     # build what remains
 ```
 
 - **How versions are found:** by the element ids they share. Cameo keeps an element's id across
-  saves, so versions share most of theirs. A project id can't be used alone: a model made from a
+  saves, so versions share most of theirs. Each id also says who made it and when, which tells
+  a later version from a model someone else built on it (a bid on a customer's model), and
+  rival bids on one root from each other: those are kept apart, each with its own diagrams, and
+  `groups` lists them with the evidence (ADR-0032). A project id can't be used alone: a model made from a
   template keeps the template's, and a migrated model may get a new one.
 - **Which is newest:** by the save time that Cameo writes in each file (`Records.properties`),
   which copying doesn't change. Without it, the dates inside the zip stand in, and the report
