@@ -596,3 +596,36 @@ def split_class(key: str | None, answer: str) -> tuple[str | None, str]:
     found = m.group(1).lower()
     return (found if found in t.classes else "unknown"), rest.strip()
 
+
+
+# Subjects for discovery (plan SB, ADR-0031): asked at the root, for each family of versions of a
+# model, after the projects are built. Outside CURRENT, since they change no project's options.
+# The wording is the one the panel judged (`evaluation.subject_llm`, plan SB-05).
+SUBJECTS_PROPOSE = Template(
+    id="subjects-propose", version=1,
+    purpose="Ways to organize a model's diagrams into subjects for discovery, each on its own principle (ADR-0031).",
+    text=("Below is an outline of one systems engineering model (UML/SysML, authored in Cameo), named {{MODEL}}, "
+          "with {{COUNT}} diagrams: its packages, with how many diagrams each holds, and example diagrams. A person "
+          "wants to discover the different things this model covers. Propose {{WAYS}} different ways to organize its "
+          "diagrams into about {{K}} subjects. Each way should follow its own principle (for example, by part of the "
+          "system, by engineering activity, or by kind of concern), and every diagram should fit one subject of "
+          "each way. Give each subject a label of 2 to 5 words and one sentence on what it holds.\n\n{{OUTLINE}}\n\n"
+          "Reply with JSON only: {\"ways\": [{\"principle\": \"...\", \"subjects\": [{\"label\": \"...\", "
+          "\"holds\": \"...\"}, ...]}, ...]}."),
+    slots=(Slot("MODEL", "text", "the model's name (its newest version's file name)."),
+           Slot("COUNT", "text", "the number of diagrams, each counted once across versions."),
+           Slot("WAYS", "text", "how many ways to propose (subjects.WAYS)."),
+           Slot("K", "text", "about how many subjects: the square root of half the diagrams, 2 to 15."),
+           Slot("OUTLINE", "text", "the packages, three levels deep, with their diagram counts (at most 80), and "
+                                   "60 example diagrams spread over the model: name, owner, kind, about text.")),
+)
+
+SUBJECTS_ASSIGN = Template(
+    id="subjects-assign", version=1,
+    purpose="Put each of a batch of a model's diagrams in one subject of a proposed way (ADR-0031).",
+    text=("A systems engineering model's diagrams are being organized into these subjects:\n{{SUBJECTS}}\n\n"
+          "Put each diagram below in the one subject it fits best.\n\n{{DIAGRAMS}}\n\n"
+          "Reply with JSON only, the subject's number for every diagram's number: {\"1\": 3, \"2\": 1, ...}."),
+    slots=(Slot("SUBJECTS", "text", "the way's subjects, numbered: label, and what each holds."),
+           Slot("DIAGRAMS", "text", "at most 30 diagrams, numbered, cut by package: name, owner, kind, about text.")),
+)
