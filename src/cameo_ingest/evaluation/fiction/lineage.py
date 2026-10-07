@@ -11,6 +11,9 @@ The cases, all in one corpus (`corpus()`), with what each pair is (`TRUTH`):
 - **Ashgrove, copied unchanged** to another folder.
 - **Two unrelated models sharing a library:** Port Calder and the Ferrous Valley crossing both
   hold the same library of signal equipment, made once by a third maker.
+
+The bids also edit what they took from the customer, as `EDITS` says (plan SH): Aquila rewords a
+requirement and renames a pump; Halvorsen satisfies a requirement with a block of its own.
 """
 
 from __future__ import annotations
@@ -20,6 +23,7 @@ import io
 import re
 import zipfile
 from dataclasses import dataclass
+from xml.sax.saxutils import quoteattr
 
 from . import crossing, kiosk, orchard, traffic, water
 from .builder import Project
@@ -76,6 +80,17 @@ def _saved(day: int) -> tuple[int, int, int, int, int, int]:
     return (d.year, d.month, d.day, 12, 0, 0)
 
 
+def _reword(p: Project, key: str, text: str) -> None:
+    """Change a requirement's text, as a bidder editing the customer's would."""
+    head = f"base_Class='{p.id(key)}'"
+    i = next(i for i, a in enumerate(p.applications) if head in a and " Text=" in a)
+    p.applications[i] = re.sub(r" Text=(\"[^\"]*\"|'[^']*')", lambda m: f" Text={quoteattr(text)}", p.applications[i])
+    p.texts[key] = text
+
+
+REWORDED = "The works shall treat up to 60 megalitres per day, with one filter out of service."
+
+
 def _library(p: Project, size: int = 16) -> None:
     """The same library package, with the same ids, in any project: keys `lib_…` map to one set of ids."""
     p.package("lib_pkg", "Signal Equipment Library", doc="Shared catalogue of approved signal equipment.")
@@ -87,6 +102,20 @@ def _library(p: Project, size: int = 16) -> None:
 def _lib_id(p: Project, token: str) -> str:
     """A library token as every project writes it: without the project's prefix."""
     return "_lib_" + token.removeprefix(f"_{p.prefix}_").removeprefix("lib_")
+
+
+def _edit(bid: Project, bidder: str, maker: str) -> None:
+    """What each bidder changes in the customer's part (`EDITS`)."""
+    if bidder == "Aquila":
+        _reword(bid, "prf01", REWORDED)
+        _rename(bid, "llpump", "Low-Lift Pump (Aquila)")
+    else:
+        bid.relate("satisfy", f"v_v_{maker}_1_1", "prf02", f"v_{maker}_1")  # its first block (`_add_package`'s key)
+
+
+# The customer's items each bid changed (plan SH-02): (bid folder, the item's key in the fiction, the aspect).
+EDITS = [("lineage/bids/aquila", "prf01", "text"), ("lineage/bids/aquila", "llpump", "name"),
+         ("lineage/bids/halvorsen", "prf02", "relations"), ("lineage/bids/halvorsen/v2", "prf02", "relations")]
 
 
 def corpus() -> list[Case]:
@@ -118,6 +147,7 @@ def corpus() -> list[Case]:
         bid.folder, bid.saved = folder, _saved(120)
         for n in range(1, packages + 1):
             _add_package(bid, f"v_{maker}_{n}", f"{bidder} Design Part {n}", 3, f"{bidder}'s own design, part {n}.", [])
+        _edit(bid, bidder, maker)
         own = ids(bid) - rb
         made_bid = {**made_root, **_times(sorted(own), maker, 50, 60)}
         cases.append(Case(bid.path, _cameo(bid, made_bid), ids(bid)))
@@ -126,6 +156,7 @@ def corpus() -> list[Case]:
             bid2.folder, bid2.saved = folder + "/v2", _saved(200)
             for n in range(1, packages + 2):
                 _add_package(bid2, f"v_{maker}_{n}", f"{bidder} Design Part {n}", 3, f"{bidder}'s own design, part {n}.", [])
+            _edit(bid2, bidder, maker)
             own2 = ids(bid2) - rb - own
             made_bid2 = {**made_bid, **_times(sorted(own2), maker, 140, 40)}
             cases.append(Case(bid2.path, _cameo(bid2, made_bid2), ids(bid2)))

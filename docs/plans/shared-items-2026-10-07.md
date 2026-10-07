@@ -1,6 +1,6 @@
 # Plan: the same item in several models, and how it differs, 2026-10-07
 
-- **Status:** Drafted, for the maintainer's look.
+- **Status:** In progress: CP1 done; CP2 next.
 - **Step prefix:** `SH`, so steps are `SH-01`, `SH-02` and so on.
 - **Addresses:** TR-004 (`docs/reviews/trial-2026-10-06.md`) and the roadmap's "Diffs, between
   versions and between rivals", which this plan takes up. The maintainer, 2026-10-07:
@@ -12,6 +12,23 @@
   > of touches on how we'd present similarities and differences between models (within a lineage
   > or between rivals), make them easier to discover and analyze without opening up every model
   > in Cameo."
+
+## Decisions (the maintainer, 2026-10-07)
+
+> "The matching heuristics look right. We can make that bit tunable based on future trial
+> feedback. When comparing two models, the things that matter are the things that humans
+> deliberately edit."
+
+- **D1, matching:** the three bases (element id; requirement Id; kind and name between related
+  models), as constants, adjusted from trial feedback, not settings (ADR-0027).
+- **D2, what a difference is:** what people deliberately edit: names, text and documentation,
+  requirement Ids, stereotypes and tagged values, relationships, what an element owns (parts,
+  ports, values), what a diagram shows, and where an item sits. Not what tools record: save and
+  modification stamps, authors in diagram info, layout coordinates, the ids Cameo makes for
+  connector ends and literals, used projects' cached copies.
+- **D3, where it is computed:** the exports read every project's catalog already, so they compute
+  the matches (`shared.py`), two passes over the catalogs; a root file waits for CP3's pages,
+  if they need one.
 
 ## Why
 
@@ -40,10 +57,10 @@ opening every model.
 
 ## Design
 
-- **A shared-item index** at the root, made by `run` beside `subjects.json` (`shared.json`): for each
+- **A shared-item index,** computed by the exports (D3): for each
   item held by two models or more, the models, the match basis, and for each model a digest of each
   aspect (name, text, stereotypes, relationships, shapes, place), so that "the same" and "changed"
-  are told without reading the projects again.
+  are told without reading the projects again. Aspects are D2's, as far as the catalog holds them.
 - **Differences** between two copies, by aspect: what was added, removed or changed. Relationships
   are compared by their other end's id where both models hold it, else by its name, so that a
   relationship to a renamed or re-made element in a bid still lines up.
@@ -62,8 +79,8 @@ opening every model.
 
 | Step | What | Status |
 |---|---|---|
-| SH-01 | **The index:** the matches by element id, by requirement Id, and by kind and name between related models; each copy's aspect digests; `shared.json`. Measured on the study tree and the synthetic bids: how many items, by basis, and how many of the name matches are noise. Tests. | |
-| SH-02 | **Differences:** for each shared item, what differs between its copies, by aspect; relationships lined up by id, else by name. Tests on the synthetic bids (built with known changes). | |
+| SH-01 | **The index:** the matches by element id, by requirement Id, and by kind and name between related models; each copy's aspect digests; `shared.json`. Measured on the study tree and the synthetic bids: how many items, by basis, and how many of the name matches are noise. Tests. | Done: `shared.find` (in 8 s on the study tree, two passes over its catalogs); catalogs carry tagged values (`tagged`, not DiagramInfo's). Study tree: 50,890 links by element (TMT's versions and the fiction's), 1,046 differing; 32 by requirement Id (Riverbend's rivals), all differing; 16 by name, all real: TMT items re-made with new ids between versions. No noise seen. `tests/test_shared.py` |
+| SH-02 | **Differences:** for each shared item, what differs between its copies, by aspect; relationships lined up by id, else by name. Tests on the synthetic bids (built with known changes). | Done: `shared.differences`; the lineage corpus's bids now edit what they took (`EDITS`: a reworded requirement, a renamed pump, a satisfy added), and exactly those are found. Most frequent on the study tree: names 512, packages 424 (shown from where the paths part), relationships 362, text 148 |
 | SH-03 | **The search page:** "Also in", with differences and links; shared items once in results. Node and browser tests. | |
 | SH-04 | **The workbook:** the "Also in" column, and the Shared sheet. Tests. | |
 | SH-05 | **Comparing two models:** a page in the tree for each related pair, and the exports' view of it. | |
@@ -79,11 +96,8 @@ opening every model.
 
 ## Questions for the maintainer
 
-- **Q1:** are the three match bases the right ones (element id, requirement Id, and kind and name
-  between related models only)? Are there others you use to recognize "the same" item (an
-  external id in a tagged value, a DOORS number)?
-- **Q2:** in comparing two models, which differences matter most to you first: requirements'
-  text and coverage, structure (blocks, parts, ports), behavior, or diagrams?
+- **Q1, the match bases:** answered, D1.
+- **Q2, which differences:** answered, D2.
 
 ## When to stop and ask
 

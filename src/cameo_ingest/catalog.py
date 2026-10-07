@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING, Any
 from . import cameo_tables as ct
 from . import semantics as sem
 from .progress import QUIET, Progress
-from .text import one_line
+from .text import one_line, shown_value
 
 if TYPE_CHECKING:
     from .sink import ChunkSink
@@ -47,6 +47,22 @@ def project_catalog(view: ProjectView, sink: ChunkSink, root: Path | None = None
         m = c["metadata"]
         if m.get("element_id") and m["kind"].split(":")[0] in SECTION_KINDS and not m["kind"].startswith("generated"):
             chunks_of[m["element_id"]].append(c["id"])
+
+    def tagged_values(key: str) -> dict[str, str]:
+        """Its stereotypes' tagged values as people set them (plan SH, D2): "Stereotype.tag" to the
+        values, references by their targets' labels. Not DiagramInfo's (authors and dates, which the
+        tool keeps), nor a requirement's Id and Text, which are fields of their own."""
+        out = {}
+        for app in ix.applications(key):
+            if app.name == sem.DIAGRAM_INFO:
+                continue
+            for tag, values in sorted(app.tags.items()):
+                if sem.is_requirement(ix, ix.elements[key]) and tag in ("Id", "Text"):
+                    continue
+                shown = [one_line(ix.label(v)) if ix.refers(v) else shown_value(v) for v in values]
+                if any(shown):
+                    out[f"{app.name}.{tag}"] = "; ".join(shown)
+        return out
 
     def label(key: str) -> str:
         return one_line(sem.label(ix, key))
@@ -116,6 +132,8 @@ def project_catalog(view: ProjectView, sink: ChunkSink, root: Path | None = None
         if doc:
             rec["text"] = (rec.get("text", "") + "\n\n" + doc).strip() if rec.get("text") else doc
         rec["relations"] = relations(el.id)
+        if tagged := tagged_values(el.id):
+            rec["tagged"] = tagged
         rec["diagrams"] = [ref(d) for d in view.diagrams_showing.get(el.id, []) if d != el.id]
         if el.id in chunks_of:
             rec["chunks"] = chunks_of[el.id]
