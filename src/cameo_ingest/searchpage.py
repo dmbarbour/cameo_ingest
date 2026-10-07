@@ -5,7 +5,9 @@ data: one block per project, base64 of gzipped JSON, which the page unpacks, ind
 searches (BM25, as the retrieval evaluation measured), showing what it is doing as it loads.
 It loads nothing from the network.
 
-Each project's block holds `project` (label, file name, token, sources, counts) and `items`,
+Each project's block holds `project` (label, file name, token, sources, counts, and its facts,
+`lineage.facts`: `sv` save time, `ex` Cameo version, `fm` its family's newest token, `rk` its rank
+there, `nv` the family's versions, `kn` kin `[token, how]`, `rl` related tokens) and `items`,
 objects with short keys to keep the page small:
 
     k key   t type   kd kind   id requirement id   db database number   n name   w where
@@ -140,7 +142,8 @@ def page_subjects(families: list[dict[str, Any]], pids: dict[str, int], labels: 
 
 
 def write_search_page(path: Path, projects: Iterable[ProjectCatalog], version: str,
-                      sketches: str = "none", subjects: dict[str, Any] | None = None) -> dict[str, int]:
+                      sketches: str = "none", subjects: dict[str, Any] | None = None,
+                      facts: dict[str, dict[str, Any]] | None = None) -> dict[str, int]:
     """Write the page; returns its counts (projects, items, bytes of data, sketches). `subjects`:
     the tree's `subjects.json`, if any."""
     blocks: list[tuple[str, int, str]] = []
@@ -159,8 +162,12 @@ def write_search_page(path: Path, projects: Iterable[ProjectCatalog], version: s
                 pictures += found
         items = page_items(p, sketch_ids)
         n_items += len(items)
+        fact = (facts or {}).get(p.header.get("token") or "", {})
         data = {"project": {"label": p.label, "name": p.header.get("name"), "token": p.header.get("token"),
-                            "sources": p.sources, "counts": p.header.get("counts", {})},
+                            "sources": p.sources, "counts": p.header.get("counts", {}),
+                            **{k: fact[f] for k, f in (("sv", "saved"), ("ex", "exporter"), ("fm", "family"),
+                                                      ("rk", "rank"), ("nv", "versions"), ("kn", "kin"),
+                                                      ("rl", "related")) if fact.get(f) not in (None, [])}},
                 "items": items}
         raw = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         blocks.append((p.label, len(items), base64.b64encode(gzip.compress(raw, 9, mtime=0)).decode("ascii")))

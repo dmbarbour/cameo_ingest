@@ -65,6 +65,12 @@ per-project file the exports read (AR-012). The records come in this order:
 - **Sketches,** `--sketches none|webp|svg`, default none: decoded only when a diagram is opened.
 - **Subjects** (`docs/design/subjects.md`): a `data-subjects` block; results grouped by subject, a
   "Group by subject" switch, and a browse pane when nothing is typed.
+- **The model chooser** (plan LN-07): each project's block carries its facts (`lineage.facts`: save
+  time, Cameo version, family and rank, kin, related). `Engine.chooserGroups` groups the models by
+  lineage (clusters joined by family and kin, versions indented under the newest), by folder
+  (relative to the models' common folder), by name or by date; `Engine.lineageNote` says what a
+  model is to the others. The selection, a set of page ids, filters `Index.search` (`projects`)
+  and the browse pane.
 
 ## Size and scale
 

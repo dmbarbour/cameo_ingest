@@ -30,7 +30,7 @@ header { display: flex; justify-content: space-between; align-items: baseline; p
 .title { font-weight: 600; }
 .ready, .count { color: var(--muted); font-size: .85rem; }
 .search { display: flex; gap: .5rem; padding: .6rem 1rem; }
-.search input { flex: 1; font-size: 1.05rem; padding: .35rem .5rem; }
+.search > input { flex: 1; font-size: 1.05rem; padding: .35rem .5rem; }
 .count { padding: 0 1rem .4rem; }
 main { flex: 1; display: grid; grid-template-columns: minmax(20rem, 2fr) 3fr; min-height: 0;
   border-top: 1px solid var(--line); }
@@ -63,6 +63,26 @@ pre.text { white-space: pre-wrap; word-break: break-word; font-family: inherit; 
 .sketch.zoomed img, .sketch.zoomed svg { max-width: none; }
 .sketch svg .linked { cursor: pointer; }
 .sketch svg .linked:hover rect, .sketch svg .linked:hover ellipse { stroke: #c0392b; stroke-width: 2; }
+.models { position: relative; }
+#models { margin: 0; padding: .3rem .7rem; white-space: nowrap; }
+.chooser { position: absolute; top: 2.3rem; right: 0; z-index: 10; width: min(46rem, 90vw); max-height: 70vh;
+  display: flex; flex-direction: column; background: #fff; border: 1px solid var(--line);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .12); padding: .5rem; }
+.mtools { display: flex; gap: .4rem; align-items: center; margin-bottom: .4rem; }
+.mtools input { flex: 1; padding: .25rem .4rem; }
+.mtools button { margin: 0; padding: .15rem .6rem; }
+.mclose { margin-left: auto !important; }
+.mlist { overflow-y: auto; }
+.mgroup { border-top: 1px solid var(--line); padding: .2rem 0; }
+.mgroup-head { display: flex; gap: .4rem; font-weight: 600; color: var(--accent); padding: .2rem 0; }
+.mrow { display: block; padding: .2rem .2rem .3rem; cursor: pointer; }
+.mrow:hover { background: #f4f7fa; }
+.mrow.older { margin-left: 1.6rem; }
+.mhead { display: flex; gap: .5rem; align-items: baseline; }
+.mname { font-weight: 600; }
+.mfacts, .mwhere, .mnote { color: var(--muted); font-size: .8rem; }
+.mwhere, .mnote { margin-left: 1.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mnote { color: var(--accent); }
 .grouping { display: flex; align-items: center; gap: .3rem; color: var(--muted); font-size: .9rem; white-space: nowrap; }
 .group { border-bottom: 2px solid var(--line); }
 .group-head { display: flex; gap: .6rem; align-items: baseline; padding: .45rem 1rem .25rem; background: #f4f7fa;

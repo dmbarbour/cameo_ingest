@@ -33,7 +33,25 @@
   <div class="search">
     <input id="q" type="search" placeholder="Search: words, an id, &quot;a phrase&quot;, or a prefix*"
            autocomplete="off" spellcheck="false">
-    <select id="project" aria-label="Model"><option value="">All models</option></select>
+    <div class="models">
+      <button id="models" type="button" aria-haspopup="true">Models ▾</button>
+      <div id="chooser" class="chooser" hidden>
+        <div class="mtools">
+          <input id="mfilter" type="search" placeholder="Filter: name, folder, metadata" autocomplete="off">
+          <select id="mgroup" aria-label="Group models">
+            <option value="lineage" selected>By lineage</option><option value="folder">By folder</option>
+            <option value="name">By name</option><option value="date">By date saved</option>
+          </select>
+        </div>
+        <div class="mtools">
+          <button id="mall" type="button">All</button><button id="mnone" type="button">None</button>
+          <button id="mnewest" type="button">Newest of each</button>
+          <span class="hint">(the shortcuts act on the models shown)</span>
+          <button id="mclose" type="button" class="mclose">Close</button>
+        </div>
+        <div id="mlist" class="mlist"></div>
+      </div>
+    </div>
     <select id="type" aria-label="Type"><option value="">All types</option></select>
     <label id="grouping" class="grouping" hidden><input id="grouped" type="checkbox" checked> Group by subject</label>
   </div>

@@ -116,8 +116,9 @@ const Engine = (() => {
       this.body.finish(n);
     }
     // Ranked items: those holding every group first, then by score. Filters: `project` (an
-    // item's p) and `type` (its t). Returns {total, all, hits: [{doc, score, matched}], terms}.
-    search(query, { project = null, type = null, limit = 200 } = {}) {
+    // item's p), `projects` (a Set of them) and `type` (its t). Returns {total, all, hits:
+    // [{doc, score, matched}], terms}.
+    search(query, { project = null, projects = null, type = null, limit = 200 } = {}) {
       const { groups, phrases } = parse(query);
       const n = this.items.length;
       const score = new Float64Array(n), matched = new Uint16Array(n), terms = [];
@@ -136,6 +137,7 @@ const Engine = (() => {
         if (!matched[d]) continue;
         const it = this.items[d];
         if (project !== null && it.p !== project) continue;
+        if (projects !== null && !projects.has(it.p)) continue;
         if (type !== null && it.t !== type) continue;
         if (phrases.length) {
           const hay = [it.n, it.w, it.x, it.c].filter(Boolean).join("\n").toLowerCase().replace(/\s+/g, " ");
@@ -285,7 +287,100 @@ const Engine = (() => {
     }
   }
 
-  return { tokens, parse, Field, Index, snippet, mark, decode, decodeText, Subjects };
+
+  // The model chooser (plan LN-07): models grouped by folder, by lineage, or listed by name or by
+  // date, and what each one is to the others. `projects`: the page's projects, with their facts.
+  const HOW = { derived: "derived by others from", "built-on": "built on by others in", root: "shares a root with",
+                branches: "a branch beside" };
+
+  function folderOf(p) {
+    const path = ((p.sources || [])[0] || {}).path || "";
+    const i = path.lastIndexOf("/");
+    return i < 0 ? "" : path.slice(0, i).split("!")[0];
+  }
+
+  // The note on a model's lineage: its rank among its versions, then its kin and related models.
+  function lineageNote(p, labelOf) {
+    const out = [];
+    if ((p.nv || 1) > 1) out.push(p.rk ? `older version, ${p.nv - p.rk} of ${p.nv}` : `newest of ${p.nv} versions`);
+    for (const [t, how] of p.kn || []) out.push(`${HOW[how] || how} ${labelOf(t)}`);
+    for (const t of p.rl || []) out.push(`shares a part with ${labelOf(t)}`);
+    return out.join("; ");
+  }
+
+  // The folder that every model's first path is under ("" for none).
+  function commonFolder(projects) {
+    const dirs = projects.map(folderOf);
+    let common = dirs.length ? dirs[0].split("/") : [];
+    for (const d of dirs) {
+      const parts = d.split("/");
+      let n = 0;
+      while (n < common.length && n < parts.length && common[n] === parts[n]) n++;
+      common = common.slice(0, n);
+    }
+    return common.join("/");
+  }
+
+  // Groups of page ids, [{title, pids, depth: Map(pid -> indent)}], in display order.
+  function chooserGroups(projects, mode) {
+    const pids = projects.map((_, i) => i);
+    const name = (i) => (projects[i].label || "").toLowerCase();
+    if (mode === "name" || mode === "date") {
+      const by = mode === "name" ? (a, b) => name(a).localeCompare(name(b))
+        : (a, b) => (projects[b].sv || "").localeCompare(projects[a].sv || "") || name(a).localeCompare(name(b));
+      return [{ title: null, pids: pids.slice().sort(by), depth: new Map() }];
+    }
+    if (mode === "folder") {
+      const dirs = pids.map((i) => folderOf(projects[i]));
+      const cut = commonFolder(projects).length;
+      const groups = new Map();
+      pids.forEach((i) => {
+        const key = dirs[i].slice(cut).replace(/^\//, "") || "(the common folder)";
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(i);
+      });
+      return [...groups.keys()].sort().map((k) => ({ title: k, pids: groups.get(k).sort((a, b) => name(a).localeCompare(name(b))),
+                                                     depth: new Map() }));
+    }
+    // lineage: clusters joined by family and kin; in each, families newest first, older versions indented
+    const byToken = new Map(projects.map((p, i) => [p.token, i]));
+    const parent = pids.slice();
+    const root = (x) => { while (parent[x] !== x) x = parent[x] = parent[parent[x]]; return x; };
+    const join = (a, b) => { if (a !== undefined && b !== undefined) parent[root(a)] = root(b); };
+    pids.forEach((i) => {
+      const p = projects[i];
+      if (p.fm) join(i, byToken.get(p.fm));
+      for (const [t] of p.kn || []) join(i, byToken.get(t));
+    });
+    const clusters = new Map();
+    pids.forEach((i) => {
+      const r = root(i);
+      if (!clusters.has(r)) clusters.set(r, []);
+      clusters.get(r).push(i);
+    });
+    const famKey = (i) => projects[i].fm || projects[i].token;
+    const out = [];
+    for (const members of clusters.values()) {
+      const fams = new Map();
+      for (const i of members) {
+        if (!fams.has(famKey(i))) fams.set(famKey(i), []);
+        fams.get(famKey(i)).push(i);
+      }
+      const order = [], depth = new Map();
+      const famList = [...fams.values()].map((f) => f.sort((a, b) => (projects[a].rk || 0) - (projects[b].rk || 0)));
+      famList.sort((a, b) => (projects[a[0]].sv || "").localeCompare(projects[b[0]].sv || "") || name(a[0]).localeCompare(name(b[0])));
+      for (const f of famList) f.forEach((i, k) => { order.push(i); depth.set(i, k ? 1 : 0); });
+      const kin = members.some((i) => (projects[i].kn || []).length);
+      const title = members.length === 1 ? null
+        : `${projects[order[0]].label}: ` + (kin ? `${members.length} models built on one another` : `${members.length} versions`);
+      out.push({ title, pids: order, depth });
+    }
+    out.sort((a, b) => name(a.pids[0]).localeCompare(name(b.pids[0])));
+    return out;
+  }
+
+  return { tokens, parse, Field, Index, snippet, mark, decode, decodeText, Subjects, chooserGroups, lineageNote, folderOf,
+           commonFolder };
 })();
 
 if (typeof module !== "undefined") module.exports = Engine;
@@ -307,7 +402,8 @@ if (typeof document !== "undefined") {
   const SLICE_MS = 30, STALL_MS = 10000;
 
   const state = { index: new Engine.Index(), projects: [], byKey: new Map(), summaries: new Map(), cancelled: false,
-                  subjects: new Engine.Subjects([]), viewOf: new Map(), browse: null, open: new Set() };
+                  subjects: new Engine.Subjects([]), viewOf: new Map(), browse: null, open: new Set(),
+                  selected: null, mode: "lineage" }; // selected: null for every model, else a Set of page ids
   const SHOWN = 3; // results shown a group before "more"
 
   // While the file is still being read: a small script after each data block calls this.
@@ -434,8 +530,7 @@ if (typeof document !== "undefined") {
   function show() {
     $("loading").hidden = true;
     $("app").hidden = false;
-    const sel = $("project");
-    state.projects.forEach((p, i) => sel.append(new Option(p.label, String(i))));
+    chooser();
     const types = [...new Set(state.index.items.map((it) => it.t))].sort();
     for (const t of types) $("type").append(new Option(t[0].toUpperCase() + t.slice(1), t));
     let timer = null;
@@ -444,7 +539,6 @@ if (typeof document !== "undefined") {
       timer = setTimeout(run, 150);
     };
     $("q").addEventListener("input", go);
-    $("project").addEventListener("change", () => { state.browse = null; run(); });
     $("type").addEventListener("change", run);
     if (state.subjects.families.length) {
       $("grouping").hidden = false;
@@ -470,9 +564,8 @@ if (typeof document !== "undefined") {
       return;
     }
     const t = now();
-    const project = $("project").value === "" ? null : Number($("project").value);
     const type = $("type").value || null;
-    const res = state.index.search(q, { project, type });
+    const res = state.index.search(q, { projects: state.selected, type });
     last = res;
     const ms = now() - t;
     info.textContent = res.total
@@ -493,6 +586,95 @@ if (typeof document !== "undefined") {
     const it = state.index.items[doc];
     const s = (state.summaries.get(it.p + "\u0000" + it.k) || [])[0];
     return s === undefined ? "" : state.index.items[s].x || "";
+  }
+
+  // The model chooser (plan LN-07): which models search and browsing cover.
+  const labelOf = (token) => {
+    const i = state.projects.findIndex((p) => p.token === token);
+    return i < 0 ? token.slice(0, 15) : state.projects[i].label;
+  };
+  function chooserLabel() {
+    const n = state.projects.length, k = state.selected === null ? n : state.selected.size;
+    $("models").textContent = `Models: ${k === n ? `all ${n}` : `${k} of ${n}`} ▾`;
+  }
+  function chooser() {
+    const panel = $("chooser"), list = $("mlist");
+    chooserLabel();
+    $("models").addEventListener("click", () => {
+      panel.hidden = !panel.hidden;
+      if (!panel.hidden) { fill(); $("mfilter").focus(); }
+    });
+    $("mclose").addEventListener("click", () => { panel.hidden = true; });
+    $("mgroup").addEventListener("change", () => { state.mode = $("mgroup").value; fill(); });
+    $("mfilter").addEventListener("input", fill);
+    const visible = () => [...list.querySelectorAll("input[data-pid]")].filter((c) => !c.closest(".mrow").hidden)
+      .map((c) => Number(c.dataset.pid));
+    const choose = (pids, on) => {
+      const set = state.selected === null ? new Set(state.projects.map((_, i) => i)) : new Set(state.selected);
+      for (const i of pids) (on ? set.add(i) : set.delete(i));
+      state.selected = set.size === state.projects.length ? null : set;
+      chooserLabel();
+      fill();
+      state.browse = null;
+      run();
+    };
+    $("mall").addEventListener("click", () => choose(visible(), true));
+    $("mnone").addEventListener("click", () => choose(visible(), false));
+    $("mnewest").addEventListener("click", () => {
+      const vis = visible();
+      choose(vis.filter((i) => state.projects[i].rk), false);
+      choose(vis.filter((i) => !state.projects[i].rk), true);
+    });
+    const common = Engine.commonFolder(state.projects);
+    const shortFolder = (p) => Engine.folderOf(p).slice(common.length).replace(/^\//, "") || "(the common folder)";
+    function fill() {
+      const words = $("mfilter").value.toLowerCase().split(/\s+/).filter(Boolean);
+      const isOn = (i) => state.selected === null || state.selected.has(i);
+      list.replaceChildren();
+      for (const g of Engine.chooserGroups(state.projects, state.mode)) {
+        const box = el("div", "mgroup");
+        const rows = g.pids.map((i) => {
+          const p = state.projects[i];
+          const row = el("label", "mrow" + (g.depth.get(i) ? " older" : ""));
+          const cb = el("input");
+          cb.type = "checkbox";
+          cb.dataset.pid = String(i);
+          cb.checked = isOn(i);
+          cb.addEventListener("change", () => choose([i], cb.checked));
+          const c = p.counts || {};
+          const facts = [p.sv ? `saved ${p.sv.slice(0, 10)}` : null, p.ex, c.diagram ? count(c.diagram, "diagram") : null,
+                         c.requirement ? count(c.requirement, "requirement") : null].filter(Boolean).join(" · ");
+          const meta = [...new Set((p.sources || []).flatMap((s) => Object.entries(s.metadata || {}).map(([k, v]) => `${k}=${v}`)))];
+          const head = el("div", "mhead");
+          head.append(cb, el("span", "mname", p.label), el("span", "mfacts", facts));
+          const where = el("div", "mwhere", [shortFolder(p), meta.join(", ")].filter(Boolean).join(" · "));
+          where.title = (p.sources || []).map((s) => s.path).join("\n");
+          row.append(head, where);
+          const note = Engine.lineageNote(p, labelOf);
+          if (note) {
+            const n = el("div", "mnote", note);
+            n.title = note; // in full, on hover
+            row.append(n);
+          }
+          const hay = [p.label, p.name, ...(p.sources || []).map((s) => s.path), ...meta, note].join(" ").toLowerCase();
+          row.hidden = !words.every((w) => hay.includes(w));
+          return row;
+        });
+        if (rows.every((r) => r.hidden)) continue;
+        if (g.title) {
+          const head = el("label", "mgroup-head");
+          const cb = el("input");
+          cb.type = "checkbox";
+          cb.checked = g.pids.every(isOn);
+          cb.indeterminate = !cb.checked && g.pids.some(isOn);
+          cb.addEventListener("change", () => choose(g.pids, cb.checked));
+          head.append(cb, el("span", null, g.title));
+          box.append(head);
+        }
+        box.append(...rows);
+        list.append(box);
+      }
+    }
   }
 
   const viewOf = (fi) => state.viewOf.get(fi) || state.subjects.families[fi].dv;
@@ -531,10 +713,13 @@ if (typeof document !== "undefined") {
       list.append(el("p", "hint", "Search above; choose a result to read it here."));
       return;
     }
-    const chosen = $("project").value === "" ? state.browse : sb.familyOf.get(Number($("project").value));
-    if (chosen === undefined || chosen === null) {
+    const shown = sb.families.map((f, fi) => fi)
+      .filter((fi) => state.selected === null || sb.families[fi].p.some((pid) => state.selected.has(pid)));
+    const chosen = shown.length === 1 && state.selected !== null ? shown[0] : state.browse; // narrowed to one: open it
+    if (chosen === undefined || chosen === null || !shown.includes(chosen)) {
       list.append(el("p", "browse-lead", "Search above, or browse a model by subject:"));
-      sb.families.forEach((f, fi) => {
+      shown.forEach((fi) => {
+        const f = sb.families[fi];
         const row = el("a", "result");
         row.href = "#";
         row.addEventListener("click", (e) => { e.preventDefault(); state.browse = fi; run(); });
@@ -548,7 +733,7 @@ if (typeof document !== "undefined") {
     }
     const f = sb.families[chosen], v = sb.view(chosen, viewOf(chosen));
     const top = el("div", "browse-head");
-    if ($("project").value === "") {
+    if (!(shown.length === 1 && state.selected !== null)) {
       const back = el("a", null, "All models");
       back.href = "#";
       back.addEventListener("click", (e) => { e.preventDefault(); state.browse = null; run(); });
@@ -656,6 +841,8 @@ if (typeof document !== "undefined") {
     if (it.t === "summary" && it.of) fact("Of", link(pid, it.of[0], it.of[1]));
     fact("Where", it.w);
     fact("Model", project.label);
+    fact("Model saved", [project.sv && project.sv.slice(0, 10), project.ex].filter(Boolean).join(", "));
+    fact("Lineage", Engine.lineageNote(project, labelOf));
     const fi = state.subjects.familyOf.get(pid);
     if (fi !== undefined && it.t !== "summary") {
       const vid = viewOf(fi), s = state.subjects.place(it, fi, vid);

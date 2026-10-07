@@ -554,7 +554,13 @@ everything it shows is inside the file, compressed.
   each phase, and a Cancel button. It is then ready to search.
 - **Searching:** results come as you type, ranked by BM25 with names and ids weighted above text.
   An id such as `REQ-1-OAD-1050` is one word. `prefix*` and `"a phrase"` work, and results can
-  be filtered by model and type.
+  be filtered by type, and by model with the model chooser.
+- **Choosing models:** "Models: all 27" opens a checklist of the models, each with its save date,
+  Cameo version, counts, folder (the full paths on hover), `--meta` values, and its lineage: the
+  newest of its versions or an older one, derived from another model by others, sharing a root
+  with rivals, or sharing a part such as a library (see "Versions and removal"). Group them by
+  lineage, by folder, by name or by date; filter them by name, folder or metadata; and choose
+  all, none, or the newest of each model. The choice applies to searching and browsing.
 - **Reading an item:** its full text, as the RAG reads it, and its relationships as links to
   the related items. Its source is shown too, and the generated summaries about it, marked as
   such.
@@ -583,7 +589,7 @@ saved copy. Opened from inside a zip without extracting it first, it says so.
 | `Diagrams` | Diagrams, with their subject and their generated descriptions |
 | `Subjects` | Each model's diagrams by subject, a row per view, subject and diagram: filter Model and View |
 | `Summaries` | Generated summaries, marked with the model that wrote them |
-| `Projects` | Each model: its source, metadata and counts |
+| `Projects` | Each model: its source, metadata, save time, Cameo version, versions and lineage, and counts |
 
 **Subjects.** Searches can return hundreds of diagrams on one subject. To find the different things
 a corpus covers instead, each model's diagrams are split into a few subjects, several ways

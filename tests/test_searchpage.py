@@ -112,6 +112,7 @@ def test_page_in_a_browser(tmp_path):
     assert seen["heading"] == "Brine Valve K7" and seen["hash"].startswith("#d")
     assert seen["zoomed"] is True and seen["errors"] == []
     assert seen["models"] == 1 and seen["views"] >= 1 and seen["subjects"] >= 1 and seen["opened"] >= 1  # browsing
+    assert seen["chooser"] == 1 and seen["button"].startswith("Models: all 1")  # the model chooser (plan LN-07)
 
 
 @needs_node
@@ -123,3 +124,10 @@ def test_subjects_in_the_page(page):
     assert 'data-subjects="1"' in html and 'id="grouped"' in html
     out = json.loads(node(str(JS / "subjects.js"), str(page), "signal"))
     assert out["families"] >= 1 and out["hits"] == out["grouped"] and out["groups"] > 1 and out["ordered"]
+
+
+@needs_node
+def test_model_chooser():
+    """Models grouped by lineage (versions under the newest, kin together), by folder, by name or
+    by date, each with a note on its lineage (plan LN-07)."""
+    assert node(str(JS / "chooser.js")).strip() == "ok"

@@ -78,6 +78,9 @@ async function run(session, body) {
   out.subjects = await run(s, "return document.querySelectorAll('#results .group').length;");
   out.opened = await run(s, `document.querySelector('#results .group-head').click();
     return await wait(() => document.querySelectorAll('#results .group .result').length);`);
+  out.chooser = await run(s, `document.getElementById('models').click();
+    return await wait(() => document.querySelectorAll('#mlist .mrow').length);`);
+  out.button = await run(s, "return document.getElementById('models').textContent;");
   if (process.env.SHOT) {
     const shot = await send("Page.captureScreenshot", { format: "png" }, s);
     require("fs").writeFileSync(process.env.SHOT, Buffer.from(shot.result.data, "base64"));

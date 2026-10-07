@@ -45,7 +45,7 @@ SHEETS: dict[str, list[tuple[str, int]]] = {  # name -> columns (header, width)
     "Summaries": [("Of", 40), ("What", 18), ("Project", 28), ("Summary (generated)", 100), ("Model", 24),
                   ("Part", 10)],
     "Projects": [("Project", 30), ("Label", 30), ("Content", 24), ("Source", 60), ("Metadata", 30),
-                 ("Saved by", 24), ("Requirements", 10), ("Elements", 10), ("Diagrams", 10), ("Packages", 10),
+                 ("Saved", 20), ("Saved by", 24), ("Versions", 34), ("Lineage", 60), ("Requirements", 10), ("Elements", 10), ("Diagrams", 10), ("Packages", 10),
                  ("Relationships", 10), ("Summaries", 10), ("Left out", 40)],
 }
 REQUIREMENT_COLUMNS = {  # (relationship kind, direction) -> column of the Requirements sheet
@@ -95,7 +95,7 @@ class _Sheet:
 
 
 def write_workbook(path: Path, projects: Iterable[ProjectCatalog], version: str,
-                   subjects: dict[str, Any] | None = None) -> dict[str, int]:
+                   subjects: dict[str, Any] | None = None, facts: dict[str, dict[str, Any]] | None = None) -> dict[str, int]:
     """Write the workbook; returns the rows per sheet. `subjects`: the tree's `subjects.json`, if any
     (ADR-0031): the Subjects sheet, and each diagram's subject in the suggested view."""
     families = (subjects or {}).get("families", [])
@@ -123,7 +123,7 @@ def write_workbook(path: Path, projects: Iterable[ProjectCatalog], version: str,
     n_projects = 0
     for p in projects:
         n_projects += 1
-        _project_rows(p, sheets, suggested)
+        _project_rows(p, sheets, suggested, facts or {})
         labels[p.header.get("token") or ""] = p.label
         for r in p.records:
             if r["type"] == "diagram":
@@ -164,7 +164,23 @@ def _subject_rows(families: list[dict[str, Any]], names: dict[tuple[str, str], s
                                "Diagram": name, "Versions": n}, LIMITS["search"])
 
 
-def _project_rows(p: ProjectCatalog, sheets: dict[str, _Sheet], suggested: dict[tuple[str, str], str]) -> None:
+_HOW = {"derived": "derived by others from", "built-on": "built on by others in", "root": "shares a root with",
+        "branches": "a branch beside"}
+
+
+def _lineage(fact: dict[str, Any], labels: dict[str, str]) -> tuple[str, str]:
+    """The Versions and Lineage cells (plan LN-06)."""
+    n = fact.get("versions", 1)
+    versions = "" if n == 1 else ("newest of " if fact.get("rank") == 0 else f"version {n - fact['rank']} of ") + f"{n}"
+    if n > 1 and fact.get("rank"):
+        versions += f"; the newest: {labels.get(fact['family'], fact['family'][:15])}"
+    notes = [f"{_HOW[how]} {labels.get(t, t[:15])}" for t, how in fact.get("kin", [])]
+    notes += [f"shares a part with {labels.get(t, t[:15])}" for t in fact.get("related", [])]
+    return versions, "; ".join(notes)
+
+
+def _project_rows(p: ProjectCatalog, sheets: dict[str, _Sheet], suggested: dict[tuple[str, str], str],
+                  facts: dict[str, dict[str, Any]]) -> None:
     project, source = p.label, p.source_text()
     described = {r["key"]: r["text"] for r in p.records
                  if r["type"] == "summary" and r["label"] == "Diagram description" and "module" not in r}
@@ -210,8 +226,11 @@ def _project_rows(p: ProjectCatalog, sheets: dict[str, _Sheet], suggested: dict[
         sheets["Identifiers"].add({"Id": rec["term"], "Project": project, "Element": rec.get("what"),
                                    "How": rec.get("how"), "Snippet": rec.get("snippet")}, LIMITS["search"])
     c = p.header.get("counts", {})
+    fact = facts.get(p.header.get("token") or "", {})
+    versions, lineage = _lineage(fact, {t: f.get("label", t) for t, f in facts.items()})
     sheets["Projects"].add({"Project": p.header.get("name"), "Label": project, "Content": p.header.get("token"),
-                            "Source": source, "Metadata": p.metadata_text(), "Saved by": saved_by(p.header),
+                            "Source": source, "Metadata": p.metadata_text(), "Saved": fact.get("saved"),
+                            "Saved by": saved_by(p.header), "Versions": versions, "Lineage": lineage,
                             "Requirements": c.get("requirement", 0), "Elements": c.get("element", 0),
                             "Diagrams": c.get("diagram", 0), "Packages": c.get("package", 0),
                             "Relationships": c.get("relationship", 0), "Summaries": c.get("summary", 0),

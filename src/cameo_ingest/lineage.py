@@ -222,3 +222,38 @@ def pairs(state: Any, include_removed: bool = False) -> list[Pair]:
         if p is not None:
             out.append(p)
     return out
+
+
+# The kin of a model, as it stands to the other: (kind, the older's side) -> what the model is to the other.
+_AS_OLDER = {"derived": "built-on", "root": "root", "branches": "branches"}
+_AS_NEWER = {"derived": "derived", "root": "root", "branches": "branches"}
+
+
+def facts(state: Any) -> dict[str, dict[str, Any]]:
+    """What the exports show of each model (plan LN-06), by token: its save time and Cameo version,
+    its family (the newest version's token), its rank there (0, the newest), how many versions, its
+    kin (`[token, how it stands]`: `derived` from the other, `built-on` by the other, `root` shared,
+    `branches`) and the models related to it."""
+    from . import groups
+
+    rows = {r["sha256"]: r for r in state.catalog() if r["status"] != "removed"}
+    report = groups.find(state.catalog(), state.fingerprint_ids(), {}, pairs=pairs(state))
+    out: dict[str, dict[str, Any]] = {}
+    for sha, r in rows.items():
+        out[f"sha256:{sha}"] = {"saved": r["saved"], "exporter": r["exporter"], "family": f"sha256:{sha}", "rank": 0,
+                                "versions": 1, "kin": [], "related": []}
+    for g in report.groups:
+        for rank, m in enumerate(g.members):
+            if f"sha256:{m.sha}" in out:
+                out[f"sha256:{m.sha}"].update(family=f"sha256:{g.members[0].sha}", rank=rank, versions=len(g.members))
+    for a, b, kind, _ in report.kin:
+        ta, tb = f"sha256:{a.sha}", f"sha256:{b.sha}"
+        if ta in out and tb in out:
+            out[ta]["kin"].append([tb, _AS_OLDER[kind]])
+            out[tb]["kin"].append([ta, _AS_NEWER[kind]])
+    for a, b, _, _ in report.related:
+        ta, tb = f"sha256:{a.sha}", f"sha256:{b.sha}"
+        if ta in out and tb in out:
+            out[ta]["related"].append(tb)
+            out[tb]["related"].append(ta)
+    return out
