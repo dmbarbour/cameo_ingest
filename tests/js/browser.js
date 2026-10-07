@@ -85,6 +85,7 @@ async function run(session, body) {
     await wait(() => getComputedStyle(document.getElementById('chooser')).display !== 'none');
     return [...document.querySelectorAll('#mlist .mrow')].filter((r) => r.offsetParent !== null).length;`);
   out.button = await run(s, "return document.getElementById('models').textContent;");
+  out.compareDisabled = await run(s, "return document.getElementById('mcompare').disabled;");  // one model: none to compare
   if (process.env.SHOT) {
     const shot = await send("Page.captureScreenshot", { format: "png" }, s);
     require("fs").writeFileSync(process.env.SHOT, Buffer.from(shot.result.data, "base64"));

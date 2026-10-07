@@ -43,7 +43,9 @@ per-project file the exports read (AR-012). The records come in this order:
 - **Shared items** (plan SH, `shared.py`): `export` matches each item's copies in other models
   (by element id; by requirement Id; by kind and name between related models), with what differs
   among what people edit. The page's items carry them (`al`), shown as "Also in", and copies of
-  one element collapse in results; the workbook has an Also in column and a Shared sheet (copies
+  one element collapse in results; **Compare** (two models chosen) lists what changed and what is
+  only in either, from the items' matches (`Engine.compareModels`), at no cost in size; the
+  workbook has an Also in column and a Shared sheet (copies
   elsewhere, and copies that differ; unchanged copies in one family's versions, Also in only).
 - **No Search sheet** (0.25.0): it repeated every item's text for the Find sheet and for Excel
   for the web; without it, the samples' workbook is 7.1 MB, from 9.5.

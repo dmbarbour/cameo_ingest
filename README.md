@@ -574,6 +574,9 @@ everything it shows is inside the file, compressed.
   there among what people edit (name, text, stereotypes and tagged values, relationships, members,
   what a diagram shows, package), each a link. In results, an element held by several models
   shows once, "and N more".
+- **Comparing two models:** choose two in the model chooser and press Compare: what changed
+  between them, what is only in either, and how many items are the same, by kind, each a link.
+  A version and the next, a bid and the customer's model, or two rival bids.
 - **Results by subject:** a search's results come grouped by subject, each group led by its best
   result, with the rest a click away. A diagram held by several versions of a model shows once,
   with how many versions hold it. "Group by subject" turns this off.

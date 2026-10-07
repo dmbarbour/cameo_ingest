@@ -327,6 +327,31 @@ const Engine = (() => {
     return { hits: out, copies };
   }
 
+  // Two models compared (plan SH-05), from the matches their items carry (`al`): each item of A is
+  // changed (matched in B, with differences), the same, or only in A; B's items matched in A by
+  // none are only in B. Items: requirements, diagrams, packages and elements. Returns {changed:
+  // [[docA, keyB, differences]], same, onlyA: [docs], onlyB: [docs]}.
+  const COMPARED = new Set(["requirement", "diagram", "package", "element"]);
+  function compareModels(items, a, b, tokA, tokB) {
+    const out = { changed: [], same: 0, onlyA: [], onlyB: [] };
+    const matchedInB = new Set();
+    items.forEach((it, d) => {
+      if (!COMPARED.has(it.t) || (it.p !== a && it.p !== b)) return;
+      const other = it.p === a ? tokB : tokA;
+      const m = (it.al || []).find((x) => x[0] === other);
+      if (it.p === a) {
+        if (!m) out.onlyA.push(d);
+        else if (m[3]) out.changed.push([d, m[1], m[3]]);
+        else out.same++;
+        if (m) matchedInB.add(m[1]);
+      } else if (!m) {
+        out.onlyB.push(d);
+      }
+    });
+    out.onlyB = out.onlyB.filter((d) => !matchedInB.has(items[d].k));
+    return out;
+  }
+
   // The model chooser (plan LN-07): models grouped by folder, by lineage, or listed by name or by
   // date, and what each one is to the others. `projects`: the page's projects, with their facts.
   const HOW = { derived: "derived by others from", "built-on": "built on by others in", root: "shares a root with",
@@ -419,7 +444,7 @@ const Engine = (() => {
   }
 
   return { tokens, parse, Field, Index, snippet, mark, decode, decodeText, Subjects, chooserGroups, lineageNote, folderOf,
-           commonFolder, tagPieces, collapseShared };
+           commonFolder, tagPieces, collapseShared, compareModels };
 })();
 
 if (typeof module !== "undefined") module.exports = Engine;
@@ -442,7 +467,8 @@ if (typeof document !== "undefined") {
 
   const state = { index: new Engine.Index(), projects: [], byKey: new Map(), summaries: new Map(), cancelled: false,
                   subjects: new Engine.Subjects([]), viewOf: new Map(), browse: null, open: new Set(),
-                  selected: null, mode: "lineage" }; // selected: null for every model, else a Set of page ids
+                  selected: null, mode: "lineage", // selected: null for every model, else a Set of page ids
+                  compare: null }; // [page id, page id]: two models compared (plan SH-05)
   const SHOWN = 3; // results shown a group before "more"
 
   // While the file is still being read: a small script after each data block calls this.
@@ -599,7 +625,8 @@ if (typeof document !== "undefined") {
     list.replaceChildren();
     if (!q.trim()) {
       info.textContent = "";
-      browse(list);
+      if (state.compare) compare(list);
+      else browse(list);
       return;
     }
     const t = now();
@@ -654,11 +681,21 @@ if (typeof document !== "undefined") {
       const set = state.selected === null ? new Set(state.projects.map((_, i) => i)) : new Set(state.selected);
       for (const i of pids) (on ? set.add(i) : set.delete(i));
       state.selected = set.size === state.projects.length ? null : set;
+      if (!state.selected || state.selected.size !== 2) state.compare = null;
+      $("mcompare").disabled = !state.selected || state.selected.size !== 2;
       chooserLabel();
       fill();
       state.browse = null;
       run();
     };
+    $("mcompare").addEventListener("click", () => {
+      if (!state.selected || state.selected.size !== 2) return;
+      const [a, b] = [...state.selected].sort((x, y) => (state.projects[x].sv || "").localeCompare(state.projects[y].sv || "") || x - y);
+      state.compare = [a, b]; // the older first
+      panel.hidden = true;
+      $("q").value = "";
+      run();
+    });
     $("mall").addEventListener("click", () => choose(visible(), true));
     $("mnone").addEventListener("click", () => choose(visible(), false));
     $("mnewest").addEventListener("click", () => {
@@ -713,6 +750,70 @@ if (typeof document !== "undefined") {
           box.append(head);
         }
         box.append(...rows);
+        list.append(box);
+      }
+    }
+  }
+
+  // How two compared models stand, by the first's kin note on the second.
+  const PAIR = { derived: "the first was built on the second, by others", "built-on": "the second was built on the first, by others",
+                 root: "rivals on a shared root", branches: "branches of one model" };
+
+  // Two models compared (plan SH-05): what changed, and what is only in one, by kind.
+  function compare(list) {
+    const [a, b] = state.compare, A = state.projects[a], B = state.projects[b];
+    const tok = (p) => (p.token || "").slice(7, 23);
+    const res = Engine.compareModels(state.index.items, a, b, tok(A), tok(B));
+    const top = el("div", "browse-head");
+    const close = el("a", null, "Close the comparison");
+    close.href = "#";
+    close.addEventListener("click", (e) => { e.preventDefault(); state.compare = null; run(); });
+    const kin = (A.kn || []).find(([t]) => t === B.token);
+    const how = kin ? PAIR[kin[1]] || "" : A.fm && A.fm === B.fm ? "versions of one model" : "";
+    top.append(el("strong", null, "Comparing"), " ", A.label, " with ", B.label, how ? ` (${how})` : "", " · ", close);
+    list.append(top, el("p", "browse-lead",
+      `${count(res.changed.length, "item")} changed, ${fmt(res.onlyA.length)} only in the first, ` +
+      `${fmt(res.onlyB.length)} only in the second, ${fmt(res.same)} the same. In what changed, "here" is the ` +
+      `first, "there" the second.`));
+    const type = $("type").value || null;
+    const sections = [
+      ["Changed", res.changed.map(([d, , diff]) => ({ d, diff }))],
+      [`Only in ${A.label}`, res.onlyA.map((d) => ({ d }))],
+      [`Only in ${B.label}`, res.onlyB.map((d) => ({ d }))],
+    ];
+    for (const [title, rows0] of sections) {
+      const rows = rows0.filter((r) => !type || state.index.items[r.d].t === type);
+      const kinds = new Map();
+      for (const r of rows) {
+        const t = state.index.items[r.d].t;
+        if (!kinds.has(t)) kinds.set(t, []);
+        kinds.get(t).push(r);
+      }
+      for (const [t, rs] of [...kinds].sort()) {
+        const box = el("section", "group");
+        const head = el("a", "group-head");
+        head.href = "#";
+        head.append(el("span", "group-label", `${title}: ${t}s`), el("span", "group-count", fmt(rs.length)));
+        const body = el("div");
+        const id = `cmp/${title}/${t}`;
+        const fill = (n) => {
+          body.replaceChildren(...rs.slice(0, n).map((r) => {
+            const row = resultRow({ doc: r.d }, [], r.diff || undefined);
+            return row;
+          }));
+          if (rs.length > n) {
+            const more = el("button", "more", `${fmt(rs.length - n)} more`);
+            more.type = "button";
+            more.addEventListener("click", () => fill(n + 200));
+            body.append(more);
+          }
+        };
+        head.addEventListener("click", (e) => {
+          e.preventDefault();
+          if (state.open.has(id)) { state.open.delete(id); body.replaceChildren(); } else { state.open.add(id); fill(200); }
+        });
+        if (state.open.has(id)) fill(200);
+        box.append(head, body);
         list.append(box);
       }
     }

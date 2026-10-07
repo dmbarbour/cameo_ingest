@@ -49,4 +49,21 @@ assert.deepStrictEqual(Engine.tagPieces("[1]", { 1: "k" }), [{ text: "[1]", tag:
   assert.deepStrictEqual(got.hits.map((h) => h.doc), [1, 2, 3]);
   assert.strictEqual(got.copies.get(1), 2);
 }
+// Two models compared (plan SH-05).
+{
+  const items = [
+    { t: "requirement", k: "r1", p: 0, al: [["bbbb", "r1", "e", "text"]] }, // changed
+    { t: "requirement", k: "r2", p: 0, al: [["bbbb", "r2", "e", ""]] }, // the same
+    { t: "element", k: "x", p: 0 }, // only in A
+    { t: "requirement", k: "r1", p: 1, al: [["aaaa", "r1", "e", "text"]] },
+    { t: "requirement", k: "r2", p: 1, al: [["aaaa", "r2", "e", ""]] },
+    { t: "diagram", k: "d9", p: 1 }, // only in B
+    { t: "summary", k: "r1", p: 1 }, // not compared
+  ];
+  const c = Engine.compareModels(items, 0, 1, "aaaa", "bbbb");
+  assert.deepStrictEqual(c.changed, [[0, "r1", "text"]]);
+  assert.strictEqual(c.same, 1);
+  assert.deepStrictEqual(c.onlyA, [2]);
+  assert.deepStrictEqual(c.onlyB, [5]);
+}
 console.log("ok");
