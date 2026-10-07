@@ -119,13 +119,22 @@ def test_names_namespaces_cant_split(tmp_path, caplog):
     odd = MODEL.replace(" <sysml:Block xmi:id='st2' base_Class='b2'/>",
                         " <sysml:Block xmi:id='st2' base_Class='b2'/>\n <sysml:Block:Mark xmi:id='st9' base_Class='b2' Note='n'/>"
                         ).replace("name='Drone'>", "name='Drone' sysml:a:b='1' sysml:='2'>")
+    # As Cameo writes a stereotype of a package inside a profile: the prefix is its qualified name.
+    custom = "MD_Customization_for_SysML::additional_stereotypes"
+    odd = odd.replace("<xmi:XMI ", f"<xmi:XMI xmlns:{custom}='http://www.magicdraw.com/spec/Customization/180/SysML' ", 1
+                      ).replace(" <sysml:Block xmi:id='st1'", f" <{custom}:ConstraintParameter xmi:id='st10' base_Property='a1'/>\n"
+                                                              " <sysml:Block xmi:id='st1'")
     ix = ModelIndex()
     parse_into(ix, io.BytesIO(odd.encode()), "model")
     finalize(ix)
     assert ix.elements["b1"].name == "Drone" and "r1" in ix.elements and "d1" in ix.diagrams
     assert ix.stereotypes["st9"].stereotype == "sysml:Block:Mark" and ix.stereotypes["st9"].base == "b2"
+    st = ix.stereotypes["st10"]
+    assert (st.name, st.base, st.profile_uri) == ("ConstraintParameter", "a1",
+                                                  "http://www.magicdraw.com/spec/Customization/180/SysML")
     assert [f.split(": ", 1)[1] for f in ix.recovered["model"]] == [
-        "Failed to parse QName 'sysml:a:b'", "Failed to parse QName 'sysml:'", "Failed to parse QName 'sysml:Block:Mark'"]
+        f"Failed to parse QName 'xmlns:{custom}'", "Failed to parse QName 'sysml:a:b'", "Failed to parse QName 'sysml:'",
+        f"Failed to parse QName '{custom}:ConstraintParameter'", "Failed to parse QName 'sysml:Block:Mark'"]
 
     src = tmp_path / "odd.mdzip"
     src.write_bytes(make_mdzip(odd))
@@ -134,7 +143,7 @@ def test_names_namespaces_cant_split(tmp_path, caplog):
         assert cli([str(src), "-o", str(out), "--no-llm", "--no-render"]) == 0
     assert "cannot fingerprint" not in caplog.text and "read as written" in caplog.text
     check_invariants(out)
-    assert "**Read with recovery:** 3 name(s)" in (project_dir(out) / "README.md").read_text()
+    assert "**Read with recovery:** 5 name(s)" in (project_dir(out) / "README.md").read_text()
     from contextlib import redirect_stdout
     status = io.StringIO()
     with redirect_stdout(status):

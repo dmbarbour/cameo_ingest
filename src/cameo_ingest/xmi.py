@@ -75,6 +75,9 @@ class _Parser:
         self.ix = index
         self.entry = entry
         self.uri2prefix: dict[str, str] = {}
+        # Namespaces declared with a prefix XML can't take, such as Cameo's
+        # `xmlns:MD_Customization_for_SysML::additional_stereotypes` (TR-001): read as written.
+        self.literal_ns: dict[str, str] = {}
         self.xmi_uri = "http://www.omg.org/spec/XMI/20131001"
         # Stack of (frame kind, payload). Kinds: root, element, value, ignore, ext,
         # diagram, stereo, doc.
@@ -85,8 +88,8 @@ class _Parser:
         if tag.startswith("{"):
             uri, local = tag[1:].split("}", 1)
             return _prefix_for(uri, self.uri2prefix), local
-        if ":" in tag:  # a name namespaces couldn't split, read as written (TR-001)
-            prefix, local = tag.split(":", 1)
+        if ":" in tag:  # a name namespaces couldn't split, read as written (TR-001): a prefix may hold
+            prefix, local = tag.rsplit(":", 1)  # "::", a local name never a colon
             return prefix, local
         return "", tag
 
@@ -118,6 +121,10 @@ class _Parser:
         line = node.sourceline
 
         if parent_kind == "none":
+            for k, v in node.attrib.items():
+                if k.startswith("xmlns:"):  # a declaration XML refused, kept as an attribute (TR-001)
+                    self.literal_ns[k[6:]] = v
+                    self.ix.namespaces.setdefault(k[6:], v)
             if prefix == "xmi" and local == "XMI":
                 self.stack.append(("root", None))
             else:  # a bare uml:Model / uml:Package document
@@ -143,7 +150,7 @@ class _Parser:
                 app = StereotypeApplication(
                     id=xid,
                     stereotype=f"{prefix}:{local}",
-                    profile_uri=node.tag[1:].split("}", 1)[0] if node.tag.startswith("{") else "",
+                    profile_uri=node.tag[1:].split("}", 1)[0] if node.tag.startswith("{") else self.literal_ns.get(prefix, ""),
                     base=base or "",
                     tags=tags,
                     entry=self.entry,

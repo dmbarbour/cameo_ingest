@@ -38,7 +38,7 @@ class StereotypeApplication:
 
     @property
     def name(self) -> str:
-        return self.stereotype.split(":", 1)[-1]
+        return self.stereotype.rsplit(":", 1)[-1]  # a profile prefix may hold "::" (TR-001)
 
 
 @dataclass

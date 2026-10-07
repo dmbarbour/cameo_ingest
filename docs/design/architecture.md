@@ -114,8 +114,11 @@ and `project_status`. Schema version 3 is migrated in place, and a newer schema 
 - **XML** is parsed with entity resolution and network access disabled, by one reader
   (`xmi.read_events`) for the build and the fingerprint:
   - names that namespaces can't split (`a:b:c`, `a:`), which libxml2 refuses, are read as written,
-    in recovery: every element, id and attribute is kept, and a literal `prefix:rest` tag splits at
-    its first colon (TR-001, 0.21.2);
+    in recovery: every element, id and attribute is kept (TR-001, 0.21.2). Cameo writes them for a
+    stereotype in a package inside a profile, whose prefix is the package's qualified name:
+    `xmlns:MD_Customization_for_SysML::additional_stereotypes`. A literal tag splits at its last
+    colon, and the refused declaration, kept as a root attribute, still gives the profile's URI
+    (0.21.3);
   - the project's README and `status` say so;
   - any other fault (truncation, a bad character) fails the project, as "damaged XML in ENTRY,
     line N".
