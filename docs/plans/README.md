@@ -9,7 +9,7 @@ plan yet is in `docs/roadmap.md`. When a plan is done, its content goes to `docs
 
 | Plan | Prefix | Status |
 |---|---|---|
-| [Subjects for discovery](subjects-2026-10-06.md) | SB | Drafted; for the maintainer's look before CP1 |
+| [Subjects for discovery](subjects-2026-10-06.md) | SB | CP1 to CP3 done (0.22.0); the maintainer's trial, then CP4 |
 
 ## Archived
 

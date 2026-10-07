@@ -378,61 +378,83 @@ def _json(reply: Any) -> Any:
         return None
 
 
-def llm_ways(llm: Any, f: Family, concurrency: int = 1, advance: Any = None) -> list[dict[str, Any]] | None:
-    """The model's ways, each with every diagram assigned or left unsorted; None when the proposal
-    failed (no answer, or none that can be read)."""
-    k = target(len(f.items))
-    project = f"subjects:{f.name}"
-
-    def ask(*a: Any, **kw: Any) -> Any:
+def _asker(llm: Any, f: Family) -> Any:
+    def ask(template: Any, values: dict[str, str]) -> Any:
         try:
-            return llm.ask(*a, **kw)
+            return llm.ask(template, values, project=f"subjects:{f.name}", inputs=(f.tokens[0],))
         except ReplayMiss as e:  # a replayed run: at the root, a miss is an unanswered request, not a failure
             log.debug("subjects of %s: %s", f.name, e)
             return None
+    return ask
 
-    got = ask(SUBJECTS_PROPOSE, {"MODEL": f.name, "COUNT": str(len(f.items)), "WAYS": str(WAYS), "K": str(k),
-                                      "OUTLINE": outline(f)}, project=project, inputs=(f.tokens[0],))
-    if advance:
-        advance(1)
-    ways = [w for w in ((_json(got) or {}).get("ways") or [])[:WAYS]
-            if isinstance(w, dict) and len([s for s in w.get("subjects") or [] if isinstance(s, dict) and s.get("label")]) >= 2]
-    if not ways:
-        return None
-    parts = batches(f)
-    out = []
-    for n, way in enumerate(ways, 1):
-        subjects = [s for s in way["subjects"] if isinstance(s, dict) and s.get("label")]
+
+def ways_for(llm: Any, fams: list[Family], concurrency: int = 1, advance: Any = None) -> dict[str, list[dict[str, Any]] | None]:
+    """Each family's ways, by its newest token: every diagram assigned or left unsorted; None when
+    the proposal failed (no answer, or none that can be read). Two rounds, each `concurrency`
+    requests at a time: every family's proposal, then every batch of every way."""
+
+    def propose(f: Family) -> list[list[dict[str, Any]]] | None:
+        got = _asker(llm, f)(SUBJECTS_PROPOSE, {"MODEL": f.name, "COUNT": str(len(f.items)), "WAYS": str(WAYS),
+                                                "K": str(target(len(f.items))), "OUTLINE": outline(f)})
+        if advance:
+            advance(1)
+        ways = [w for w in ((_json(got) or {}).get("ways") or [])[:WAYS] if isinstance(w, dict)]
+        ways = [(w, [s for s in w.get("subjects") or [] if isinstance(s, dict) and s.get("label")]) for w in ways]
+        return [{"principle": w.get("principle"), "subjects": subs} for w, subs in ways if len(subs) >= 2] or None
+
+    with ThreadPoolExecutor(max(1, concurrency)) as pool:
+        proposed = dict(zip((f.tokens[0] for f in fams), pool.map(propose, fams), strict=True))
+    tasks = [(f, n, batch) for f in fams for n in range(len(proposed[f.tokens[0]] or [])) for batch in batches(f)]
+
+    def assign(task: tuple[Family, int, list[str]]) -> dict[str, Any]:
+        f, n, batch = task
+        subjects = proposed[f.tokens[0]][n]["subjects"]
         listing = "\n".join(f"{i}. {s['label']}: {s.get('holds', '')}" for i, s in enumerate(subjects, 1))
+        text = "\n".join(f"{i}. {f.items[key].describe()}" for i, key in enumerate(batch, 1))
+        r = _asker(llm, f)(SUBJECTS_ASSIGN, {"SUBJECTS": listing, "DIAGRAMS": text})
+        if advance:
+            advance(1)
+        reply = _json(r) or {}
+        return {key: reply.get(str(i)) for i, key in enumerate(batch, 1)}
 
-        def one(batch: list[str], listing: str = listing) -> dict[str, Any]:
-            text = "\n".join(f"{i}. {f.items[key].describe()}" for i, key in enumerate(batch, 1))
-            r = ask(SUBJECTS_ASSIGN, {"SUBJECTS": listing, "DIAGRAMS": text}, project=project,
-                    inputs=(f.tokens[0],))
-            if advance:
-                advance(1)
-            reply = _json(r) or {}
-            return {key: reply.get(str(i)) for i, key in enumerate(batch, 1)}
-
-        with ThreadPoolExecutor(max(1, concurrency)) as pool:
-            assigned = {key: v for part in pool.map(one, parts) for key, v in part.items()}
-        members: dict[int, list[str]] = defaultdict(list)
-        unsorted = []
-        for key, v in sorted(assigned.items()):
-            try:
-                g = int(v) - 1
-            except (TypeError, ValueError):
-                g = -1
-            if 0 <= g < len(subjects):
-                members[g].append(key)
-            else:
-                unsorted.append(key)
-        out.append({"id": f"ways-{n}", "kind": "llm", "title": str(way.get("principle") or f"Way {n}")[:80],
-                    "model": llm.cfg.text_model,
-                    "subjects": [{"label": str(subjects[g]["label"])[:80], "holds": str(subjects[g].get("holds", ""))[:300],
-                                  "diagrams": members[g]} for g in range(len(subjects)) if members[g]],
-                    "unsorted": unsorted})
+    with ThreadPoolExecutor(max(1, concurrency)) as pool:
+        answers = list(pool.map(assign, tasks))
+    assigned: dict[tuple[str, int], dict[str, Any]] = defaultdict(dict)
+    for (f, n, _), got in zip(tasks, answers, strict=True):
+        assigned[f.tokens[0], n].update(got)
+    out: dict[str, list[dict[str, Any]] | None] = {}
+    for f in fams:
+        ways = proposed[f.tokens[0]]
+        if ways is None:
+            out[f.tokens[0]] = None
+            continue
+        views = []
+        for n, way in enumerate(ways):
+            subjects = way["subjects"]
+            members: dict[int, list[str]] = defaultdict(list)
+            unsorted = []
+            for key, v in sorted(assigned[f.tokens[0], n].items()):
+                try:
+                    g = int(v) - 1
+                except (TypeError, ValueError):
+                    g = -1
+                if 0 <= g < len(subjects):
+                    members[g].append(key)
+                else:
+                    unsorted.append(key)
+            views.append({"id": f"ways-{n + 1}", "kind": "llm", "title": str(way["principle"] or f"Way {n + 1}")[:80],
+                          "model": llm.cfg.text_model,
+                          "subjects": [{"label": str(subjects[g]["label"])[:80],
+                                        "holds": str(subjects[g].get("holds", ""))[:300], "diagrams": members[g]}
+                                       for g in range(len(subjects)) if members[g]],
+                          "unsorted": unsorted})
+        out[f.tokens[0]] = views
     return out
+
+
+def llm_ways(llm: Any, f: Family, concurrency: int = 1, advance: Any = None) -> list[dict[str, Any]] | None:
+    """One family's ways (`ways_for`)."""
+    return ways_for(llm, [f], concurrency, advance)[f.tokens[0]]
 
 
 def requests(f: Family) -> int:
@@ -499,7 +521,8 @@ def update(state: Any, out: Path, llm: Any = None, concurrency: int = 1, progres
     if todo:
         total = sum(requests(f) for f in todo)
         with progress.phase(f"subjects: {len(todo)} famil{'y' if len(todo) == 1 else 'ies'}", total, "request") as ph:
-            asked = {f.tokens[0]: entry(f, llm_ways(llm, f, concurrency, ph.advance), asked=True) for f in todo}
+            found = ways_for(llm, todo, concurrency, ph.advance)
+        asked = {f.tokens[0]: entry(f, found[f.tokens[0]], asked=True) for f in todo}
         records = [r if r is not None else asked[f.tokens[0]] for r, f in zip(records, fams, strict=True)]
     data = {"format": FORMAT, "families": records}
     tmp = out / (FILE + ".tmp")

@@ -28,7 +28,7 @@ per-project file the exports read (AR-012). The records come in this order:
   so ids like `1.2.3` and text starting with `=` stay as written.
 - **Sheets:**
   - About, Find, Search;
-  - Requirements, Identifiers, Elements, Relationships, Diagrams, Summaries;
+  - Requirements, Identifiers, Elements, Relationships, Diagrams, Subjects, Summaries;
   - Projects.
 - **Cell limits** (`LIMITS`): Search 1,000 characters, Requirements 4,000, Elements 2,000,
   Summaries 8,000; at most 32,767 in a cell.
@@ -63,6 +63,8 @@ per-project file the exports read (AR-012). The records come in this order:
   - shape clicks are handled on the sketch's frame (`importNode` drops listeners);
   - Windows' zip preview is detected and the user told to extract.
 - **Sketches,** `--sketches none|webp|svg`, default none: decoded only when a diagram is opened.
+- **Subjects** (`docs/design/subjects.md`): a `data-subjects` block; results grouped by subject, a
+  "Group by subject" switch, and a browse pane when nothing is typed.
 
 ## Size and scale
 

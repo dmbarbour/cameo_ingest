@@ -1,10 +1,11 @@
 // The search page in a real browser: headless Chrome, driven over the DevTools protocol on
 // --remote-debugging-pipe (no library needed). Run from tests/test_searchpage.py:
 //   node browser.js CHROME PROFILE_DIR PAGE.html DIAGRAM_DOC SHAPE_KEY QUERY
-// Opens the page with a search, then the diagram, clicks the shape and the sketch, and prints
-// what it saw as JSON: the ready line, the search's count and first result, the sketch's linked
-// shapes, the tooltip and heading after the click, whether the sketch zoomed, and any script
-// errors.
+// Opens the page with a search, then the diagram, clicks the shape and the sketch, then clears the
+// search and browses a model's subjects (plan SB-07c), and prints what it saw as JSON: the ready
+// line, the search's count and first result, the sketch's linked shapes, the tooltip and heading
+// after the click, whether the sketch zoomed, the models, views and subjects listed, the diagrams
+// a subject opened, and any script errors. With SHOT=FILE.png, a screenshot of the browse pane.
 const { spawn } = require("child_process");
 const path = require("path");
 const [chromeBin, profile, pagePath, doc, key, query] = process.argv.slice(2);
@@ -67,6 +68,20 @@ async function run(session, body) {
     await wait(() => f.querySelector('svg'));
     f.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     return f.classList.contains('zoomed');`);
+  await run(s, `history.replaceState(null, "", location.pathname); const q = document.getElementById('q');
+    q.value = ''; q.dispatchEvent(new Event('input')); return true;`);
+  out.models = await run(s, `await wait(() => document.querySelector('#results .browse-lead'));
+    return document.querySelectorAll('#results .result').length;`);
+  out.views = await run(s, `const rows = [...document.querySelectorAll('#results .result')];
+    (rows.find((r) => /[2-9] views/.test(r.textContent)) || rows[0]).click();
+    return await wait(() => document.querySelectorAll('.browse-head option').length);`);
+  out.subjects = await run(s, "return document.querySelectorAll('#results .group').length;");
+  out.opened = await run(s, `document.querySelector('#results .group-head').click();
+    return await wait(() => document.querySelectorAll('#results .group .result').length);`);
+  if (process.env.SHOT) {
+    const shot = await send("Page.captureScreenshot", { format: "png" }, s);
+    require("fs").writeFileSync(process.env.SHOT, Buffer.from(shot.result.data, "base64"));
+  }
   out.errors = errors;
   clearTimeout(timer);
   console.log(JSON.stringify(out));

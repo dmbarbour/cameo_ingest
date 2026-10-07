@@ -311,10 +311,11 @@ out/
     text/<project>/      a .txt file per chunk, named <sha256 of its text>.txt
     meta/<project>/      each file's metadata, <sha256>.json, at the same path
   run.json               the latest run: times, command, options, LLM calls and outcomes
+  subjects.json          each model's diagrams in subjects, several ways, for browsing and for
+                         grouping search results (see "Searching without tools")
   calibration/           the vision models' calibrations: eye charts, replies, reports, and
                          their validation on the tree's own sketches
   quality/               spot-check sets of LLM requests and answers (`quality sample`)
-  .cache/llm.sqlite      LLM answers
   by-sha256/<sha256>/    one project, named by the sha256 of its own bytes:
     README.md            overview: exporter version, counts, packages, diagrams, stereotypes
     LEDGER.md            compact listing, one line per item: packages, diagrams, requirements
@@ -555,6 +556,11 @@ everything it shows is inside the file, compressed.
   the related items. Its source is shown too, and the generated summaries about it, marked as
   such.
 - **Linking:** `search.html#q=REQ-1` opens the page with that search.
+- **Browsing by subject:** with nothing typed, the page lists the models; choose one to see its
+  diagrams in subjects, and choose how they are split (see "Subjects", below).
+- **Results by subject:** a search's results come grouped by subject, each group led by its best
+  result, with the rest a click away. A diagram held by several versions of a model shows once,
+  with how many versions hold it. "Group by subject" turns this off.
 
 SharePoint downloads HTML files rather than showing them, so readers save the page and open the
 saved copy. Opened from inside a zip without extracting it first, it says so.
@@ -571,9 +577,28 @@ saved copy. Opened from inside a zip without extracting it first, it says so.
 | `Identifiers` | Every id, and each place it appears, across models |
 | `Elements` | Elements with a name or documentation |
 | `Relationships` | Each relationship, as the pages word it |
-| `Diagrams` | Diagrams, with their generated descriptions |
+| `Diagrams` | Diagrams, with their subject and their generated descriptions |
+| `Subjects` | Each model's diagrams by subject, a row per view, subject and diagram: filter Model and View |
 | `Summaries` | Generated summaries, marked with the model that wrote them |
 | `Projects` | Each model: its source, metadata and counts |
+
+**Subjects.** Searches can return hundreds of diagrams on one subject. To find the different things
+a corpus covers instead, each model's diagrams are split into a few subjects, several ways
+(`docs/design/subjects.md`, ADR-0031):
+- **Versions of a model** are taken together (see "Versions and removal"): a diagram that several
+  hold is one diagram.
+- **With the LLM,** the text model proposes about three ways to split each model, each on its own
+  principle (by part of the system, by engineering activity, by kind of concern, say), and puts
+  each diagram in a subject of each. This costs a request for the proposal and about one for
+  every 10 diagrams; stored answers make later runs free.
+- **Without it,** or when the proposal fails, diagrams are grouped by the elements they share,
+  and labelled by their distinctive words. Diagrams the LLM gave no answer for wait under "Not
+  sorted yet" until the next run asks again.
+- **By package** is always there, as the model has it.
+
+A panel of three AI judges preferred the LLM's subjects in every comparison, mostly for their
+labels; how natural they are on real models is for their readers to say
+(`docs/research/subjects-2026-10-07.md`). `status` says how many models have their subjects.
 
 **Sharing it.** Upload the workbook to SharePoint, where Excel for the web opens it in the
 browser (up to 100 MB), or share it as a file for desktop Excel. Long text is cut in its

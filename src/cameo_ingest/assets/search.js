@@ -488,6 +488,13 @@ if (typeof document !== "undefined") {
     }
   }
 
+  // What a diagram is about: its generated description, when the tree has one; else nothing.
+  function aboutOf(doc) {
+    const it = state.index.items[doc];
+    const s = (state.summaries.get(it.p + "\u0000" + it.k) || [])[0];
+    return s === undefined ? "" : state.index.items[s].x || "";
+  }
+
   const viewOf = (fi) => state.viewOf.get(fi) || state.subjects.families[fi].dv;
 
   // A group of results: its subject, its model when the page has several, its best few, and the rest on request.
@@ -568,7 +575,7 @@ if (typeof document !== "undefined") {
       const fill = () => {
         body.replaceChildren(...s.keys.map((k) => state.byKey.get(f.k[k] + "\u0000" + k)).filter((d) => d !== undefined)
           .sort((a, b) => (state.index.items[a].n || "").localeCompare(state.index.items[b].n || ""))
-          .map((doc) => resultRow({ doc }, [])));
+          .map((doc) => resultRow({ doc }, [], aboutOf(doc))));
       };
       head.addEventListener("click", (e) => {
         e.preventDefault();
@@ -585,7 +592,8 @@ if (typeof document !== "undefined") {
     return it.kd || it.t;
   }
 
-  function resultRow(h, terms) {
+  // A result's row; `text` in place of the snippet's source (browsing shows what a diagram is about).
+  function resultRow(h, terms, text) {
     const it = state.index.items[h.doc];
     const row = el("a", "result");
     row.href = "#d" + h.doc;
@@ -594,7 +602,7 @@ if (typeof document !== "undefined") {
     if (it.id && !(it.n || "").includes(it.id)) head.append(el("span", "result-id", it.id));
     row.append(head, el("div", "result-where", `${state.projects[it.p].label}${it.w ? " · " + it.w : ""}`));
     const snip = el("div", "result-snippet");
-    for (const piece of Engine.snippet(it.x || it.c || "", terms)) snip.append(piece.mark ? el("mark", null, piece.text) : piece.text);
+    for (const piece of Engine.snippet(text !== undefined ? text : it.x || it.c || "", terms)) snip.append(piece.mark ? el("mark", null, piece.text) : piece.text);
     row.append(snip);
     return row;
   }

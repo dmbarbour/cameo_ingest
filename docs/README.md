@@ -27,6 +27,8 @@ whoever maintains it.
   rules, and validation on the tree's own sketches.
 - [versions](design/versions.md): fingerprints, groups of versions, and removal.
 - [exports](design/exports.md): the catalog, the workbook, the search page, and their scale.
+- [subjects](design/subjects.md): families of versions, the views of their diagrams by subject, and
+  when they are computed.
 - [evaluation](design/evaluation.md): how retrieval is measured, and how two trees are compared.
 
 ## Conventions

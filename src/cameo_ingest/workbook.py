@@ -107,6 +107,7 @@ def write_workbook(path: Path, projects: Iterable[ProjectCatalog], version: str,
                 for i in f["diagrams"].get(key, []):
                     suggested[f["tokens"][i], key] = s["label"]
     names: dict[tuple[str, str], str] = {}
+    labels: dict[str, str] = {}
     path.parent.mkdir(parents=True, exist_ok=True)
     book = xlsxwriter.Workbook(str(path), {"constant_memory": True, "strings_to_formulas": False,
                                            "strings_to_urls": False, "strings_to_numbers": False,
@@ -123,12 +124,13 @@ def write_workbook(path: Path, projects: Iterable[ProjectCatalog], version: str,
     for p in projects:
         n_projects += 1
         _project_rows(p, sheets, suggested)
+        labels[p.header.get("token") or ""] = p.label
         for r in p.records:
             if r["type"] == "diagram":
                 names[p.header.get("token") or "", r["key"]] = r["name"]
         left_out.update(p.header.get("left_out", {}))
         tables.update(p.header.get("tables", {}))
-    _subject_rows(families, names, sheets["Subjects"])
+    _subject_rows(families, names, labels, sheets["Subjects"])
     for s in sheets.values():
         s.close()
     rows = {name: s.row for name, s in sheets.items()}
@@ -138,9 +140,12 @@ def write_workbook(path: Path, projects: Iterable[ProjectCatalog], version: str,
     return rows
 
 
-def _subject_rows(families: list[dict[str, Any]], names: dict[tuple[str, str], str], sheet: _Sheet) -> None:
-    """A row per model, view, subject and diagram, the suggested view first."""
-    for f in families:
+def _subject_rows(families: list[dict[str, Any]], names: dict[tuple[str, str], str], labels: dict[str, str],
+                  sheet: _Sheet) -> None:
+    """A row per model (by its newest project's label: rivals often share a file name), view, subject
+    and diagram, the suggested view first."""
+    for f in sorted(families, key=lambda f: (labels.get(f["tokens"][0], f["name"]).lower(), f["tokens"])):
+        model = labels.get(f["tokens"][0], f["name"])
         for v in sorted(f["views"], key=lambda v: v["id"] != f["default"]):
             title = v["title"] + (" (suggested)" if v["id"] == f["default"] else "")
             subjects = [(s["label"], s.get("holds", ""), s["diagrams"]) for s in v["subjects"]]
@@ -155,7 +160,7 @@ def _subject_rows(families: list[dict[str, Any]], names: dict[tuple[str, str], s
                     if name is not None:
                         rows.append((name, len(held)))
                 for name, n in sorted(rows):
-                    sheet.add({"Model": f["name"], "View": title, "Subject": label, "What it holds": holds,
+                    sheet.add({"Model": model, "View": title, "Subject": label, "What it holds": holds,
                                "Diagram": name, "Versions": n}, LIMITS["search"])
 
 

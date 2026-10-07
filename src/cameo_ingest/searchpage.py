@@ -24,7 +24,8 @@ Relationship records stay in the workbook: the page shows them on their items.
 The families' subjects (`subjects.json`, ADR-0031), when the tree has them, follow in one block,
 `data-subjects`, gzipped JSON: a list of families, each
 
-    n name   p its projects (page ids), newest first   dv the default view's id
+    n its newest project's label (rivals often share a file name)   p its projects (page ids), newest
+    first   dv the default view's id
     k {diagram key: the page id of the newest project holding it}   vs {diagram key: versions}, if over 1
     v views: [{id, t title, kd kind, s subjects [{l label, h what it holds, d diagram keys}], u unsorted keys}]
 """
@@ -110,9 +111,9 @@ def page_items(p: ProjectCatalog, sketch_ids: dict[str, list[str]] | None = None
     return out
 
 
-def page_subjects(families: list[dict[str, Any]], pids: dict[str, int]) -> list[dict[str, Any]]:
-    """`subjects.json`'s families for the page: tokens as page ids; families none of whose projects is
-    in the page are left out."""
+def page_subjects(families: list[dict[str, Any]], pids: dict[str, int], labels: dict[str, str]) -> list[dict[str, Any]]:
+    """`subjects.json`'s families for the page, by label: tokens as page ids; families none of whose
+    projects is in the page are left out."""
     out = []
     for f in families:
         tokens = [t for t in f["tokens"] if t in pids]
@@ -133,8 +134,9 @@ def page_subjects(families: list[dict[str, Any]], pids: dict[str, int]) -> list[
             if v.get("unsorted"):
                 view["u"] = [d for d in v["unsorted"] if d in k]
             views.append(view)
-        out.append({"n": f["name"], "p": [pids[t] for t in tokens], "dv": f["default"], "k": k, "vs": vs, "v": views})
-    return out
+        out.append({"n": labels.get(tokens[0], f["name"]), "p": [pids[t] for t in tokens], "dv": f["default"], "k": k,
+                    "vs": vs, "v": views})
+    return sorted(out, key=lambda f: (f["n"].lower(), f["p"]))
 
 
 def write_search_page(path: Path, projects: Iterable[ProjectCatalog], version: str,
@@ -144,10 +146,12 @@ def write_search_page(path: Path, projects: Iterable[ProjectCatalog], version: s
     blocks: list[tuple[str, int, str]] = []
     pictures: list[tuple[str, str, str]] = []
     pids: dict[str, int] = {}
+    labels: dict[str, str] = {}
     n_items = 0
     for pid, p in enumerate(projects):
         if p.header.get("token"):
             pids[p.header["token"]] = pid
+            labels[p.header["token"]] = p.label
         sketch_ids: dict[str, list[str]] = {}
         for r in p.records:
             if r["type"] == "diagram" and (found := sketch_blocks(p, pid, r, sketches)):
@@ -165,7 +169,7 @@ def write_search_page(path: Path, projects: Iterable[ProjectCatalog], version: s
         f'<script type="application/octet-stream" data-project="{html.escape(label)}" data-items="{count}">'
         f"{b64}</script>\n<script>__read({i},{n})</script>"
         for i, (label, count, b64) in enumerate(blocks, 1))
-    fams = page_subjects((subjects or {}).get("families", []), pids)
+    fams = page_subjects((subjects or {}).get("families", []), pids, labels)
     if fams:
         raw = json.dumps(fams, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
         data_html += ('\n<script type="application/octet-stream" data-subjects="1">'

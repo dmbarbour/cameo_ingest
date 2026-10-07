@@ -111,6 +111,7 @@ def test_page_in_a_browser(tmp_path):
     assert seen["tooltip"].endswith("Brine Valve K7")
     assert seen["heading"] == "Brine Valve K7" and seen["hash"].startswith("#d")
     assert seen["zoomed"] is True and seen["errors"] == []
+    assert seen["models"] == 1 and seen["views"] >= 1 and seen["subjects"] >= 1 and seen["opened"] >= 1  # browsing
 
 
 @needs_node
