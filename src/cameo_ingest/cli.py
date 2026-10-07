@@ -304,9 +304,12 @@ def export_catalog(out: Path, args: argparse.Namespace) -> int:
                   + ", ".join(f"{n:,} {k}" for k, n in rows.items()))
         if args.search_page:
             missing.clear()
+            from . import subjects
+
+            sub = (out / subjects.FILE)
             counts = searchpage.write_search_page(
                 args.search_page, catalog.tree_catalogs(state, out, missing, Progress(), chunks=True), __version__,
-                args.sketches)
+                args.sketches, json.loads(sub.read_text(encoding="utf-8")) if sub.is_file() else None)
             print(f"wrote {args.search_page} ({args.search_page.stat().st_size / 1e6:.1f} MB): "
                   f"{counts['items']:,} items from {counts['projects']:,} models"
                   + (f", {counts['sketches']:,} sketches ({counts['sketch bytes'] / 1e6:.1f} MB)"

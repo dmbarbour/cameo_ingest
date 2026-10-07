@@ -211,7 +211,81 @@ const Engine = (() => {
     return JSON.parse(await decodeText(base64));
   }
 
-  return { tokens, parse, Field, Index, snippet, mark, decode, decodeText };
+  // Subjects (plan SB, ADR-0031): which subject of a family's view an item is in, and search results
+  // grouped by subject, groups in the order of their best result, an item held by several versions
+  // of a model once.
+  const UNSORTED = -1;
+  class Subjects {
+    constructor(families) {
+      this.families = families || [];
+      this.familyOf = new Map(); // page id of a project -> its family
+      this.where = this.families.map(() => new Map()); // per family: view id -> Map(diagram key -> subject)
+      this.families.forEach((f, fi) => {
+        for (const pid of f.p) this.familyOf.set(pid, fi);
+        for (const v of f.v) {
+          const m = new Map();
+          v.s.forEach((s, si) => { for (const k of s.d) m.set(k, si); });
+          for (const k of v.u || []) m.set(k, UNSORTED);
+          this.where[fi].set(v.id, m);
+        }
+      });
+    }
+
+    view(fi, vid) {
+      const f = this.families[fi];
+      return f.v.find((v) => v.id === vid) || f.v.find((v) => v.id === f.dv) || f.v[0];
+    }
+
+    // The subject an item is in: a diagram's own; any other item's, where most of the diagrams that
+    // show it are (the first such subject on a tie). null: shown in no diagram the view sorts.
+    place(it, fi, vid) {
+      const m = this.where[fi].get(this.view(fi, vid).id);
+      if (it.t === "diagram") return m.has(it.k) ? m.get(it.k) : null;
+      const votes = new Map();
+      for (const [k] of it.d || []) if (m.has(k)) votes.set(m.get(k), (votes.get(m.get(k)) || 0) + 1);
+      let best = null, most = 0;
+      for (const [s, n] of votes) if (n > most || (n === most && s < best)) { best = s; most = n; }
+      return best;
+    }
+
+    label(fi, vid, s) {
+      if (s === null) return "Not on a sorted diagram";
+      if (s === UNSORTED) return "Not sorted yet";
+      return this.view(fi, vid).s[s].l;
+    }
+
+    // hits, best first, as groups: {fi, s, label, holds, docs, versions: Map(doc -> versions)}; an item
+    // outside every family is grouped by its model (fi null, p its page id).
+    group(hits, items, viewOf) {
+      const out = [], byKey = new Map(), first = new Map();
+      for (const h of hits) {
+        const it = items[h.doc];
+        const fi = this.familyOf.has(it.p) ? this.familyOf.get(it.p) : null;
+        const same = (fi === null ? "p" + it.p : "f" + fi) + "\u0000" + it.t + "\u0000" + it.k;
+        if (first.has(same)) { // the same item in another version: counted, not repeated
+          const [g, doc] = first.get(same);
+          g.versions.set(doc, (g.versions.get(doc) || 1) + 1);
+          continue;
+        }
+        let gk, g;
+        if (fi === null) {
+          gk = "p" + it.p;
+          g = byKey.get(gk) || { fi: null, p: it.p, s: null, label: null, docs: [], versions: new Map() };
+        } else {
+          const vid = viewOf(fi), s = this.place(it, fi, vid), v = this.view(fi, vid);
+          gk = fi + "/" + v.id + "/" + s;
+          g = byKey.get(gk) || { fi, s, label: this.label(fi, vid, s), holds: s !== null && s >= 0 ? v.s[s].h || "" : "",
+                                 docs: [], versions: new Map() };
+        }
+        if (!byKey.has(gk)) { byKey.set(gk, g); out.push(g); }
+        g.docs.push(h.doc);
+        first.set(same, [g, h.doc]);
+      }
+      return out;
+    }
+  }
+
+  return { tokens, parse, Field, Index, snippet, mark, decode, decodeText, Subjects };
 })();
 
 if (typeof module !== "undefined") module.exports = Engine;
@@ -232,7 +306,9 @@ if (typeof document !== "undefined") {
   const pause = () => new Promise((r) => setTimeout(r, 0));
   const SLICE_MS = 30, STALL_MS = 10000;
 
-  const state = { index: new Engine.Index(), projects: [], byKey: new Map(), summaries: new Map(), cancelled: false };
+  const state = { index: new Engine.Index(), projects: [], byKey: new Map(), summaries: new Map(), cancelled: false,
+                  subjects: new Engine.Subjects([]), viewOf: new Map(), browse: null, open: new Set() };
+  const SHOWN = 3; // results shown a group before "more"
 
   // While the file is still being read: a small script after each data block calls this.
   window.__read = (i, n) => {
@@ -343,6 +419,8 @@ if (typeof document !== "undefined") {
     await pause();
     const t = now();
     state.index.finish();
+    const sb = document.querySelector('script[type="application/octet-stream"][data-subjects]');
+    if (sb) state.subjects = new Engine.Subjects(await Engine.decode(sb.textContent));
     P.time("finish", now() - t);
     P.update("finish", 1, 1, "done");
     P.stop();
@@ -366,15 +444,17 @@ if (typeof document !== "undefined") {
       timer = setTimeout(run, 150);
     };
     $("q").addEventListener("input", go);
-    $("project").addEventListener("change", run);
+    $("project").addEventListener("change", () => { state.browse = null; run(); });
     $("type").addEventListener("change", run);
+    if (state.subjects.families.length) {
+      $("grouping").hidden = false;
+      $("grouped").addEventListener("change", run);
+    }
     window.addEventListener("hashchange", detail);
     $("q").focus();
     const q = /^#q=(.*)$/.exec(location.hash); // a link can carry a search: page.html#q=REQ-1
-    if (q) {
-      $("q").value = decodeURIComponent(q[1]);
-      run();
-    }
+    if (q) $("q").value = decodeURIComponent(q[1]);
+    run();
     detail();
   }
 
@@ -386,6 +466,7 @@ if (typeof document !== "undefined") {
     list.replaceChildren();
     if (!q.trim()) {
       info.textContent = "";
+      browse(list);
       return;
     }
     const t = now();
@@ -398,7 +479,105 @@ if (typeof document !== "undefined") {
       ? `${fmt(res.total)} found (${fmt(res.all)} with every word) in ${(ms / 1000).toFixed(2)} s` +
         (res.total > res.hits.length ? `; the first ${res.hits.length} shown` : "")
       : `Nothing found (${(ms / 1000).toFixed(2)} s)`;
-    for (const h of res.hits) list.append(resultRow(h, res.terms));
+    if (state.subjects.families.length && $("grouped").checked) {
+      const groups = state.subjects.group(res.hits, state.index.items, viewOf);
+      info.textContent += `, in ${count(groups.length, "subject")}`;
+      for (const g of groups) list.append(groupBox(g, res.terms));
+    } else {
+      for (const h of res.hits) list.append(resultRow(h, res.terms));
+    }
+  }
+
+  const viewOf = (fi) => state.viewOf.get(fi) || state.subjects.families[fi].dv;
+
+  // A group of results: its subject, its model when the page has several, its best few, and the rest on request.
+  function groupBox(g, terms) {
+    const box = el("section", "group");
+    const head = el("div", "group-head");
+    const fam = g.fi === null ? null : state.subjects.families[g.fi];
+    head.append(el("span", "group-label", g.label || state.projects[g.p].label));
+    if (fam && (g.label || "") && state.subjects.families.length > 1) head.append(el("span", "group-model", fam.n));
+    head.append(el("span", "group-count", count(g.docs.length, "result")));
+    if (g.holds) head.title = g.holds;
+    box.append(head);
+    const rows = g.docs.map((doc) => {
+      const r = resultRow({ doc }, terms);
+      const n = g.versions.get(doc);
+      if (n) r.querySelector(".result-where").append(` · in ${n} versions`);
+      return r;
+    });
+    box.append(...rows.slice(0, SHOWN));
+    if (rows.length > SHOWN) {
+      const more = el("button", "more", `${rows.length - SHOWN} more`);
+      more.type = "button";
+      more.addEventListener("click", () => more.replaceWith(...rows.slice(SHOWN)));
+      box.append(more);
+    }
+    return box;
+  }
+
+  // With no search: the models' subjects to browse. A model, then a view of it, then its subjects,
+  // each opening its diagrams.
+  function browse(list) {
+    const sb = state.subjects;
+    if (!sb.families.length) {
+      list.append(el("p", "hint", "Search above; choose a result to read it here."));
+      return;
+    }
+    const chosen = $("project").value === "" ? state.browse : sb.familyOf.get(Number($("project").value));
+    if (chosen === undefined || chosen === null) {
+      list.append(el("p", "browse-lead", "Search above, or browse a model by subject:"));
+      sb.families.forEach((f, fi) => {
+        const row = el("a", "result");
+        row.href = "#";
+        row.addEventListener("click", (e) => { e.preventDefault(); state.browse = fi; run(); });
+        const head = el("div", "result-head");
+        head.append(el("span", "result-name", f.n));
+        row.append(head, el("div", "result-where", `${count(Object.keys(f.k).length, "diagram")}` +
+          (f.p.length > 1 ? `, ${f.p.length} versions` : "") + `, ${count(f.v.length, "view")}`));
+        list.append(row);
+      });
+      return;
+    }
+    const f = sb.families[chosen], v = sb.view(chosen, viewOf(chosen));
+    const top = el("div", "browse-head");
+    if ($("project").value === "") {
+      const back = el("a", null, "All models");
+      back.href = "#";
+      back.addEventListener("click", (e) => { e.preventDefault(); state.browse = null; run(); });
+      top.append(back, " › ");
+    }
+    top.append(el("strong", null, f.n));
+    const pick = el("select");
+    pick.setAttribute("aria-label", "View");
+    for (const w of f.v) pick.append(new Option(w.t + (w.id === f.dv ? " (suggested)" : ""), w.id, false, w.id === v.id));
+    pick.addEventListener("change", () => { state.viewOf.set(chosen, pick.value); run(); });
+    top.append(" ", pick);
+    list.append(top);
+    const subjects = v.s.map((s, si) => ({ label: s.l, holds: s.h || "", keys: s.d, si }));
+    if (v.u && v.u.length) subjects.push({ label: "Not sorted yet", holds: "The LLM gave no answer for these; the next run asks again.",
+                                          keys: v.u, si: -1 });
+    for (const s of subjects) {
+      const box = el("section", "group");
+      const head = el("a", "group-head");
+      head.href = "#";
+      head.append(el("span", "group-label", s.label), el("span", "group-count", count(s.keys.length, "diagram")));
+      if (s.holds) head.title = s.holds;
+      const id = `${chosen}/${v.id}/${s.si}`;
+      const body = el("div");
+      const fill = () => {
+        body.replaceChildren(...s.keys.map((k) => state.byKey.get(f.k[k] + "\u0000" + k)).filter((d) => d !== undefined)
+          .sort((a, b) => (state.index.items[a].n || "").localeCompare(state.index.items[b].n || ""))
+          .map((doc) => resultRow({ doc }, [])));
+      };
+      head.addEventListener("click", (e) => {
+        e.preventDefault();
+        if (state.open.has(id)) { state.open.delete(id); body.replaceChildren(); } else { state.open.add(id); fill(); }
+      });
+      if (state.open.has(id)) fill();
+      box.append(head, body);
+      list.append(box);
+    }
   }
 
   function badge(it) {
@@ -469,6 +648,11 @@ if (typeof document !== "undefined") {
     if (it.t === "summary" && it.of) fact("Of", link(pid, it.of[0], it.of[1]));
     fact("Where", it.w);
     fact("Model", project.label);
+    const fi = state.subjects.familyOf.get(pid);
+    if (fi !== undefined && it.t !== "summary") {
+      const vid = viewOf(fi), s = state.subjects.place(it, fi, vid);
+      if (s !== null) fact("Subject", `${state.subjects.label(fi, vid, s)} (${state.subjects.view(fi, vid).t})`);
+    }
     fact("Source", (project.sources || []).map((s) => s.path).join("; "));
     const meta = (project.sources || []).flatMap((s) => Object.entries(s.metadata || {}).map(([k, v]) => `${k}=${v}`));
     fact("Metadata", [...new Set(meta)].join("; "));

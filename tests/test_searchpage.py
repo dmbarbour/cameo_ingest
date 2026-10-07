@@ -111,3 +111,14 @@ def test_page_in_a_browser(tmp_path):
     assert seen["tooltip"].endswith("Brine Valve K7")
     assert seen["heading"] == "Brine Valve K7" and seen["hash"].startswith("#d")
     assert seen["zoomed"] is True and seen["errors"] == []
+
+
+@needs_node
+def test_subjects_in_the_page(page):
+    """The families' subjects travel with the page; results group by subject, best first, every
+    result in one group (plan SB-07c)."""
+    assert node(str(JS / "subjects.js")).strip() == "ok"
+    html = page.read_text(encoding="utf-8")
+    assert 'data-subjects="1"' in html and 'id="grouped"' in html
+    out = json.loads(node(str(JS / "subjects.js"), str(page), "signal"))
+    assert out["families"] >= 1 and out["hits"] == out["grouped"] and out["groups"] > 1 and out["ordered"]

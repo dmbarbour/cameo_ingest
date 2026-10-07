@@ -1,0 +1,55 @@
+// Subjects in the page (plan SB-07c): node subjects.js [PAGE.html QUERY]
+// Without arguments, checks the engine on a made-up family; with a page, groups a search of it
+// and prints {"hits", "grouped", "groups", "families"}.
+const fs = require("fs");
+const assert = require("assert");
+const Engine = require("../../src/cameo_ingest/assets/search.js");
+
+if (process.argv.length < 4) {
+  // One family of two versions (page ids 0, newest, and 1) and a model alone (2).
+  const fams = [{ n: "M", p: [0, 1], dv: "ways-1", k: { d1: 0, d2: 0, d3: 1 }, vs: { d1: 2 },
+                  v: [{ id: "ways-1", t: "By part", kd: "llm", s: [{ l: "Pumps", h: "the pumps", d: ["d1"] }, { l: "Valves", d: ["d2"] }],
+                        u: ["d3"] },
+                      { id: "packages", t: "By package", kd: "packages", s: [{ l: "All", d: ["d1", "d2", "d3"] }] }] }];
+  const sb = new Engine.Subjects(fams);
+  const items = [
+    { p: 0, t: "diagram", k: "d1" }, { p: 1, t: "diagram", k: "d1" }, // the same diagram in two versions
+    { p: 0, t: "element", k: "e1", d: [["d2", "D2"], ["d1", "D1"], ["d2", "D2"]] }, // mostly on Valves
+    { p: 0, t: "diagram", k: "d3" }, // unsorted
+    { p: 0, t: "element", k: "e2", d: [] }, // on no diagram
+    { p: 2, t: "element", k: "x" }, // outside every family
+  ];
+  assert.strictEqual(sb.place(items[0], 0, "ways-1"), 0);
+  assert.strictEqual(sb.place(items[2], 0, "ways-1"), 1);
+  assert.strictEqual(sb.place(items[3], 0, "ways-1"), -1);
+  assert.strictEqual(sb.place(items[4], 0, "ways-1"), null);
+  assert.strictEqual(sb.place(items[2], 0, "packages"), 0);
+  const groups = sb.group(items.map((_, doc) => ({ doc })), items, () => "ways-1");
+  assert.deepStrictEqual(groups.map((g) => g.label), ["Pumps", "Valves", "Not sorted yet", "Not on a sorted diagram", null]);
+  assert.deepStrictEqual(groups[0].docs, [0]); // its copy in the older version, counted
+  assert.strictEqual(groups[0].versions.get(0), 2);
+  assert.strictEqual(groups[0].holds, "the pumps");
+  assert.strictEqual(groups[4].p, 2);
+  console.log("ok");
+  return;
+}
+
+(async () => {
+  const html = fs.readFileSync(process.argv[2], "utf8");
+  const blocks = [...html.matchAll(/<script type="application\/octet-stream" data-project=[^>]*>([^<]*)<\/script>/g)];
+  const ix = new Engine.Index();
+  for (const [i, b] of blocks.entries()) {
+    const data = await Engine.decode(b[1]);
+    for (const it of data.items) { it.p = i; ix.add(it); }
+  }
+  ix.finish();
+  const sbBlock = html.match(/<script type="application\/octet-stream" data-subjects="1">([^<]*)<\/script>/);
+  const sb = new Engine.Subjects(sbBlock ? await Engine.decode(sbBlock[1]) : []);
+  const res = ix.search(process.argv[3]);
+  const groups = sb.group(res.hits, ix.items, (fi) => sb.families[fi].dv);
+  const grouped = groups.reduce((n, g) => n + g.docs.length + [...g.versions.values()].reduce((a, v) => a + v - 1, 0), 0);
+  const order = groups.map((g) => res.hits.findIndex((h) => h.doc === g.docs[0]));
+  console.log(JSON.stringify({ hits: res.hits.length, grouped, groups: groups.length, families: sb.families.length,
+                               ordered: order.every((x, i) => i === 0 || x > order[i - 1]),
+                               labels: groups.slice(0, 5).map((g) => g.label) }));
+})();
