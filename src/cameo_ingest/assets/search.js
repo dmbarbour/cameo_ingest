@@ -305,6 +305,28 @@ const Engine = (() => {
     return out;
   }
 
+  // Copies of one element in several models, shown once (plan SH): hits, best first, keep the first
+  // copy of each element held elsewhere (an "e" match in its `al`); returns {hits, copies: Map(doc ->
+  // how many models hold it)}. Matches by requirement Id or by name are other elements: kept apart.
+  function collapseShared(hits, items) {
+    const seen = new Map(), copies = new Map(), out = [];
+    for (const h of hits) {
+      const it = items[h.doc];
+      const shared = (it.al || []).some((a) => a[2] === "e");
+      if (!shared) { out.push(h); continue; }
+      const key = it.t + "\u0000" + it.k;
+      if (seen.has(key)) {
+        const doc = seen.get(key);
+        copies.set(doc, copies.get(doc) + 1);
+        continue;
+      }
+      seen.set(key, h.doc);
+      copies.set(h.doc, 1);
+      out.push(h);
+    }
+    return { hits: out, copies };
+  }
+
   // The model chooser (plan LN-07): models grouped by folder, by lineage, or listed by name or by
   // date, and what each one is to the others. `projects`: the page's projects, with their facts.
   const HOW = { derived: "derived by others from", "built-on": "built on by others in", root: "shares a root with",
@@ -397,7 +419,7 @@ const Engine = (() => {
   }
 
   return { tokens, parse, Field, Index, snippet, mark, decode, decodeText, Subjects, chooserGroups, lineageNote, folderOf,
-           commonFolder, tagPieces };
+           commonFolder, tagPieces, collapseShared };
 })();
 
 if (typeof module !== "undefined") module.exports = Engine;
@@ -589,12 +611,14 @@ if (typeof document !== "undefined") {
       ? `${fmt(res.total)} found (${fmt(res.all)} with every word) in ${(ms / 1000).toFixed(2)} s` +
         (res.total > res.hits.length ? `; the first ${res.hits.length} shown` : "")
       : `Nothing found (${(ms / 1000).toFixed(2)} s)`;
+    const shared = Engine.collapseShared(res.hits, state.index.items);
+    state.copies = shared.copies;
     if (state.subjects.families.length && $("grouped").checked) {
-      const groups = state.subjects.group(res.hits, state.index.items, viewOf);
+      const groups = state.subjects.group(shared.hits, state.index.items, viewOf);
       info.textContent += `, in ${count(groups.length, "subject")}`;
       for (const g of groups) list.append(groupBox(g, res.terms));
     } else {
-      for (const h of res.hits) list.append(resultRow(h, res.terms));
+      for (const h of shared.hits) list.append(resultRow(h, res.terms));
     }
   }
 
@@ -802,7 +826,9 @@ if (typeof document !== "undefined") {
     const head = el("div", "result-head");
     head.append(el("span", "badge", badge(it)), el("span", "result-name", it.n || it.k));
     if (it.id && !(it.n || "").includes(it.id)) head.append(el("span", "result-id", it.id));
-    row.append(head, el("div", "result-where", `${state.projects[it.p].label}${it.w ? " · " + it.w : ""}`));
+    const n = state.copies && state.copies.get(h.doc);
+    row.append(head, el("div", "result-where", `${state.projects[it.p].label}${n > 1 ? ` and ${n - 1} more` : ""}` +
+                                               `${it.w ? " · " + it.w : ""}`));
     const snip = el("div", "result-snippet");
     for (const piece of Engine.snippet(text !== undefined ? text : it.x || it.c || "", terms)) snip.append(piece.mark ? el("mark", null, piece.text) : piece.text);
     row.append(snip);
@@ -842,6 +868,36 @@ if (typeof document !== "undefined") {
       }
     }
     return pre;
+  }
+
+  // The same item in other models (plan SH): each a link, with how it matches and what differs there.
+  const MATCH = { e: "the same element", i: "the same requirement Id", n: "the same name" };
+  // What another model is to this one, by this one's kin note (`lineage.facts`).
+  const THERE = { derived: "this one was built on it", "built-on": "built on this one, by others",
+                  root: "a rival on a shared root", branches: "a branch beside this one" };
+  function alsoIn(it) {
+    const ul = el("ul", "relations");
+    for (const [tok, key, basis, diff] of it.al) {
+      const pid = state.projects.findIndex((p) => (p.token || "").slice(7, 23) === tok);
+      const li = el("li");
+      const d = pid < 0 ? undefined : state.byKey.get(pid + "\u0000" + key);
+      const name = pid < 0 ? tok : state.projects[pid].label;
+      if (d !== undefined) {
+        const a = el("a", null, name);
+        a.href = "#d" + d;
+        li.append(a);
+      } else {
+        li.append(el("span", null, name));
+      }
+      const here = state.projects[it.p], there = pid < 0 ? null : state.projects[pid];
+      const kin = there && (here.kn || []).find(([t]) => t === there.token);
+      const how = !there ? "" : kin ? THERE[kin[1]] || ""
+        : there.fm && there.fm === here.fm ? ((there.rk || 0) > (here.rk || 0) ? "an older version" : "a newer version") : "";
+      if (how) li.append(el("span", "phrase", ` (${how})`));
+      li.append(el("span", "phrase", ` ${MATCH[basis] || basis}: `), diff || "the same");
+      ul.append(li);
+    }
+    return ul;
   }
 
   // The number tags that a diagram's texts use: its own; a summary's, its diagram's.
@@ -896,6 +952,7 @@ if (typeof document !== "undefined") {
     if (it.m) fact("Generated by", `${it.m}; not part of the source model`);
     if (it.l) fact("Listed in", link(pid, it.l[0], it.l[1]));
     out.push(facts);
+    if (it.al && it.al.length) out.push(section("Also in", alsoIn(it)));
     if (it.sk && it.sk.length) out.push(section("Sketch", sketchBox(it)));
     const tags = tagsOf(it);
     if (it.x) out.push(section(it.t === "requirement" ? "Requirement text" : it.t === "summary" ? "Summary" : "Text",

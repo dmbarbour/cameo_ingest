@@ -568,6 +568,12 @@ everything it shows is inside the file, compressed.
 - **Linking:** `search.html#q=REQ-1` opens the page with that search.
 - **Browsing by subject:** with nothing typed, the page lists the models; choose one to see its
   diagrams in subjects, and choose how they are split (see "Subjects", below).
+- **The same item in other models:** an item's view lists **Also in**: each other model that holds
+  it (the same element, the same requirement Id, or the same name between related models), how
+  that model stands to this one (an older version, a rival on a shared root, ...), and what differs
+  there among what people edit (name, text, stereotypes and tagged values, relationships, members,
+  what a diagram shows, package), each a link. In results, an element held by several models
+  shows once, "and N more".
 - **Results by subject:** a search's results come grouped by subject, each group led by its best
   result, with the rest a click away. A diagram held by several versions of a model shows once,
   with how many versions hold it. "Group by subject" turns this off.
@@ -588,7 +594,9 @@ by:
   requirement's, where most of the diagrams that show it are;
 - **Coverage:** what relates to a requirement (satisfied, verified, refined, derived, traced),
   or "none";
-- **Shows** (a diagram's shapes) and **Diagrams** (where an element is shown).
+- **Shows** (a diagram's shapes) and **Diagrams** (where an element is shown);
+- **Also in:** the same item in other models, and what differs there; the **Shared** sheet lists
+  each such pair, with how they match and what differs (filter Differences to leave out "none").
 
 | Sheet | Holds |
 |---|---|
@@ -598,6 +606,7 @@ by:
 | `Elements` | Elements with a name or documentation |
 | `Relationships` | Each relationship, as the pages word it |
 | `Diagrams` | Diagrams, with what they show, their subject and their generated descriptions |
+| `Shared` | The same item in two models, a row a pair: how they match, and what differs |
 | `Subjects` | Each model's diagrams by subject, a row per view, subject and diagram: filter Model and View |
 | `Summaries` | Generated summaries, marked with the model that wrote them |
 | `Projects` | Each model: its source, metadata, save time, Cameo version, versions and lineage, and counts |

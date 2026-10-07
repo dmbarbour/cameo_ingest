@@ -48,6 +48,8 @@ def test_page_holds_the_catalog(page, fiction_tree, tmp_path):
     part = next(i for i in kois["items"] if i["k"] == "_kois_kois__p_brine_valve_k7")
     assert part["l"][0] == "_kois_kois" and "c" not in part  # a member borrows its owner's text, not a copy
     assert not any(i["t"] == "relationship" for d in data for i in d["items"])
+    reg = [i for d in data for i in d["items"] if i.get("id") == "RWT-REG-001"]  # in two proposals (plan SH)
+    assert len(reg) == 2 and all(any(a[2] == "i" for a in i["al"]) for i in reg)
     again = tmp_path / "again.html"
     assert cli(["export", "-o", str(fiction_tree), "--search-page", str(again)]) == 0
     assert again.read_bytes() == page.read_bytes()

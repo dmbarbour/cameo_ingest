@@ -11,7 +11,7 @@ plan yet is in `docs/roadmap.md`. When a plan is done, its content goes to `docs
 |---|---|---|
 | [Subjects for discovery](subjects-2026-10-06.md) | SB | CP1 to CP3 done (0.22.0); the maintainer's trial, then CP4 |
 | [Lineage of models, and choosing them](lineage-2026-10-07.md) | LN | CP1 to CP4 done (0.24.0); the maintainer's trial |
-| [The same item in several models, and how it differs](shared-items-2026-10-07.md) | SH | Drafted; for the maintainer's look |
+| [The same item in several models, and how it differs](shared-items-2026-10-07.md) | SH | CP1 and CP2 done (0.26.0); CP3 next |
 
 ## Archived
 

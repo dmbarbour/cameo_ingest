@@ -1,6 +1,6 @@
 # Plan: the same item in several models, and how it differs, 2026-10-07
 
-- **Status:** In progress: CP1 done; CP2 next.
+- **Status:** In progress: CP1 and CP2 done (0.26.0); CP3 next.
 - **Step prefix:** `SH`, so steps are `SH-01`, `SH-02` and so on.
 - **Addresses:** TR-004 (`docs/reviews/trial-2026-10-06.md`) and the roadmap's "Diffs, between
   versions and between rivals", which this plan takes up. The maintainer, 2026-10-07:
@@ -81,8 +81,8 @@ opening every model.
 |---|---|---|
 | SH-01 | **The index:** the matches by element id, by requirement Id, and by kind and name between related models; each copy's aspect digests; `shared.json`. Measured on the study tree and the synthetic bids: how many items, by basis, and how many of the name matches are noise. Tests. | Done: `shared.find` (in 8 s on the study tree, two passes over its catalogs); catalogs carry tagged values (`tagged`, not DiagramInfo's). Study tree: 50,890 links by element (TMT's versions and the fiction's), 1,046 differing; 32 by requirement Id (Riverbend's rivals), all differing; 16 by name, all real: TMT items re-made with new ids between versions. No noise seen. `tests/test_shared.py` |
 | SH-02 | **Differences:** for each shared item, what differs between its copies, by aspect; relationships lined up by id, else by name. Tests on the synthetic bids (built with known changes). | Done: `shared.differences`; the lineage corpus's bids now edit what they took (`EDITS`: a reworded requirement, a renamed pump, a satisfy added), and exactly those are found. Most frequent on the study tree: names 512, packages 424 (shown from where the paths part), relationships 362, text 148 |
-| SH-03 | **The search page:** "Also in", with differences and links; shared items once in results. Node and browser tests. | |
-| SH-04 | **The workbook:** the "Also in" column, and the Shared sheet. Tests. | |
+| SH-03 | **The search page:** "Also in", with differences and links; shared items once in results. Node and browser tests. | Done (0.26.0): items carry `al`; the item view's Also in (each model a link, how it stands to this one, the basis, what differs); `Engine.collapseShared` (one element held by several models, once); seen in Chrome on the synthetic bids. `tests/js/chooser.js`, `tests/test_searchpage.py` |
+| SH-04 | **The workbook:** the "Also in" column, and the Shared sheet. Tests. | Done (0.26.0): Also in on Requirements, Elements, Diagrams; the Shared sheet (copies elsewhere, and copies that differ). Study tree: 1,096 rows, the workbook 7.4 MB (from 7.1), the page 10.0 MB (from 9.6). A fix found there: summaries carry their item's key and aren't items. `tests/test_catalog.py` |
 | SH-05 | **Comparing two models:** a page in the tree for each related pair, and the exports' view of it. | |
 | SH-06 | **Docs and release:** an ADR, design/exports, README. | |
 

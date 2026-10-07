@@ -17,6 +17,8 @@ objects with short keys to keep the page small:
     m model (generated text)   of [key, label] (what a summary is of)   pt its module or parts
     sk the ids of a diagram's sketch blocks (`--sketches`), the whole diagram first
     tg a diagram's number tags {"n": element key}: the "[n]" in its text and its modules' (TR-005)
+    al its copies in other models (plan SH): [the other's token, 16 hex digits; its key; the basis,
+       "e" element, "i" requirement Id, "n" name; what differs, "" for nothing]
 
 Sketches, when asked for (plan KX-05), follow in blocks of their own, decoded only when their
 diagram is opened: `webp`, the tree's PNG sketches (and a large diagram's modules) re-encoded
@@ -85,8 +87,14 @@ def sketch_blocks(p: ProjectCatalog, pid: int, record: dict[str, Any], sketches:
     return [(f"s{pid}-{record['key']}-{i}", fmt, b64) for i, (fmt, b64) in enumerate(out)]
 
 
-def page_items(p: ProjectCatalog, sketch_ids: dict[str, list[str]] | None = None) -> list[dict[str, Any]]:
-    """The project's records as the page's items, each with its chunks' text."""
+BASIS = {"element": "e", "requirement id": "i", "name": "n"}
+
+
+def page_items(p: ProjectCatalog, sketch_ids: dict[str, list[str]] | None = None,
+               links: dict[tuple[str, str], list[Any]] | None = None) -> list[dict[str, Any]]:
+    """The project's records as the page's items, each with its chunks' text, and its copies in
+    other models (`shared.find`)."""
+    token = p.header.get("token") or ""
     out = []
     for r in p.records:
         t = r["type"]
@@ -112,6 +120,9 @@ def page_items(p: ProjectCatalog, sketch_ids: dict[str, list[str]] | None = None
                 it["sk"] = sketch_ids[r["key"]]
             if r.get("tags"):
                 it["tg"] = r["tags"]
+            if links and (found := links.get((token, r["key"]))):
+                it["al"] = [[lk.other.token.removeprefix("sha256:")[:16], lk.other.key, BASIS[lk.basis],
+                             "; ".join(lk.differences)] for lk in found]
         out.append({k: v for k, v in it.items() if v not in (None, "", [])})
     return out
 
@@ -146,7 +157,8 @@ def page_subjects(families: list[dict[str, Any]], pids: dict[str, int], labels: 
 
 def write_search_page(path: Path, projects: Iterable[ProjectCatalog], version: str,
                       sketches: str = "none", subjects: dict[str, Any] | None = None,
-                      facts: dict[str, dict[str, Any]] | None = None) -> dict[str, int]:
+                      facts: dict[str, dict[str, Any]] | None = None,
+                      links: dict[tuple[str, str], list[Any]] | None = None) -> dict[str, int]:
     """Write the page; returns its counts (projects, items, bytes of data, sketches). `subjects`:
     the tree's `subjects.json`, if any."""
     blocks: list[tuple[str, int, str]] = []
@@ -163,7 +175,7 @@ def write_search_page(path: Path, projects: Iterable[ProjectCatalog], version: s
             if r["type"] == "diagram" and (found := sketch_blocks(p, pid, r, sketches)):
                 sketch_ids[r["key"]] = [i for i, _, _ in found]
                 pictures += found
-        items = page_items(p, sketch_ids)
+        items = page_items(p, sketch_ids, links)
         n_items += len(items)
         fact = (facts or {}).get(p.header.get("token") or "", {})
         data = {"project": {"label": p.label, "name": p.header.get("name"), "token": p.header.get("token"),

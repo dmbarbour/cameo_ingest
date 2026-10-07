@@ -37,4 +37,16 @@ assert.deepStrictEqual(Engine.tagPieces("[1] «Block» Pump; [2] Valve; [9] ghos
   [{ text: "[1]", tag: "k1" }, { text: " «Block» Pump; " }, { text: "[2]", tag: "k2" }, { text: " Valve; [9] ghost." }]);
 assert.deepStrictEqual(Engine.tagPieces("no tags", undefined), [{ text: "no tags" }]);
 assert.deepStrictEqual(Engine.tagPieces("[1]", { 1: "k" }), [{ text: "[1]", tag: "k" }]);
+// Copies of one element in several models, shown once (plan SH).
+{
+  const items = [
+    { t: "requirement", k: "r1", p: 0, al: [["bbbb", "r1", "e", ""]] },
+    { t: "requirement", k: "r1", p: 1, al: [["aaaa", "r1", "e", ""]] },
+    { t: "requirement", k: "r9", p: 1, al: [["aaaa", "r8", "i", "text"]] }, // another element, the same Id
+    { t: "element", k: "x", p: 0 },
+  ];
+  const got = Engine.collapseShared([{ doc: 1 }, { doc: 0 }, { doc: 2 }, { doc: 3 }], items);
+  assert.deepStrictEqual(got.hits.map((h) => h.doc), [1, 2, 3]);
+  assert.strictEqual(got.copies.get(1), 2);
+}
 console.log("ok");

@@ -297,25 +297,27 @@ def export_catalog(out: Path, args: argparse.Namespace) -> int:
     state = State(out)
     missing: list[str] = []
     try:
-        from . import lineage, subjects
+        from . import lineage, shared, subjects
+        from .progress import QUIET
         from .provenance import ContentInfo
 
         sub = out / subjects.FILE
         families = json.loads(sub.read_text(encoding="utf-8")) if sub.is_file() else None
         facts = lineage.facts(state)  # each model's save time, version, family and kin (plan LN-06)
+        links = shared.find(lambda: catalog.tree_catalogs(state, out, [], QUIET), shared.related_by(facts))  # plan SH
         for r in state.written():
             if f"sha256:{r['content_sha256']}" in facts:
                 facts[f"sha256:{r['content_sha256']}"]["label"] = ContentInfo(r["content_sha256"], r["name"]).label
         if args.workbook:
             rows = workbook.write_workbook(args.workbook, catalog.tree_catalogs(state, out, missing, Progress()),
-                                           __version__, families, facts)
+                                           __version__, families, facts, links)
             print(f"wrote {args.workbook} ({args.workbook.stat().st_size / 1e6:.1f} MB): "
                   + ", ".join(f"{n:,} {k}" for k, n in rows.items()))
         if args.search_page:
             missing.clear()
             counts = searchpage.write_search_page(
                 args.search_page, catalog.tree_catalogs(state, out, missing, Progress(), chunks=True), __version__,
-                args.sketches, families, facts)
+                args.sketches, families, facts, links)
             print(f"wrote {args.search_page} ({args.search_page.stat().st_size / 1e6:.1f} MB): "
                   f"{counts['items']:,} items from {counts['projects']:,} models"
                   + (f", {counts['sketches']:,} sketches ({counts['sketch bytes'] / 1e6:.1f} MB)"

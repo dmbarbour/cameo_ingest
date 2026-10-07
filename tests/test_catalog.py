@@ -50,6 +50,16 @@ def test_catalog_summaries(tmp_path, fake_chat):
     summaries = [r for r in recs if r["type"] == "summary"]
     assert summaries and all(r["model"] == "m" and r["text"] and r["of"][0] == r["key"] for r in summaries)
     assert {r["label"] for r in summaries} >= {"Diagram description", "Summary"}
+    # a second version beside it: summaries carry their item's key, but aren't items (plan SH)
+    from fixture_model import MODEL
+    out2 = ingest(tmp_path / "v2", ("drone.mdzip", make_mdzip(MODEL.replace("A delivery drone.", "A heavier drone."))),
+                  args=("--vision-model", "m", "--text-model", "m", "--no-calibrate", "--no-preflight"))
+    assert cli(["add", "-o", str(out2), str(tmp_path / "drone.mdzip")]) == 0
+    assert cli(["run", "-o", str(out2), "--no-calibrate", "--no-preflight"]) == 0
+    assert cli(["export", "-o", str(out2), "--workbook", str(tmp_path / "w.xlsx"), "--search-page",
+                str(tmp_path / "s.html")]) == 0
+    shared = xlsx.sheets(tmp_path / "w.xlsx")["Shared"]
+    assert any("text" in (r[5] or "") for r in shared[1:])  # the drone's documentation changed
 
 
 def test_workbook_from_the_tree(fiction_tree, tmp_path, capsys):
@@ -60,7 +70,13 @@ def test_workbook_from_the_tree(fiction_tree, tmp_path, capsys):
     assert f"wrote {book}" in capsys.readouterr().out
     sheets = xlsx.sheets(book)
     assert list(sheets) == ["About", "Requirements", "Identifiers", "Elements", "Relationships",
-                            "Diagrams", "Subjects", "Summaries", "Projects"]
+                            "Diagrams", "Shared", "Subjects", "Summaries", "Projects"]
+    # the same requirement in the three Riverbend proposals, by its Id (plan SH)
+    shared = [dict(zip(sheets["Shared"][0], r, strict=False)) for r in sheets["Shared"][1:]]
+    assert any(r["Match"] == "the same requirement Id" for r in shared)
+    reqs = [dict(zip(sheets["Requirements"][0], r, strict=False)) for r in sheets["Requirements"][1:]]
+    reg = [r for r in reqs if r["Id"] == "RWT-REG-001"]
+    assert len(reg) == 2 and all(r.get("Also in") for r in reg)  # the customer and Halvorsen (Aquila cites it in text)
     subjects = [dict(zip(sheets["Subjects"][0], r, strict=False)) for r in sheets["Subjects"][1:]]
     assert subjects and {r["View"] for r in subjects} >= {"By shared elements (suggested)", "By package"}
     diagrams = [dict(zip(sheets["Diagrams"][0], r, strict=False)) for r in sheets["Diagrams"][1:]]

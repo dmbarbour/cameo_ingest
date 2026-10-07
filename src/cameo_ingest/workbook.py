@@ -39,15 +39,17 @@ SHEETS: dict[str, list[tuple[str, int]]] = {  # name -> columns (header, width)
                      ("Newest", 9), ("Package", 40), *PACKAGES, ("Subject", 30), ("Coverage", 24),
                      ("Satisfied by", 30), ("Verified by", 30), ("Derived from", 30), ("Derived into", 30),
                      ("Refined by", 30), ("Traces", 30), ("Other relationships", 40), ("Diagrams", 30),
-                     ("Source", 40)],
+                     ("Also in", 50), ("Source", 40)],
     "Identifiers": [("Id", 18), ("Project", 28), ("Newest", 9), ("Element", 40), ("How", 22), ("Snippet", 80)],
     "Elements": [("Kind", 16), ("Name", 40), ("Where", 50), ("Project", 28), ("Newest", 9), *PACKAGES,
-                 ("Subject", 30), ("Stereotypes", 20), ("Documentation", 80), ("Diagrams", 40), ("Listed in", 30)],
+                 ("Subject", 30), ("Stereotypes", 20), ("Documentation", 80), ("Diagrams", 40), ("Listed in", 30),
+                 ("Also in", 50)],
     "Relationships": [("Source", 40), ("Relationship", 18), ("Target", 40), ("Kind", 16), ("Project", 28),
                       ("Newest", 9)],
     "Diagrams": [("Name", 40), ("Type", 28), ("Owner", 40), ("Project", 28), ("Newest", 9), *PACKAGES,
                  ("Subject", 30), ("Elements shown", 10), ("Shows", 60), ("Table", 24),
-                 ("Description (generated)", 80)],
+                 ("Description (generated)", 80), ("Also in", 50)],
+    "Shared": [("Item", 40), ("Type", 14), ("Project", 28), ("Also in", 28), ("Match", 22), ("Differences", 80)],
     "Subjects": [("Model", 30), ("View", 30), ("Subject", 34), ("What it holds", 60), ("Diagram", 40),
                  ("Versions", 9)],
     "Summaries": [("Of", 40), ("What", 18), ("Project", 28), ("Newest", 9), ("Summary (generated)", 100),
@@ -111,8 +113,8 @@ class _Sheet:
 
 
 def write_workbook(path: Path, projects: Iterable[ProjectCatalog], version: str,
-                   subjects: dict[str, Any] | None = None, facts: dict[str, dict[str, Any]] | None = None
-                   ) -> dict[str, int]:
+                   subjects: dict[str, Any] | None = None, facts: dict[str, dict[str, Any]] | None = None,
+                   links: dict[tuple[str, str], list[Any]] | None = None) -> dict[str, int]:
     """Write the workbook; returns the rows per sheet. `subjects`: the tree's `subjects.json`, if any
     (ADR-0031): the Subjects sheet, and each diagram's subject in the suggested view."""
     families = (subjects or {}).get("families", [])
@@ -141,7 +143,7 @@ def write_workbook(path: Path, projects: Iterable[ProjectCatalog], version: str,
     n_projects = 0
     for p in projects:
         n_projects += 1
-        _project_rows(p, sheets, suggested, facts or {})
+        _project_rows(p, sheets, suggested, facts or {}, links or {})
         labels[p.header.get("token") or ""] = p.label
         for r in p.records:
             if r["type"] == "diagram":
@@ -209,11 +211,22 @@ def _packages(path: str | None) -> dict[str, str]:
     return {name: parts[i] for i, (name, _) in enumerate(PACKAGES) if i < len(parts)}
 
 
+MATCH = {"element": "the same element", "requirement id": "the same requirement Id", "name": "the same name"}
+
+
+def _also_in(found: list[Any], labels: dict[str, str]) -> str:
+    """The Also in cell (plan SH): each other model, how it matches, and what differs there."""
+    return "; ".join(f"{labels.get(lk.other.token, lk.other.token[7:15])} ("
+                     + ("the same" if not lk.differences else ", ".join(lk.differences)) + ")" for lk in found)
+
+
 def _project_rows(p: ProjectCatalog, sheets: dict[str, _Sheet], suggested: dict[tuple[str, str], str],
-                  facts: dict[str, dict[str, Any]]) -> None:
+                  facts: dict[str, dict[str, Any]], links: dict[tuple[str, str], list[Any]]) -> None:
     project, source = p.label, p.source_text()
     token = p.header.get("token") or ""
     newest = "no" if facts.get(token, {}).get("rank") else "yes"
+    labels = {t: f.get("label", t[7:15]) for t, f in facts.items()}
+    family = facts.get(token, {}).get("family")
     described = {r["key"]: r["text"] for r in p.records
                  if r["type"] == "summary" and r["label"] == "Diagram description" and "module" not in r}
     shows: dict[str, list[str]] = {}  # a diagram's key -> the names of what it shows
@@ -232,6 +245,14 @@ def _project_rows(p: ProjectCatalog, sheets: dict[str, _Sheet], suggested: dict[
 
     for r in p.records:
         t = r["type"]
+        found = links.get((token, r["key"]), []) if t in ("requirement", "element", "diagram", "package") else []
+        also = _also_in(found, labels) if found else None
+        for lk in found:  # the Shared sheet: copies elsewhere, and copies that differ (unchanged versions: Also in only)
+            if lk.differences or facts.get(lk.other.token, {}).get("family") != family:
+                sheets["Shared"].add({"Item": r["name"], "Type": t.capitalize(), "Project": project,
+                                      "Also in": labels.get(lk.other.token, lk.other.token[7:15]),
+                                      "Match": MATCH[lk.basis],
+                                      "Differences": "; ".join(lk.differences) or "none"}, LIMITS["search"])
         if t == "requirement":
             cols: dict[str, list[str]] = {}
             for _, kind, direction, phrase, _, other in r.get("relations", []):
@@ -244,21 +265,23 @@ def _project_rows(p: ProjectCatalog, sheets: dict[str, _Sheet], suggested: dict[
                                         "Subject": subject_of(r), "Coverage": ", ".join(covered) or "none",
                                         **{c: "; ".join(v) for c, v in cols.items()},
                                         "Diagrams": "; ".join(d[1] for d in r.get("diagrams", [])),
-                                        "Source": source}, LIMITS["requirements"])
+                                        "Also in": also, "Source": source}, LIMITS["requirements"])
         elif t == "element":
             sheets["Elements"].add({"Kind": r.get("kind"), "Name": r["name"], "Where": r.get("where"),
                                     "Project": project, "Newest": newest, **_packages(r.get("package")),
                                     "Subject": subject_of(r), "Stereotypes": ", ".join(r.get("stereotypes", [])),
                                     "Documentation": r.get("text"),
                                     "Diagrams": "; ".join(d[1] for d in r.get("diagrams", [])),
-                                    "Listed in": (r.get("listed_in") or [None, None])[1]}, LIMITS["elements"])
+                                    "Listed in": (r.get("listed_in") or [None, None])[1], "Also in": also},
+                                   LIMITS["elements"])
         elif t == "diagram":
             owner = (r.get("owner") or [None, None])[1]
             sheets["Diagrams"].add({"Name": r["name"], "Type": r.get("kind"), "Owner": owner,
                                     "Project": project, "Newest": newest, **_packages(r.get("package")),
                                     "Subject": suggested.get((token, r["key"])), "Elements shown": r.get("shapes"),
                                     "Shows": "; ".join(shows.get(r["key"], [])), "Table": r.get("table"),
-                                    "Description (generated)": described.get(r["key"])}, LIMITS["summaries"])
+                                    "Description (generated)": described.get(r["key"]), "Also in": also},
+                                   LIMITS["summaries"])
         elif t == "relationship":
             sheets["Relationships"].add({"Source": r["source"][1], "Relationship": r["phrase"],
                                          "Target": r["target"][1], "Kind": r["kind"], "Project": project,
@@ -309,6 +332,12 @@ def _about_sheet(ws, book: xlsxwriter.Workbook, rows: dict[str, int], left_out: 
                       "diagrams that show it are. Coverage: what relates to a requirement (satisfied, verified, "
                       "refined, derived, traced), or none."), bold),
         ("Read a row", "Rows show three lines; double-click a row's lower border to see all of it.", bold),
+        ("Also in", ("The same item in other models: the same element (versions, a model and the bids built on "
+                     "it, a shared library), the same requirement Id, or the same name between related models; "
+                     "and what differs there, among what people edit (name, text, stereotypes and tagged values, "
+                     "relationships, members, what a diagram shows, package). The Shared sheet lists them, one row "
+                     "a pair: filter Differences to leave out \"none\". Unchanged copies in a model's own versions "
+                     "are noted in Also in only."), bold),
         ("Browse by subject", ("The Subjects sheet puts each model's diagrams in subjects, several ways (views): "
                                "filter Model and View, then read down Subject. The suggested view comes first; the "
                                "Diagrams sheet's Subject column is its subject. Subjects proposed by an LLM are "
