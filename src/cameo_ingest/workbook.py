@@ -39,7 +39,9 @@ SHEETS: dict[str, list[tuple[str, int]]] = {  # name -> columns (header, width)
                  ("Documentation", 80), ("Listed in", 30)],
     "Relationships": [("Source", 40), ("Relationship", 18), ("Target", 40), ("Kind", 16), ("Project", 28)],
     "Diagrams": [("Name", 40), ("Type", 28), ("Owner", 40), ("Project", 28), ("Elements shown", 10),
-                 ("Table", 24), ("Description (generated)", 80)],
+                 ("Table", 24), ("Subject", 30), ("Description (generated)", 80)],
+    "Subjects": [("Model", 30), ("View", 30), ("Subject", 34), ("What it holds", 60), ("Diagram", 40),
+                 ("Versions", 9)],
     "Summaries": [("Of", 40), ("What", 18), ("Project", 28), ("Summary (generated)", 100), ("Model", 24),
                   ("Part", 10)],
     "Projects": [("Project", 30), ("Label", 30), ("Content", 24), ("Source", 60), ("Metadata", 30),
@@ -92,8 +94,19 @@ class _Sheet:
         self.ws.autofilter(0, 0, max(self.row, 1), len(self.columns) - 1)
 
 
-def write_workbook(path: Path, projects: Iterable[ProjectCatalog], version: str) -> dict[str, int]:
-    """Write the workbook; returns the rows per sheet."""
+def write_workbook(path: Path, projects: Iterable[ProjectCatalog], version: str,
+                   subjects: dict[str, Any] | None = None) -> dict[str, int]:
+    """Write the workbook; returns the rows per sheet. `subjects`: the tree's `subjects.json`, if any
+    (ADR-0031): the Subjects sheet, and each diagram's subject in the suggested view."""
+    families = (subjects or {}).get("families", [])
+    suggested: dict[tuple[str, str], str] = {}
+    for f in families:
+        view = next(v for v in f["views"] if v["id"] == f["default"])
+        for s in view["subjects"]:
+            for key in s["diagrams"]:
+                for i in f["diagrams"].get(key, []):
+                    suggested[f["tokens"][i], key] = s["label"]
+    names: dict[tuple[str, str], str] = {}
     path.parent.mkdir(parents=True, exist_ok=True)
     book = xlsxwriter.Workbook(str(path), {"constant_memory": True, "strings_to_formulas": False,
                                            "strings_to_urls": False, "strings_to_numbers": False,
@@ -109,9 +122,13 @@ def write_workbook(path: Path, projects: Iterable[ProjectCatalog], version: str)
     n_projects = 0
     for p in projects:
         n_projects += 1
-        _project_rows(p, sheets)
+        _project_rows(p, sheets, suggested)
+        for r in p.records:
+            if r["type"] == "diagram":
+                names[p.header.get("token") or "", r["key"]] = r["name"]
         left_out.update(p.header.get("left_out", {}))
         tables.update(p.header.get("tables", {}))
+    _subject_rows(families, names, sheets["Subjects"])
     for s in sheets.values():
         s.close()
     rows = {name: s.row for name, s in sheets.items()}
@@ -121,7 +138,28 @@ def write_workbook(path: Path, projects: Iterable[ProjectCatalog], version: str)
     return rows
 
 
-def _project_rows(p: ProjectCatalog, sheets: dict[str, _Sheet]) -> None:
+def _subject_rows(families: list[dict[str, Any]], names: dict[tuple[str, str], str], sheet: _Sheet) -> None:
+    """A row per model, view, subject and diagram, the suggested view first."""
+    for f in families:
+        for v in sorted(f["views"], key=lambda v: v["id"] != f["default"]):
+            title = v["title"] + (" (suggested)" if v["id"] == f["default"] else "")
+            subjects = [(s["label"], s.get("holds", ""), s["diagrams"]) for s in v["subjects"]]
+            if v.get("unsorted"):
+                subjects.append(("Not sorted yet", "The LLM gave no answer for these; the next run asks again.",
+                                 v["unsorted"]))
+            for label, holds, keys in subjects:
+                rows = []
+                for key in keys:
+                    held = f["diagrams"].get(key, [])
+                    name = next((names[f["tokens"][i], key] for i in held if (f["tokens"][i], key) in names), None)
+                    if name is not None:
+                        rows.append((name, len(held)))
+                for name, n in sorted(rows):
+                    sheet.add({"Model": f["name"], "View": title, "Subject": label, "What it holds": holds,
+                               "Diagram": name, "Versions": n}, LIMITS["search"])
+
+
+def _project_rows(p: ProjectCatalog, sheets: dict[str, _Sheet], suggested: dict[tuple[str, str], str]) -> None:
     project, source = p.label, p.source_text()
     described = {r["key"]: r["text"] for r in p.records
                  if r["type"] == "summary" and r["label"] == "Diagram description" and "module" not in r}
@@ -150,6 +188,7 @@ def _project_rows(p: ProjectCatalog, sheets: dict[str, _Sheet]) -> None:
             owner = (r.get("owner") or [None, None])[1]
             sheets["Diagrams"].add({"Name": r["name"], "Type": r.get("kind"), "Owner": owner,
                                     "Project": project, "Elements shown": r.get("shapes"), "Table": r.get("table"),
+                                    "Subject": suggested.get((p.header.get("token") or "", r["key"])),
                                     "Description (generated)": described.get(r["key"])}, LIMITS["summaries"])
         elif t == "relationship":
             sheets["Relationships"].add({"Source": r["source"][1], "Relationship": r["phrase"],
@@ -229,6 +268,10 @@ def _about_sheet(ws, book: xlsxwriter.Workbook, rows: dict[str, int], left_out: 
         ("Find several words", ("The Find sheet lists the rows that hold all the words typed into it, ids and names "
                                 "first (Excel 2021, Microsoft 365 or Excel for the web)."), bold),
         ("Filter a column", "Each sheet's header has filters: Text Filters, Contains, for one column.", bold),
+        ("Browse by subject", ("The Subjects sheet puts each model's diagrams in subjects, several ways (views): "
+                               "filter Model and View, then read down Subject. The suggested view comes first; the "
+                               "Diagrams sheet's Subject column is its subject. Subjects proposed by an LLM are "
+                               "generated, not part of the models."), bold),
         ("Generated text", ("Summaries and diagram descriptions were written by an LLM, named in the Summaries "
                             "sheet; they are not part of the source models."), bold),
         ("Source", "Where each model was found when it was ingested: its path and the metadata given then.", bold),

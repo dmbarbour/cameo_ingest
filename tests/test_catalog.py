@@ -58,7 +58,13 @@ def test_workbook_from_the_tree(fiction_tree, tmp_path, capsys):
     assert f"wrote {book}" in capsys.readouterr().out
     sheets = xlsx.sheets(book)
     assert list(sheets) == ["About", "Find", "Search", "Requirements", "Identifiers", "Elements", "Relationships",
-                            "Diagrams", "Summaries", "Projects"]
+                            "Diagrams", "Subjects", "Summaries", "Projects"]
+    subjects = [dict(zip(sheets["Subjects"][0], r, strict=False)) for r in sheets["Subjects"][1:]]
+    assert subjects and {r["View"] for r in subjects} >= {"By shared elements (suggested)", "By package"}
+    diagrams = [dict(zip(sheets["Diagrams"][0], r, strict=False)) for r in sheets["Diagrams"][1:]]
+    suggested = {(r["Model"], r["Diagram"]): r["Subject"] for r in subjects if r["View"].endswith("(suggested)")}
+    assert any(d.get("Subject") for d in diagrams)
+    assert all(d.get("Subject") in {s for (_, n), s in suggested.items() if n == d["Name"]} for d in diagrams if d.get("Subject"))
     req = sheets["Requirements"]
     row = dict(zip(req[0], next(r for r in req if r[0] == "KOIS-R2"), strict=False))
     assert row["Satisfied by"] == "Brine Valve K7" and row["Derived from"] == "Leak Shutdown (KOIS-R5)"
