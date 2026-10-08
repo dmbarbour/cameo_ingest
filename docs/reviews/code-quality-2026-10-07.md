@@ -3,6 +3,8 @@
 - **Status:** Open. Stage 1 done (0.28.1): CQ-001 to CQ-004, CQ-021R1 but the renderers' `ix`.
   Stage 2 done (0.28.2): CQ-010, CQ-018, CQ-022, CQ-023 (but a browser test of Compare, left to
   CQ-020), CQ-024R1.
+  Then (0.29.0): CQ-009, CQ-011 to CQ-014, CQ-017, and CQ-025 (the maintainer's: models looked
+  for by name).
   The maintainer, starting the remediation: work from the easiest to the hardest, skip what needs
   their input, and deliberate architecture (options, pros and cons) before judging, with today's
   design counted only as the convenient option.
