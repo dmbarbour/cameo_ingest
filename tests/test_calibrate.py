@@ -226,6 +226,37 @@ def test_unreadable_replies_are_not_recorded(tmp_path, monkeypatch, capsys):
     assert record(out) is None
 
 
+def test_a_few_unanswered_cards_are_left_out(tmp_path, monkeypatch, capsys, caplog):
+    """A card the model never answers (a timeout, every time) is left out of the measures, and the
+    calibration is recorded as a perfect reader's; losing a whole group, or too many cards, is not
+    recorded (RN-001)."""
+    out = ingest(tmp_path, ("m.mdzip", make_mdzip()), args=("--no-llm", "--no-render"))
+
+    def timing_out(lost):
+        def policy(card, drawn):
+            if lost(card):
+                raise TimeoutError("Request timed out.")
+            return perfect(drawn)
+        return policy
+
+    reader(monkeypatch, timing_out(lambda c: c.family == "read" and (c.area, c.font_px, c.seed) == (4.0, 6, 2)))
+    assert calibrate(out, suite="standard") == 0
+    results = json.loads((next((out / "calibration").iterdir()) / "results.json").read_text())
+    assert results["summary"]["unasked"] == 1 and results["summary"]["thin"] == []
+    assert json.loads(record(out)["settings"])["sketch_font_px"] == 8  # as a perfect reader's
+    assert "1 unanswered (failures or the budget), left out of the measures" in (
+        next((out / "calibration").iterdir()) / "report.md").read_text()
+
+    # 8: six arrow cards, and one in the trial of the image's place, asked both ways.
+    for lost, why in ((lambda c: c.family == "density" and c.count == 9, "more than half of some groups"),
+                      (lambda c: c.family == "arrows" and c.seed == 1, "8 of 92 eye charts went unanswered")):
+        monkeypatch.setenv("CAMEO_INGEST_CACHE", str(tmp_path / why[:4] / "store"))  # not the answers above
+        out2 = ingest(tmp_path / why[:4], ("m.mdzip", make_mdzip()), args=("--no-llm", "--no-render"))
+        reader(monkeypatch, timing_out(lost))
+        assert calibrate(out2, suite="standard") == 2, why
+        assert why in capsys.readouterr().err and record(out2) is None
+
+
 def half_budget_host(card, drawn):
     """A host that shrinks images to half our budget, and a model that reads text of 11 px or more,
     once shrunk; arrows it reads perfectly."""

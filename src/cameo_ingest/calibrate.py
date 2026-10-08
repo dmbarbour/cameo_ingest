@@ -41,6 +41,7 @@ DENSITY_PASS = 0.9  # connections found (either way round), for a number of shap
 FONT_MARGIN = 1.3  # the font's size over the 90% threshold
 ORDER_GAIN = 0.05  # how much better the image after the text must read to be put there
 FLAT = 1.15  # thresholds within this of the smallest are "the same"
+MAX_UNASKED = 0.05  # of the cards, unanswered, at most (at least one), each group keeping half (RN-001)
 PATCH_AREA = PATCH_PX * PATCH_PX
 
 
@@ -98,7 +99,7 @@ def summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
     arrows: dict[tuple[float, int], list[dict]] = defaultdict(list)
     density: dict[int, list[dict]] = defaultdict(list)
     for r in results:
-        if r.get("trial"):
+        if r.get("trial") or not r["asked"]:  # an unanswered card measures nothing (RN-001)
             continue
         if r["family"] == "read":
             read[r["area"]][r["font_px"]].append(r["score"])
@@ -121,7 +122,33 @@ def summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
             "density": [{"shapes": n, **arrow_stats(rs)} for n, rs in sorted(density.items())],
             "order": order(results),
             "unreadable": sum(1 for r in results if r["asked"] and r["answer"] is None),
-            "unasked": sum(1 for r in results if not r["asked"]), "cards": len(results)}
+            "unasked": sum(1 for r in results if not r["asked"]), "cards": len(results), "thin": thin(results)}
+
+
+def _group(r: dict[str, Any]) -> tuple[Any, ...]:
+    """The cards measured together: by reading area and font, arrowhead and line, density, or
+    the trial's way round."""
+    if r.get("trial"):
+        return ("trial", r["image_first"])
+    if r["family"] == "read":
+        return ("read", r["area"], r["font_px"])
+    if r["family"] == "arrows":
+        return ("arrows", r["arrow_px"], r["line_px"])
+    return ("density", r["count"])
+
+
+def thin(results: list[dict[str, Any]]) -> list[str]:
+    """The groups of cards that lost more than half of them unanswered, named for a report."""
+    asked: dict[tuple[Any, ...], list[bool]] = defaultdict(list)
+    for r in results:
+        asked[_group(r)].append(r["asked"])
+    return [" ".join(str(x) for x in g) for g, a in sorted(asked.items(), key=lambda kv: str(kv[0]))
+            if 2 * sum(a) < len(a)]
+
+
+def max_unasked(n: int) -> int:
+    """How many of n requests a calibration may lose and still be trusted (RN-001)."""
+    return max(1, int(n * MAX_UNASKED))
 
 
 @dataclass
@@ -277,7 +304,8 @@ def render_report(model: str, endpoint: str | None, suite: str, summary: dict[st
     lines = [f"# Vision calibration: {model}", "",
              f"Endpoint `{endpoint or 'the OpenAI default'}`, suite `{suite}`: {summary['cards']} eye charts"
              + (f", {summary['unreadable']} replies unreadable" if summary["unreadable"] else "")
-             + (f", {summary['unasked']} not asked (budget or failures)" if summary["unasked"] else "") + ".", "",
+             + (f", {summary['unasked']} unanswered (failures or the budget), left out of the measures"
+                if summary["unasked"] else "") + ".", "",
              "## Recommendations", "", "| Setting | Current | Recommended | Measured | Why |", "|---|---|---|---|---|"]
     for r in recs:
         mark = " **(change)**" if r.changes else ""
@@ -309,8 +337,11 @@ def render_report(model: str, endpoint: str | None, suite: str, summary: dict[st
 def problem(summary: dict[str, Any]) -> str | None:
     """Why a calibration can't be trusted, or None."""
     asked = summary["cards"] - summary["unasked"]
-    if summary["unasked"]:
-        return f"{summary['unasked']} of {summary['cards']} eye charts were not asked (failures or the call budget)"
+    if summary["unasked"] > max_unasked(summary["cards"]):
+        return (f"{summary['unasked']} of {summary['cards']} eye charts went unanswered (failures or the call budget; "
+                f"{max_unasked(summary['cards'])} may)")
+    if summary.get("thin"):
+        return f"more than half of some groups of cards went unanswered: {', '.join(summary['thin'])}"
     if summary["unreadable"] * 2 > asked:
         return f"{summary['unreadable']} of {asked} replies could not be read"
     if not any(a["threshold"] for a in summary["read"]):

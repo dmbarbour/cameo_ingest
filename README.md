@@ -274,8 +274,9 @@ details, sketch by sketch, and `status` repeats the line.
   `status` lists the tree's calibrations, with their expected quality.
 - **Recalibrating:** `cameo-ingest calibrate-vision -o OUT` calibrates on demand, after a host
   changes its limits, say. `--suite quick` (11 cards) checks a model without recording.
-- **An incomplete calibration** (unanswered or mostly unreadable cards) is not recorded, and the
-  run draws to the defaults, with a warning.
+- **An incomplete calibration** (more than 5% of the cards unanswered, or most of one group of
+  them, or mostly unreadable replies) is not recorded, and the run draws to the defaults, with a
+  warning. A few unanswered cards are left out of the measures.
 - **The cost of a change:** when a calibration changes the sizes, the next run draws every
   sketch again and asks again for its description, about one request per sketch.
 

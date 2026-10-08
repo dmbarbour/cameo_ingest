@@ -27,8 +27,11 @@ In the runner's `prepare` hook, after the scan and before the build (`cli.calibr
   about 92 requests, then about 12, a few minutes on a hosted model.
 - **A record without validation:** validation runs alone.
 - **An incomplete calibration** isn't recorded, and the run draws to the defaults with a warning.
-  A calibration is incomplete when a card went unasked, more than half the replies were
-  unreadable, or no font size was read.
+  A calibration is incomplete when more than 5% of the cards went unanswered (4 of 92; at least
+  one), more than half of one group's did (a reading area and font, an arrowhead and line, a
+  density, a way round in the trial), more than half the replies were unreadable, or no font size
+  was read (`calibrate.problem`). Unanswered cards are left out of every measure (RN-001); before
+  0.31.0, one unanswered card made a calibration incomplete, and counted as misread.
 - **Calibrating on demand:** `cameo-ingest calibrate-vision -o OUT [--suite quick|standard]`. The
   quick suite (11 cards) checks a model and is never recorded.
 - **Recorded:** a record is keyed by endpoint (`''` for the OpenAI default), model and

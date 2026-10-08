@@ -44,6 +44,10 @@
   - Chosen: the last, with unasked cards left out of every measure. Limit: at most 5% of the
     requests unanswered (at least one), and every group measured keeps at least half its cards.
     92 cards may miss 4; the text calibration's 30 requests may miss 1.
+- **Done:** R1. `calibrate.summarize` leaves unanswered cards out; `calibrate.thin`, `max_unasked`
+  and `problem`; `textcal.problem`. Tests: `test_a_few_unanswered_cards_are_left_out` (one card
+  timing out every time: recorded, as a perfect reader's; a group lost, or 8 of 92: not),
+  `test_a_few_unanswered_requests_are_allowed`.
 
 ### RN-002: slow answers time out
 

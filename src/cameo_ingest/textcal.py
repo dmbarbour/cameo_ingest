@@ -299,9 +299,15 @@ def recommend(summary: list[dict[str, Any]], default: int = PART_CHARS[1]) -> tu
 
 
 def problem(results: list[dict[str, Any]]) -> str | None:
-    """Why a calibration can't be trusted, or None."""
+    """Why a calibration can't be trusted, or None: more requests unanswered than
+    `calibrate.max_unasked` allows (RN-001; of 30, 1, so that each length keeps nearly all its
+    cards). The unanswered are left out of the measures (`summarize`)."""
+    from .calibrate import max_unasked
+
     missing = sum(not r["asked"] or r["reply"] is None for r in results)
-    return f"{missing} of {len(results)} requests went unanswered" if missing else None
+    if missing > max_unasked(len(results)):
+        return f"{missing} of {len(results)} requests went unanswered ({max_unasked(len(results))} may)"
+    return None
 
 
 @dataclass

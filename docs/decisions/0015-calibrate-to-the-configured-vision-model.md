@@ -35,7 +35,8 @@ Ideally, we can automatically calibrate to the vision model we've configured."
   - a model that reads at native resolution keeps the configured budget, since there the budget
     is a matter of cost.
 - **The record:** calibrations are recorded in `state.sqlite` (`calibrations`). A new suite version
-  calibrates again. An incomplete calibration is not recorded, and the run draws to the defaults.
+  calibrates again. An incomplete calibration is not recorded, and the run draws to the defaults;
+  a few unanswered cards (5%, none of a group's majority) are left out, not a reason to refuse.
 - **The ported parts:** the scoring and fitting are ported from the maintainer's `semantic_pdf_diff`
   (MIT). Its PyMuPDF drawing (AGPL) is not.
 
@@ -48,3 +49,4 @@ Ideally, we can automatically calibrate to the vision model we've configured."
 ## Changes
 
 - 2026-10-05: the tree's own sizes are gone; the calibration, then the defaults (ADR-0030). Before: `3c254db`.
+- 2026-10-08: a few unanswered cards are left out of the measures, not a reason to refuse (review RN, RN-001). Before: `883c382`.

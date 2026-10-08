@@ -95,7 +95,7 @@ A guard, not a tuner (ADR-0024). The first run with a text model asks it to read
   - The part size stays 12,000 when 12,000 is even. Otherwise it is 6,000, with a warning when
     6,000 isn't even either. 24,000 is reported, never used.
 - **The record:** `calibrations`, kind `text`, per model and endpoint; an incomplete calibration
-  isn't recorded. The report is `calibration/<model>-text-<date>/report.md`. `calibrate-text`
+  (more than 1 of the 30 requests unanswered, `calibrate.max_unasked`; RN-001) isn't recorded. The report is `calibration/<model>-text-<date>/report.md`. `calibrate-text`
   calibrates again on demand.
 
 **Why only a guard:** on these cards gemma-4 and DeepSeek-V3.2 read evenly to 192,000 characters,

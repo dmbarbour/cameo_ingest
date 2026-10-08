@@ -148,3 +148,14 @@ def test_calibrate_text_on_demand(tmp_path, monkeypatch, capsys):
     readers = reading(monkeypatch, 9_000)
     assert cli(["calibrate-text", "-o", str(out), "--text-model", "short", "--no-preflight"]) == 0
     assert sum(r.cards for r in readers) == 0  # every card answered from the store
+
+
+def test_a_few_unanswered_requests_are_allowed():
+    """One of the 30 requests unanswered is left out; two, or most of one length's, are not (RN-001)."""
+    def results(lost: set[int]) -> list[dict]:
+        return [{"length": n, "asked": i not in lost, "reply": None if i in lost else "ok"}
+                for i, n in enumerate(n for n in tc.GUARD_LENGTHS for _ in range(2 * tc.GUARD_CARDS))]
+
+    assert tc.problem(results(set())) is None
+    assert tc.problem(results({0})) is None
+    assert "2 of 30 requests went unanswered (1 may)" in tc.problem(results({0, 11}))
