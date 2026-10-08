@@ -72,4 +72,33 @@ assert.deepStrictEqual(Engine.tagPieces("[1]", { 1: "k" }), [{ text: "[1]", tag:
   assert.deepStrictEqual(c.onlyA, [2]);
   assert.deepStrictEqual(c.onlyB, [5]);
 }
+// A model's short token, standing, metadata; items by model and key; the browse mode (CQ-020).
+assert.strictEqual(Engine.shortToken("sha256:0123456789abcdef0123"), "0123456789abcdef");
+assert.strictEqual(Engine.shortToken("0123456789abcdef0123"), "0123456789abcdef");
+{
+  const tender = { token: "t", fm: "t", rk: 0 }, bid = { token: "b", fm: "b2", rk: 1, kn: [["t", "derived"]] };
+  const bid2 = { token: "b2", fm: "b2", rk: 0, kn: [["t", "derived"]] };
+  assert.strictEqual(Engine.standing(bid, tender), "derived");
+  assert.strictEqual(Engine.standing(bid2, bid), "older");
+  assert.strictEqual(Engine.standing(bid, bid2), "newer");
+  assert.strictEqual(Engine.standing(tender, bid2), null);
+  assert.deepStrictEqual(Engine.metadataOf({ sources: [{ metadata: { by: "A" } }, { metadata: { by: "A", ver: "2" } }] }),
+                         ["by=A", "ver=2"]);
+  const lk = new Engine.Lookup();
+  lk.add({ p: 0, k: "e1", t: "element" }, 5);
+  lk.add({ p: 0, k: "e1", t: "summary" }, 6);
+  assert.strictEqual(lk.doc(0, "e1"), 5);
+  assert.deepStrictEqual(lk.summaries(0, "e1"), [6]);
+  assert.strictEqual(lk.doc(1, "e1"), undefined);
+  const fams = [{ p: [0, 1] }, { p: [2] }];
+  assert.strictEqual(Engine.browseMode(fams, null, null, "topic", true).mode, "topics");
+  assert.strictEqual(Engine.browseMode(fams, null, null, "model", true).mode, "models");
+  assert.strictEqual(Engine.browseMode(fams, null, null, "topic", false).mode, "models");
+  assert.deepStrictEqual(Engine.browseMode(fams, null, 1, "topic", true).family, 1);
+  const one = Engine.browseMode(fams, new Set([2]), null, "topic", true);  // narrowed to one model: opened
+  assert.strictEqual(one.mode, "family");
+  assert.strictEqual(one.family, 1);
+  assert.strictEqual(one.narrowed, true);
+  assert.strictEqual(one.topics, false);
+}
 console.log("ok");

@@ -4,7 +4,7 @@
   Stage 2 done (0.28.2): CQ-010, CQ-018, CQ-022, CQ-023 (but a browser test of Compare, left to
   CQ-020), CQ-024R1.
   Then (0.29.0): CQ-009, CQ-011 to CQ-014, CQ-017, and CQ-025 (the maintainer's: models looked
-  for by name).
+  for by name). Then: CQ-005 to CQ-008, CQ-015, CQ-016, CQ-019, CQ-020, CQ-024R3.
   The maintainer, starting the remediation: work from the easiest to the hardest, skip what needs
   their input, and deliberate architecture (options, pros and cons) before judging, with today's
   design counted only as the convenient option.
@@ -411,6 +411,18 @@
   `hashLink`); **R3:** `detail` split by section, groups with a `kind`; **R4:** the script in two
   assets, engine and interface, joined by `searchpage._asset`, the tests requiring the engine
   alone. Not further: the interface shares `state` and its helpers.
+- **R1 to R3 done:** in the engine, with node tests: `shortToken`, `standing` (how one model stands
+  to another, for Compare's and "Also in"'s phrases), `metadataOf`, `Lookup` (items by model and
+  key, in place of 12 hand-made keys), `browseMode`; groups carry their `kind`, and a topic's
+  items are placed once. In the interface: `action`, `itemLink`, `joined` and `collapsible` in
+  place of the repeated patterns; `detail` split (`factsTable`, `relations`, `summaries`; lizard
+  35 to 18); "newest of each" selects once; kinds sorted by name; one "Not sorted yet" and its
+  note. A browser walk of "Also in" and Compare (CQ-023's leftover), written first and passing on
+  the old script, passes on the new.
+- **R4, weighed:** two assets (smaller files; an assembly seam in the page, five tests' paths, and
+  an interface that still can't run without the engine) or one file, whose engine and interface
+  are already apart and the engine tested. One file; worth splitting when the interface passes
+  about 1,000 lines (it is about 760).
 
 ### Dead code and loose constants
 

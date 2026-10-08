@@ -148,6 +148,22 @@ def test_topics_in_a_browser(page, tmp_path):
 
 
 @needs_node
+@pytest.mark.skipif(CHROME is None, reason="no Chrome, Chromium or Edge")
+def test_also_in_and_compare_in_a_browser(page, tmp_path):
+    """An item held by other models lists them under "Also in", each a link with how it matches;
+    two models chosen in the chooser compare, by kind, each kind opening its items (plan SH)."""
+    seen = json.loads(node(str(JS / "compare_browser.js"), CHROME, str(tmp_path / "profile"), str(page),
+                           "RWT-REG-001", "Riverbend"))
+    assert "Also in" in seen["sections"], seen
+    assert seen["also"] and all(a["linked"] for a in seen["also"])
+    assert any("the same requirement Id" in a["text"] for a in seen["also"])
+    cmp = seen["compare"]
+    assert cmp["picked"] == 2 and "Comparing" in cmp["head"] and cmp["groups"] >= 1
+    assert re.match(r"\d+ items? changed, \d+ only in the first, \d+ only in the second, \d+ the same", cmp["lead"])
+    assert seen["opened"] >= 1 and seen["errors"] == []
+
+
+@needs_node
 def test_model_chooser():
     """Models grouped by lineage (versions under the newest, kin together), by folder, by name or
     by date, each with a note on its lineage (plan LN-07)."""

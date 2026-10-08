@@ -30,6 +30,7 @@ if (process.argv.length < 4) {
   assert.strictEqual(groups[0].versions.get(0), 2);
   assert.strictEqual(groups[0].holds, "the pumps");
   assert.strictEqual(groups[4].p, 2);
+  assert.deepStrictEqual(groups.map((g) => g.kind), ["subject", "subject", "subject", "subject", "model"]);
 
   // Topics across models (plan SB CP4): two families, each subject of a default view in a topic.
   const two = [fams[0], { n: "N", p: [2], dv: "ways-1", k: { n1: 2, n2: 2 },
@@ -53,6 +54,7 @@ if (process.argv.length < 4) {
   assert.strictEqual(tg[0].models.size, 2);
   assert.strictEqual(tg[0].subject.get(1), "Pumps too");
   assert.strictEqual(tg[0].holds, "pumps");
+  assert.ok(tg.every((g) => g.kind === "topic"));
   assert.strictEqual(new Engine.Subjects(two, null).topics, null);
   console.log("ok");
   return;

@@ -274,7 +274,11 @@ const Engine = (() => {
     // The topic an item is in: that of its subject in its family's default view. null: on no sorted
     // diagram; UNSORTED: its subject, or its subject's topic, not sorted yet.
     topic(it, fi, tid) {
-      const s = this.place(it, fi, this.families[fi].dv);
+      return this.topicOfSubject(fi, this.place(it, fi, this.families[fi].dv), tid);
+    }
+
+    // The topic of subject `s` of family `fi`'s default view (null and UNSORTED as for `topic`).
+    topicOfSubject(fi, s, tid) {
       if (s === null || s === UNSORTED) return s;
       const t = this.topicOf.get(this.topicView(tid).id).get(fi + "/" + s);
       return t === undefined ? UNSORTED : t;
@@ -286,10 +290,12 @@ const Engine = (() => {
       return this.topicView(tid).s[t].l;
     }
 
-    // hits, best first, as groups: {fi, s, label, holds, docs, versions: Map(doc -> versions)}; an item
-    // outside every family is grouped by its model (fi null, p its page id). With `tid`, by topic
-    // across models in that topic view: {topic, label, holds, docs, versions, subject: Map(doc -> its
-    // subject's label), models: Set(family)}.
+    // hits, best first, as groups, each with its `kind`, label, docs and versions (Map(doc ->
+    // versions)):
+    // - "subject": {fi, s, holds}, by subject of each family's view (`viewOf`);
+    // - "topic", with `tid`: {topic, holds, subject: Map(doc -> its subject's label), models:
+    //   Set(family)}, by topic across models in that topic view;
+    // - "model": {p, its page id}, for an item outside every family.
     group(hits, items, viewOf, tid) {
       const out = [], byKey = new Map(), first = new Map();
       for (const h of hits) {
@@ -304,20 +310,21 @@ const Engine = (() => {
         let gk, g;
         if (fi === null) {
           gk = "p" + it.p;
-          g = byKey.get(gk) || { fi: null, p: it.p, s: null, label: null, docs: [], versions: new Map() };
+          g = byKey.get(gk) || { kind: "model", fi: null, p: it.p, s: null, label: null, docs: [], versions: new Map() };
         } else if (tid && this.topics) {
-          const t = this.topic(it, fi, tid), tv = this.topicView(tid);
-          gk = "t/" + t;
-          g = byKey.get(gk) || { fi: null, topic: t, label: this.topicLabel(tid, t), holds: t !== null && t >= 0 ? tv.s[t].h || "" : "",
-                                 docs: [], versions: new Map(), subject: new Map(), models: new Set() };
           const dv = this.families[fi].dv, s = this.place(it, fi, dv);
+          const t = this.topicOfSubject(fi, s, tid), tv = this.topicView(tid);
+          gk = "t/" + t;
+          g = byKey.get(gk) || { kind: "topic", fi: null, topic: t, label: this.topicLabel(tid, t),
+                                 holds: t !== null && t >= 0 ? tv.s[t].h || "" : "", docs: [], versions: new Map(),
+                                 subject: new Map(), models: new Set() };
           if (s !== null) g.subject.set(h.doc, this.label(fi, dv, s));
           g.models.add(fi);
         } else {
           const vid = viewOf(fi), s = this.place(it, fi, vid), v = this.view(fi, vid);
           gk = fi + "/" + v.id + "/" + s;
-          g = byKey.get(gk) || { fi, s, label: this.label(fi, vid, s), holds: s !== null && s >= 0 ? v.s[s].h || "" : "",
-                                 docs: [], versions: new Map() };
+          g = byKey.get(gk) || { kind: "subject", fi, s, label: this.label(fi, vid, s),
+                                 holds: s !== null && s >= 0 ? v.s[s].h || "" : "", docs: [], versions: new Map() };
         }
         if (!byKey.has(gk)) { byKey.set(gk, g); out.push(g); }
         g.docs.push(h.doc);
@@ -483,8 +490,66 @@ const Engine = (() => {
     return out;
   }
 
+  // A token as the page's matches name it: its first 16 hex digits (searchpage.page_items' `al`).
+  function shortToken(token) {
+    return (token || "").replace(/^sha256:/, "").slice(0, 16);
+  }
+
+  // How model `there` stands to model `here`, by here's facts: its kin note on there ("derived",
+  // "built-on", "root", "branches"), else "older" or "newer" when both are versions of one model;
+  // null when neither.
+  function standing(here, there) {
+    const kin = (here.kn || []).find(([t]) => t === there.token);
+    if (kin) return kin[1];
+    if (there.fm && there.fm === here.fm) return (there.rk || 0) > (here.rk || 0) ? "older" : "newer";
+    return null;
+  }
+
+  // A model's metadata, as given to `add --meta`: "key=value" each, once.
+  function metadataOf(p) {
+    return [...new Set((p.sources || []).flatMap((s) => Object.entries(s.metadata || {}).map(([k, v]) => `${k}=${v}`)))];
+  }
+
+  // Items by model and key (`p`, `k`): an element's, requirement's, diagram's or package's doc, and
+  // the summaries of it.
+  class Lookup {
+    constructor() {
+      this.byKey = new Map();
+      this.sums = new Map();
+    }
+    add(item, d) {
+      const key = item.p + "\u0000" + item.k;
+      if (item.t === "summary") {
+        if (!this.sums.has(key)) this.sums.set(key, []);
+        this.sums.get(key).push(d);
+      } else {
+        this.byKey.set(key, d);
+      }
+    }
+    doc(pid, key) {
+      return this.byKey.get(pid + "\u0000" + key);
+    }
+    summaries(pid, key) {
+      return this.sums.get(pid + "\u0000" + key) || [];
+    }
+  }
+
+  // What the browse pane shows with no search (plan SB): `families` among the selected models
+  // (a Set of page ids, or null for all); one opened (`chosen`), when the selection is narrowed to
+  // one or one was chosen; else topics across models, when there are several models and topics,
+  // and topics are asked for; else the models' list. Returns {mode: "family" | "topics" | "models",
+  // shown: [family indexes], family, narrowed, topics (whether topics can be offered)}.
+  function browseMode(families, selected, chosen, by, hasTopics) {
+    const shown = families.map((f, fi) => fi).filter((fi) => selected === null || families[fi].p.some((pid) => selected.has(pid)));
+    const narrowed = shown.length === 1 && selected !== null;
+    const family = narrowed ? shown[0] : chosen;
+    const topics = Boolean(hasTopics) && shown.length > 1;
+    if (family !== null && family !== undefined && shown.includes(family)) return { mode: "family", shown, family, narrowed, topics };
+    return { mode: topics && by === "topic" ? "topics" : "models", shown, family: null, narrowed, topics };
+  }
+
   return { tokens, parse, Field, Index, snippet, mark, decode, decodeText, Subjects, chooserGroups, lineageNote, folderOf,
-           commonFolder, tagPieces, collapseShared, compareModels };
+           commonFolder, tagPieces, collapseShared, compareModels, shortToken, standing, metadataOf, Lookup, browseMode };
 })();
 
 if (typeof module !== "undefined") module.exports = Engine;
@@ -505,13 +570,47 @@ if (typeof document !== "undefined") {
   const pause = () => new Promise((r) => setTimeout(r, 0));
   const SLICE_MS = 30, STALL_MS = 10000;
 
-  const state = { index: new Engine.Index(), projects: [], byKey: new Map(), summaries: new Map(), cancelled: false,
+  const state = { index: new Engine.Index(), projects: [], lookup: new Engine.Lookup(), cancelled: false,
                   subjects: new Engine.Subjects([]), viewOf: new Map(), browse: null, open: new Set(),
                   topicView: null, browseBy: "topic",
                   terms: [], copies: null, // the search shown: its words (marked in the detail pane), its folded copies
                   selected: null, mode: "lineage", // selected: null for every model, else a Set of page ids
                   compare: null }; // [page id, page id]: two models compared (plan SH-05)
   const SHOWN = 3; // results shown a group before "more"
+  const UNSORTED = "Not sorted yet", UNSORTED_NOTE = "The LLM gave no answer for these; the next run asks again.";
+  const HINT = "Search above; choose a result to read it here.";
+
+  // A link that acts in the page (`onClick`), rather than going anywhere.
+  function action(text, onClick, cls) {
+    const a = el("a", cls, text);
+    a.href = "#";
+    a.addEventListener("click", (e) => { e.preventDefault(); onClick(); });
+    return a;
+  }
+
+  // A link to an item's detail, or the text alone for an item not in the page.
+  function itemLink(doc, text) {
+    if (doc === undefined) return el("span", null, text);
+    const a = el("a", null, text);
+    a.href = "#d" + doc;
+    return a;
+  }
+
+  // Nodes joined by ", ".
+  function joined(nodes) {
+    return nodes.flatMap((n, i) => (i ? [", ", n] : [n]));
+  }
+
+  // A head that opens and closes its body; open ones (`state.open`, by `id`) stay open as the
+  // results are drawn again. `fill()` draws the body.
+  function collapsible(head, body, id, fill) {
+    head.href = "#";
+    head.addEventListener("click", (e) => {
+      e.preventDefault();
+      if (state.open.has(id)) { state.open.delete(id); body.replaceChildren(); } else { state.open.add(id); fill(); }
+    });
+    if (state.open.has(id)) fill();
+  }
 
   // While the file is still being read: a small script after each data block calls this.
   window.__read = (i, n) => {
@@ -598,14 +697,7 @@ if (typeof document !== "undefined") {
       let sliceStart = now();
       for (const item of data.items) {
         item.p = pid;
-        const d = state.index.add(item);
-        const key = pid + "\u0000" + item.k;
-        if (item.t === "summary") {
-          if (!state.summaries.has(key)) state.summaries.set(key, []);
-          state.summaries.get(key).push(d);
-        } else {
-          state.byKey.set(key, d);
-        }
+        state.lookup.add(item, state.index.add(item));
         items++;
         if (now() - sliceStart > SLICE_MS) {
           P.time("index", now() - sliceStart);
@@ -697,7 +789,7 @@ if (typeof document !== "undefined") {
   // What a diagram is about: its generated description, when the tree has one; else nothing.
   function aboutOf(doc) {
     const it = state.index.items[doc];
-    const s = (state.summaries.get(it.p + "\u0000" + it.k) || [])[0];
+    const s = state.lookup.summaries(it.p, it.k)[0];
     return s === undefined ? "" : state.index.items[s].x || "";
   }
 
@@ -722,9 +814,7 @@ if (typeof document !== "undefined") {
     $("mfilter").addEventListener("input", fill);
     const visible = () => [...list.querySelectorAll("input[data-pid]")].filter((c) => !c.closest(".mrow").hidden)
       .map((c) => Number(c.dataset.pid));
-    const choose = (pids, on) => {
-      const set = state.selected === null ? new Set(state.projects.map((_, i) => i)) : new Set(state.selected);
-      for (const i of pids) (on ? set.add(i) : set.delete(i));
+    const select = (set) => {
       state.selected = set.size === state.projects.length ? null : set;
       if (!state.selected || state.selected.size !== 2) state.compare = null;
       $("mcompare").disabled = !state.selected || state.selected.size !== 2;
@@ -732,6 +822,11 @@ if (typeof document !== "undefined") {
       fill();
       state.browse = null;
       run();
+    };
+    const choose = (pids, on) => {
+      const set = state.selected === null ? new Set(state.projects.map((_, i) => i)) : new Set(state.selected);
+      for (const i of pids) (on ? set.add(i) : set.delete(i));
+      select(set);
     };
     $("mcompare").addEventListener("click", () => {
       if (!state.selected || state.selected.size !== 2) return;
@@ -743,10 +838,10 @@ if (typeof document !== "undefined") {
     });
     $("mall").addEventListener("click", () => choose(visible(), true));
     $("mnone").addEventListener("click", () => choose(visible(), false));
-    $("mnewest").addEventListener("click", () => {
-      const vis = visible();
-      choose(vis.filter((i) => state.projects[i].rk), false);
-      choose(vis.filter((i) => !state.projects[i].rk), true);
+    $("mnewest").addEventListener("click", () => { // of the models shown: the newest versions on, the older off
+      const set = state.selected === null ? new Set(state.projects.map((_, i) => i)) : new Set(state.selected);
+      for (const i of visible()) (state.projects[i].rk ? set.delete(i) : set.add(i));
+      select(set);
     });
     const common = Engine.commonFolder(state.projects);
     const shortFolder = (p) => Engine.folderOf(p).slice(common.length).replace(/^\//, "") || "(the common folder)";
@@ -767,7 +862,7 @@ if (typeof document !== "undefined") {
           const c = p.counts || {};
           const facts = [p.sv ? `saved ${p.sv.slice(0, 10)}` : null, p.ex, c.diagram ? count(c.diagram, "diagram") : null,
                          c.requirement ? count(c.requirement, "requirement") : null].filter(Boolean).join(" · ");
-          const meta = [...new Set((p.sources || []).flatMap((s) => Object.entries(s.metadata || {}).map(([k, v]) => `${k}=${v}`)))];
+          const meta = Engine.metadataOf(p);
           const head = el("div", "mhead");
           head.append(cb, el("span", "mname", p.label), el("span", "mfacts", facts));
           const where = el("div", "mwhere", [shortFolder(p), meta.join(", ")].filter(Boolean).join(" · "));
@@ -800,21 +895,18 @@ if (typeof document !== "undefined") {
     }
   }
 
-  // How two compared models stand, by the first's kin note on the second.
+  // How two compared models stand (`Engine.standing` of the second to the first).
   const PAIR = { derived: "the first was built on the second, by others", "built-on": "the second was built on the first, by others",
-                 root: "rivals on a shared root", branches: "branches of one model" };
+                 root: "rivals on a shared root", branches: "branches of one model", older: "versions of one model",
+                 newer: "versions of one model" };
 
   // Two models compared (plan SH-05): what changed, and what is only in one, by kind.
   function compare(list) {
     const [a, b] = state.compare, A = state.projects[a], B = state.projects[b];
-    const tok = (p) => (p.token || "").slice(7, 23);
-    const res = Engine.compareModels(state.index.items, a, b, tok(A), tok(B));
+    const res = Engine.compareModels(state.index.items, a, b, Engine.shortToken(A.token), Engine.shortToken(B.token));
     const top = el("div", "browse-head");
-    const close = el("a", null, "Close the comparison");
-    close.href = "#";
-    close.addEventListener("click", (e) => { e.preventDefault(); state.compare = null; run(); });
-    const kin = (A.kn || []).find(([t]) => t === B.token);
-    const how = kin ? PAIR[kin[1]] || "" : A.fm && A.fm === B.fm ? "versions of one model" : "";
+    const close = action("Close the comparison", () => { state.compare = null; run(); });
+    const how = PAIR[Engine.standing(A, B)] || "";
     top.append(el("strong", null, "Comparing"), " ", A.label, " with ", B.label, how ? ` (${how})` : "", " · ", close);
     list.append(top, el("p", "browse-lead",
       `${count(res.changed.length, "item")} changed, ${fmt(res.onlyA.length)} only in the first, ` +
@@ -834,18 +926,13 @@ if (typeof document !== "undefined") {
         if (!kinds.has(t)) kinds.set(t, []);
         kinds.get(t).push(r);
       }
-      for (const [t, rs] of [...kinds].sort()) {
+      for (const [t, rs] of [...kinds].sort((x, y) => x[0].localeCompare(y[0]))) {
         const box = el("section", "group");
         const head = el("a", "group-head");
-        head.href = "#";
         head.append(el("span", "group-label", `${title}: ${t}s`), el("span", "group-count", fmt(rs.length)));
         const body = el("div");
-        const id = `cmp/${title}/${t}`;
         const fill = (n) => {
-          body.replaceChildren(...rs.slice(0, n).map((r) => {
-            const row = resultRow({ doc: r.d }, [], r.diff || undefined);
-            return row;
-          }));
+          body.replaceChildren(...rs.slice(0, n).map((r) => resultRow({ doc: r.d }, [], r.diff || undefined)));
           if (rs.length > n) {
             const more = el("button", "more", `${fmt(rs.length - n)} more`);
             more.type = "button";
@@ -853,11 +940,7 @@ if (typeof document !== "undefined") {
             body.append(more);
           }
         };
-        head.addEventListener("click", (e) => {
-          e.preventDefault();
-          if (state.open.has(id)) { state.open.delete(id); body.replaceChildren(); } else { state.open.add(id); fill(200); }
-        });
-        if (state.open.has(id)) fill(200);
+        collapsible(head, body, `cmp/${title}/${t}`, () => fill(200));
         box.append(head, body);
         list.append(box);
       }
@@ -871,10 +954,9 @@ if (typeof document !== "undefined") {
   function groupBox(g, terms) {
     const box = el("section", "group");
     const head = el("div", "group-head");
-    const fam = g.fi === null ? null : state.subjects.families[g.fi];
-    head.append(el("span", "group-label", g.label || state.projects[g.p].label));
-    if (fam && (g.label || "") && state.subjects.families.length > 1) head.append(el("span", "group-model", fam.n));
-    if (g.models) head.append(el("span", "group-model", `in ${count(g.models.size, "model")}`));
+    head.append(el("span", "group-label", g.kind === "model" ? state.projects[g.p].label : g.label));
+    if (g.kind === "subject" && state.subjects.families.length > 1) head.append(el("span", "group-model", state.subjects.families[g.fi].n));
+    if (g.kind === "topic") head.append(el("span", "group-model", `in ${count(g.models.size, "model")}`));
     head.append(el("span", "group-count", count(g.docs.length, "result")));
     if (g.holds) head.title = g.holds;
     box.append(head);
@@ -900,25 +982,21 @@ if (typeof document !== "undefined") {
   function browse(list) {
     const sb = state.subjects;
     if (!sb.families.length) {
-      list.append(el("p", "hint", "Search above; choose a result to read it here."));
+      list.append(el("p", "hint", HINT));
       return;
     }
-    const shown = sb.families.map((f, fi) => fi)
-      .filter((fi) => state.selected === null || sb.families[fi].p.some((pid) => state.selected.has(pid)));
-    const chosen = shown.length === 1 && state.selected !== null ? shown[0] : state.browse; // narrowed to one: open it
-    if (chosen === undefined || chosen === null || !shown.includes(chosen)) {
-      if (sb.topics && shown.length > 1 && state.browseBy === "topic") {
-        browseTopics(list, shown);
-        return;
-      }
+    const mode = Engine.browseMode(sb.families, state.selected, state.browse, state.browseBy, sb.topics);
+    if (mode.mode === "topics") {
+      browseTopics(list, mode.shown);
+      return;
+    }
+    if (mode.mode === "models") {
       const lead = el("p", "browse-lead", "Search above, or browse a model by subject");
-      if (sb.topics && shown.length > 1) lead.append(" (or ", switchTo("topic", "topics across models"), ")");
+      if (mode.topics) lead.append(" (or ", switchTo("topic", "topics across models"), ")");
       list.append(lead);
-      shown.forEach((fi) => {
+      mode.shown.forEach((fi) => {
         const f = sb.families[fi];
-        const row = el("a", "result");
-        row.href = "#";
-        row.addEventListener("click", (e) => { e.preventDefault(); state.browse = fi; run(); });
+        const row = action(null, () => { state.browse = fi; run(); }, "result");
         const head = el("div", "result-head");
         head.append(el("span", "result-name", f.n));
         row.append(head, el("div", "result-where", `${count(Object.keys(f.k).length, "diagram")}` +
@@ -927,13 +1005,10 @@ if (typeof document !== "undefined") {
       });
       return;
     }
-    const f = sb.families[chosen], v = sb.view(chosen, viewOf(chosen));
+    const chosen = mode.family, f = sb.families[chosen], v = sb.view(chosen, viewOf(chosen));
     const top = el("div", "browse-head");
-    if (!(shown.length === 1 && state.selected !== null)) {
-      const back = el("a", null, sb.topics && shown.length > 1 && state.browseBy === "topic" ? "Topics" : "All models");
-      back.href = "#";
-      back.addEventListener("click", (e) => { e.preventDefault(); state.browse = null; run(); });
-      top.append(back, " › ");
+    if (!mode.narrowed) {
+      top.append(action(mode.topics && state.browseBy === "topic" ? "Topics" : "All models", () => { state.browse = null; run(); }), " › ");
     }
     top.append(el("strong", null, f.n));
     const pick = el("select");
@@ -943,8 +1018,7 @@ if (typeof document !== "undefined") {
     top.append(" ", pick);
     list.append(top);
     const subjects = v.s.map((s, si) => ({ label: s.l, holds: s.h || "", keys: s.d, si }));
-    if (v.u && v.u.length) subjects.push({ label: "Not sorted yet", holds: "The LLM gave no answer for these; the next run asks again.",
-                                          keys: v.u, si: -1 });
+    if (v.u && v.u.length) subjects.push({ label: UNSORTED, holds: UNSORTED_NOTE, keys: v.u, si: -1 });
     for (const s of subjects) list.append(subjectBox(f, s.label, s.holds, s.keys, `${chosen}/${v.id}/${s.si}`));
   }
 
@@ -952,31 +1026,22 @@ if (typeof document !== "undefined") {
   function subjectBox(f, label, holds, keys, id, model) {
     const box = el("section", "group");
     const head = el("a", "group-head");
-    head.href = "#";
     head.append(el("span", "group-label", label));
     if (model) head.append(el("span", "group-model", model));
     head.append(el("span", "group-count", count(keys.length, "diagram")));
     if (holds) head.title = holds;
     const body = el("div");
-    const fill = () => {
-      body.replaceChildren(...keys.map((k) => state.byKey.get(f.k[k] + "\u0000" + k)).filter((d) => d !== undefined)
+    collapsible(head, body, id, () => {
+      body.replaceChildren(...keys.map((k) => state.lookup.doc(f.k[k], k)).filter((d) => d !== undefined)
         .sort((a, b) => (state.index.items[a].n || "").localeCompare(state.index.items[b].n || ""))
         .map((doc) => resultRow({ doc }, [], aboutOf(doc))));
-    };
-    head.addEventListener("click", (e) => {
-      e.preventDefault();
-      if (state.open.has(id)) { state.open.delete(id); body.replaceChildren(); } else { state.open.add(id); fill(); }
     });
-    if (state.open.has(id)) fill();
     box.append(head, body);
     return box;
   }
 
   function switchTo(by, text) {
-    const a = el("a", null, text);
-    a.href = "#";
-    a.addEventListener("click", (e) => { e.preventDefault(); state.browseBy = by; run(); });
-    return a;
+    return action(text, () => { state.browseBy = by; run(); });
   }
 
   // With no search and several models: topics across models (plan SB CP4), each opening the
@@ -996,31 +1061,24 @@ if (typeof document !== "undefined") {
       list.append(top);
     }
     const topics = tv.s.map((t, ti) => ({ label: t.l, holds: t.h || "", m: t.m, ti }));
-    if (tv.u && tv.u.length) topics.push({ label: "Not sorted yet", holds: "The LLM gave no answer for these; the next run asks again.",
-                                         m: tv.u, ti: -1 });
+    if (tv.u && tv.u.length) topics.push({ label: UNSORTED, holds: UNSORTED_NOTE, m: tv.u, ti: -1 });
     for (const t of topics) {
       const members = t.m.filter(([fi]) => keep.has(fi));
       if (!members.length) continue;
       const box = el("section", "group topic");
       const head = el("a", "group-head");
-      head.href = "#";
       const models = new Set(members.map(([fi]) => fi)).size;
       head.append(el("span", "group-label", t.label), el("span", "group-count",
         `${count(members.length, "subject")} in ${count(models, "model")}`));
       if (t.holds) head.title = t.holds;
       const id = `t/${tv.id}/${t.ti}`;
       const body = el("div", "topic-body");
-      const fill = () => {
+      collapsible(head, body, id, () => {
         body.replaceChildren(...members.map(([fi, si]) => {
           const f = sb.families[fi], v = sb.view(fi, f.dv), s = v.s[si];
           return subjectBox(f, s.l, s.h || "", s.d, `${id}/${fi}/${si}`, f.n);
         }));
-      };
-      head.addEventListener("click", (e) => {
-        e.preventDefault();
-        if (state.open.has(id)) { state.open.delete(id); body.replaceChildren(); } else { state.open.add(id); fill(); }
       });
-      if (state.open.has(id)) fill();
       box.append(head, body);
       list.append(box);
     }
@@ -1049,11 +1107,7 @@ if (typeof document !== "undefined") {
   }
 
   function link(pid, key, label) {
-    const d = state.byKey.get(pid + "\u0000" + key);
-    if (d === undefined) return el("span", null, label);
-    const a = el("a", null, label);
-    a.href = "#d" + d;
-    return a;
+    return itemLink(state.lookup.doc(pid, key), label);
   }
 
   function section(title, body) {
@@ -1068,7 +1122,7 @@ if (typeof document !== "undefined") {
     const pre = el("pre", "text");
     for (const piece of Engine.mark(text, state.terms)) {
       for (const part of Engine.tagPieces(piece.text, tags)) {
-        const d = part.tag === undefined ? undefined : state.byKey.get(pid + "\u0000" + part.tag);
+        const d = part.tag === undefined ? undefined : state.lookup.doc(pid, part.tag);
         let node;
         if (d !== undefined) {
           node = el("a", "tag", part.text);
@@ -1085,27 +1139,17 @@ if (typeof document !== "undefined") {
 
   // The same item in other models (plan SH): each a link, with how it matches and what differs there.
   const MATCH = { e: "the same element", i: "the same requirement Id", n: "the same name" };
-  // What another model is to this one, by this one's kin note (`lineage.facts`).
+  // What another model is to this one (`Engine.standing`).
   const THERE = { derived: "this one was built on it", "built-on": "built on this one, by others",
-                  root: "a rival on a shared root", branches: "a branch beside this one" };
+                  root: "a rival on a shared root", branches: "a branch beside this one", older: "an older version",
+                  newer: "a newer version" };
   function alsoIn(it) {
     const ul = el("ul", "relations");
     for (const [tok, key, basis, diff] of it.al) {
-      const pid = state.projects.findIndex((p) => (p.token || "").slice(7, 23) === tok);
+      const pid = state.projects.findIndex((p) => Engine.shortToken(p.token) === tok);
       const li = el("li");
-      const d = pid < 0 ? undefined : state.byKey.get(pid + "\u0000" + key);
-      const name = pid < 0 ? tok : state.projects[pid].label;
-      if (d !== undefined) {
-        const a = el("a", null, name);
-        a.href = "#d" + d;
-        li.append(a);
-      } else {
-        li.append(el("span", null, name));
-      }
-      const here = state.projects[it.p], there = pid < 0 ? null : state.projects[pid];
-      const kin = there && (here.kn || []).find(([t]) => t === there.token);
-      const how = !there ? "" : kin ? THERE[kin[1]] || ""
-        : there.fm && there.fm === here.fm ? ((there.rk || 0) > (here.rk || 0) ? "an older version" : "a newer version") : "";
+      li.append(itemLink(pid < 0 ? undefined : state.lookup.doc(pid, key), pid < 0 ? tok : state.projects[pid].label));
+      const how = pid < 0 ? "" : THERE[Engine.standing(state.projects[it.p], state.projects[pid])] || "";
       if (how) li.append(el("span", "phrase", ` (${how})`));
       li.append(el("span", "phrase", ` ${MATCH[basis] || basis}: `), diff || "the same");
       ul.append(li);
@@ -1117,7 +1161,7 @@ if (typeof document !== "undefined") {
   function tagsOf(it) {
     if (it.tg) return it.tg;
     if (it.t === "summary" && it.of) {
-      const d = state.byKey.get(it.p + "\u0000" + it.of[0]);
+      const d = state.lookup.doc(it.p, it.of[0]);
       return d === undefined ? undefined : state.index.items[d].tg;
     }
     return undefined;
@@ -1127,7 +1171,7 @@ if (typeof document !== "undefined") {
     const pane = $("detail");
     const m = /^#d(\d+)$/.exec(location.hash);
     if (!m) {
-      pane.replaceChildren(el("p", "hint", "Search above; choose a result to read it here."));
+      pane.replaceChildren(el("p", "hint", HINT));
       return;
     }
     const it = state.index.items[Number(m[1])];
@@ -1136,8 +1180,33 @@ if (typeof document !== "undefined") {
       pane.replaceChildren(el("p", "hint", "That item isn't in this page."));
       return;
     }
-    const out = [el("h2", null, it.n || it.k), el("div", "badges")];
+    const out = [el("h2", null, it.n || it.k), el("div", "badges"), factsTable(it, pid, project)];
     out[1].append(el("span", "badge", badge(it)));
+    if (it.al && it.al.length) out.push(section("Also in", alsoIn(it)));
+    if (it.sk && it.sk.length) out.push(section("Sketch", sketchBox(it)));
+    const tags = tagsOf(it);
+    if (it.x) out.push(section(it.t === "requirement" ? "Requirement text" : it.t === "summary" ? "Summary" : "Text",
+                               textBlock(it.x, tags, pid)));
+    if (it.r && it.r.length) out.push(section("Relationships", relations(it.r, pid)));
+    if (it.d && it.d.length) {
+      const p = el("p");
+      p.append(...joined(it.d.map(([k, label]) => link(pid, k, label))));
+      out.push(section("Shown in diagrams", p));
+    }
+    out.push(...summaries(it, pid, tags));
+    if (it.c) {
+      const body = el("div");
+      body.append(el("p", "hint", "Everything this page searches for this item: its text, where it is, and what it relates to."),
+                  textBlock(it.c, tags, pid));
+      out.push(section("Full text", body));
+    }
+    pane.replaceChildren(...out);
+    pane.scrollTop = 0;
+  }
+
+  // An item's facts: its ids, where it is, its model (saved when, by which Cameo, its lineage), its
+  // subject, source and metadata, what generated it, and what lists it.
+  function factsTable(it, pid, project) {
     const facts = el("table", "facts");
     const fact = (k, v) => {
       if (v === undefined || v === null || v === "") return;
@@ -1160,50 +1229,36 @@ if (typeof document !== "undefined") {
       if (s !== null) fact("Subject", `${state.subjects.label(fi, vid, s)} (${state.subjects.view(fi, vid).t})`);
     }
     fact("Source", (project.sources || []).map((s) => s.path).join("; "));
-    const meta = (project.sources || []).flatMap((s) => Object.entries(s.metadata || {}).map(([k, v]) => `${k}=${v}`));
-    fact("Metadata", [...new Set(meta)].join("; "));
+    fact("Metadata", Engine.metadataOf(project).join("; "));
     if (it.m) fact("Generated by", `${it.m}; not part of the source model`);
     if (it.l) fact("Listed in", link(pid, it.l[0], it.l[1]));
-    out.push(facts);
-    if (it.al && it.al.length) out.push(section("Also in", alsoIn(it)));
-    if (it.sk && it.sk.length) out.push(section("Sketch", sketchBox(it)));
-    const tags = tagsOf(it);
-    if (it.x) out.push(section(it.t === "requirement" ? "Requirement text" : it.t === "summary" ? "Summary" : "Text",
-                               textBlock(it.x, tags, pid)));
-    if (it.r && it.r.length) {
-      const groups = new Map();
-      for (const [, , phrase, okey, olabel] of it.r) {
-        if (!groups.has(phrase)) groups.set(phrase, []);
-        groups.get(phrase).push(link(pid, okey, olabel));
-      }
-      const ul = el("ul", "relations");
-      for (const [phrase, links] of groups) {
-        const li = el("li");
-        li.append(el("span", "phrase", phrase + " "));
-        links.forEach((a, i) => li.append(...(i ? [", ", a] : [a])));
-        ul.append(li);
-      }
-      out.push(section("Relationships", ul));
+    return facts;
+  }
+
+  // An item's relationships, grouped by how they read ("satisfied by", "derived from"...), each a link.
+  function relations(rels, pid) {
+    const groups = new Map();
+    for (const [, , phrase, okey, olabel] of rels) {
+      if (!groups.has(phrase)) groups.set(phrase, []);
+      groups.get(phrase).push(link(pid, okey, olabel));
     }
-    if (it.d && it.d.length) {
-      const p = el("p");
-      it.d.forEach(([k, label], i) => p.append(...(i ? [", ", link(pid, k, label)] : [link(pid, k, label)])));
-      out.push(section("Shown in diagrams", p));
+    const ul = el("ul", "relations");
+    for (const [phrase, links] of groups) {
+      const li = el("li");
+      li.append(el("span", "phrase", phrase + " "), ...joined(links));
+      ul.append(li);
     }
-    const sums = it.t === "summary" ? [] : (state.summaries.get(pid + "\u0000" + it.k) || []).map((d) => state.index.items[d]);
-    for (const s of sums) {
+    return ul;
+  }
+
+  // The generated summaries of an item, marked as such.
+  function summaries(it, pid, tags) {
+    if (it.t === "summary") return [];
+    return state.lookup.summaries(pid, it.k).map((d) => state.index.items[d]).map((s) => {
       const body = el("div");
       body.append(el("p", "generated", `Generated by ${s.m}; not part of the source model.`), textBlock(s.x, tags, pid));
-      out.push(section((s.kd || "Summary") + (s.pt ? ", " + s.pt : ""), body));
-    }
-    if (it.c) {
-      const body = el("div");
-      body.append(el("p", "hint", "Everything this page searches for this item: its text, where it is, and what it relates to."),
-                  textBlock(it.c, tags, pid));
-      out.push(section("Full text", body));
-    }
-    pane.replaceChildren(...out);
-    pane.scrollTop = 0;
+      return section((s.kd || "Summary") + (s.pt ? ", " + s.pt : ""), body);
+    });
   }
 
   // A diagram's sketches, decoded when it is opened: WebP images, or an SVG whose shapes open
@@ -1223,7 +1278,7 @@ if (typeof document !== "undefined") {
       const frame = el("div", "sketch");
       frame.addEventListener("click", (e) => { // a shape opens its element; anywhere else zooms
         const shape = e.target.closest ? e.target.closest("g.linked[data-k]") : null;
-        const d = shape ? state.byKey.get(it.p + "\u0000" + shape.getAttribute("data-k")) : undefined;
+        const d = shape ? state.lookup.doc(it.p, shape.getAttribute("data-k")) : undefined;
         if (d !== undefined) location.hash = "#d" + d;
         else frame.classList.toggle("zoomed");
       });
@@ -1246,7 +1301,7 @@ if (typeof document !== "undefined") {
         }
         const shown = document.importNode(svg, true); // a copy: listeners go on the frame, above
         for (const g of shown.querySelectorAll("[data-k]")) {
-          if (state.byKey.has(it.p + "\u0000" + g.getAttribute("data-k"))) g.classList.add("linked");
+          if (state.lookup.doc(it.p, g.getAttribute("data-k")) !== undefined) g.classList.add("linked");
         }
         frame.replaceChildren(shown);
       });
