@@ -1,8 +1,9 @@
 """Locate Cameo projects inside the input file, whatever the wrapping.
 
-Detection goes by content, not by file extension: a zip that contains an XMI model
-entry is a project; a zip without one (e.g. a .rdzip bundle) is searched for nested
-zips; a bare XML file with an XMI root (e.g. .mdxml / .xmi) is a single-entry project.
+A file is looked at by its name, then taken by its content: a zip that contains an XMI model
+entry is a project; a zip without one (e.g. a .rdzip bundle) is searched for nested projects,
+the members named as Cameo names them or as bundles (`CANDIDATE_EXTS`); a bare XML file with
+an XMI root (e.g. .mdxml / .xmi) is a single-entry project.
 Everything is read in memory, so malicious member paths cannot escape to disk. Size
 limits guard against zip bombs.
 """
@@ -37,6 +38,12 @@ PRIMARY_MODEL_ENTRIES = (
 )
 MODEL_ENTRY_PREFIX = "com.nomagic.magicdraw.uml_model."
 PROJECT_EXTS = {".mdzip", ".mdzipx", ".mdxml", ".xmi", ".xml", ".uml"}
+# The files worth opening, in a folder or an archive: Cameo's own, and bundles that hold them,
+# a ZIP standing for a folder (the maintainer, 2026-10-07: "perhaps just '.zip' as a directory
+# surrogate, and the known extensions for Cameo"). Inside an archive, `.xml` members are left
+# out: a project's own are its entries, and plugins hold many that are no models.
+BUNDLE_EXTS = {".zip", ".rdzip"}
+CANDIDATE_EXTS = PROJECT_EXTS | BUNDLE_EXTS
 
 
 class UnsupportedInput(Exception):
@@ -211,12 +218,11 @@ def discover(data: bytes, name: str, container: tuple[str, ...] = (), depth: int
         for info in zf.infolist():
             if info.is_dir() or info.file_size < 22:
                 continue
-            ext = PurePosixPath(info.filename).suffix.lower()
+            if PurePosixPath(info.filename).suffix.lower() not in CANDIDATE_EXTS - {".xml"}:
+                continue
             try:
                 with zf.open(info) as f:
                     head = f.read(4)
-                if head != ZIP_MAGIC and ext not in PROJECT_EXTS - {".xml"}:
-                    continue
                 if models and head != ZIP_MAGIC:
                     continue  # XMI members of this project were handled above
                 budget.take(chain, info)

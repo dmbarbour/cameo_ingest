@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import runner as tree
-from ..archive import ZIP_MAGIC, sniff_xmi
+from ..archive import CANDIDATE_EXTS, ZIP_MAGIC, sniff_xmi
 from ..config import ProjectOptions, stored_settings, tree_settings
 from ..llm import EnrichmentSession, connect
 from ..progress import Progress
@@ -34,12 +34,6 @@ its key $OPENAI_API_KEY; `cameo-ingest config models` lists the endpoint's model
 
 
 
-# Files of these types are never Cameo projects, and are skipped without being opened. Many are
-# ZIP archives (Office and OpenDocument files, Java archives), which would otherwise be taken
-# for candidates and read in full, only to fail.
-NOT_MODELS = frozenset([".doc", ".docx", ".docm", ".dotx", ".xls", ".xlsx", ".xlsm", ".xltx", ".ppt", ".pptx", ".pptm", ".potx", ".vsd", ".vsdx", ".odt", ".ods", ".odp", ".odg", ".pdf", ".epub", ".rtf", ".txt", ".md", ".csv", ".tsv", ".json", ".jsonl", ".html", ".htm", ".msg", ".eml", ".log", ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff", ".svg", ".ico", ".webp", ".mp3", ".wav", ".mp4", ".mov", ".avi", ".mkv", ".jar", ".war", ".ear", ".apk", ".whl", ".nupkg", ".msix", ".exe", ".dll", ".so", ".msi", ".iso", ".class", ".pyc"])
-
-
 
 def _parse_meta(pairs: list[str], files: list[str]) -> dict:
     meta: dict = {}
@@ -55,9 +49,10 @@ def _parse_meta(pairs: list[str], files: list[str]) -> dict:
 
 
 def _candidates(path: Path, out: Path, progress: Progress) -> list[Path]:
-    """Files to add for PATH: the file itself, or the ZIP archives and XMI documents under a
-    directory (the output tree, hidden directories and NOT_MODELS types excluded). The walk
-    reports its progress: a directory on a network share can take minutes."""
+    """Files to add for PATH: the file itself, whatever its name; or, under a directory, the files
+    named as Cameo's projects and bundles are (`archive.CANDIDATE_EXTS`) that are ZIP archives or
+    XMI documents, the output tree and hidden directories left out. The walk reports its
+    progress: a directory on a network share can take minutes."""
     if path.is_file():
         return [path.resolve()]
     found: list[Path] = []
@@ -71,7 +66,7 @@ def _candidates(path: Path, out: Path, progress: Progress) -> list[Path]:
             for name in sorted(files):
                 ph.advance()
                 f = Path(root, name)
-                if f.suffix.lower() in NOT_MODELS:
+                if f.suffix.lower() not in CANDIDATE_EXTS:
                     skipped += 1
                     continue
                 try:
@@ -87,7 +82,7 @@ def _candidates(path: Path, out: Path, progress: Progress) -> list[Path]:
                     if len(found) % 50 == 0:
                         log.info("found %d candidate(s) in %d file(s) so far", len(found), ph.done)
             log.debug("searched %s", root)
-    log.info("found %d candidate(s) under %s; %d file(s) skipped by type, %d unreadable",
+    log.info("found %d candidate(s) under %s; %d file(s) skipped by name, %d unreadable",
              len(found), path, skipped, unreadable)
     return sorted(found)
 

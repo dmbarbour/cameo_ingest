@@ -46,26 +46,39 @@ def test_failed_project_does_not_stop_others(tmp_path, caplog):
 
 
 def test_adding_a_directory_reports_its_walk(tmp_path, caplog):
-    """Adding a directory walks it with progress lines and a debug line per candidate; Office
-    files (ZIP archives too), other known non-model types and hidden directories are skipped
-    without being read."""
+    """Adding a directory walks it with progress lines and a debug line per candidate. Only files
+    named as Cameo's projects and bundles are opened (a ZIP stands for a folder); others, Office
+    files (ZIP archives too) and a project under another name among them, and hidden directories,
+    are skipped without being read. Inside a bundle, members go by the same names."""
+    import io
     import zipfile
+
+    from cameo_ingest.archive import discover
 
     tree = tmp_path / "share"
     (tree / "deep/er").mkdir(parents=True)
     (tree / ".git").mkdir()
     (tree / "deep/er/drone.mdzip").write_bytes(make_mdzip())
     (tree / ".git/drone.mdzip").write_bytes(make_mdzip())
+    (tree / "drone.bin").write_bytes(make_mdzip())  # a project under another name: not looked for
     with zipfile.ZipFile(tree / "report.docx", "w") as z:
         z.writestr("word/document.xml", "<w:document/>")
     (tree / "notes.txt").write_text("not a model")
+    jar = io.BytesIO()
+    with zipfile.ZipFile(jar, "w") as z:
+        z.writestr("inside.mdzip", make_mdzip())
+    with zipfile.ZipFile(tree / "bundle.zip", "w") as z:
+        z.writestr("models/drone.mdzip", make_mdzip())
+        z.writestr("plugin.jar", jar.getvalue())  # holds a project, but isn't named as one
     out = tmp_path / "out"
     with caplog.at_level(logging.DEBUG, logger="cameo_ingest"):
         assert cli(["add", "-o", str(out), str(tree), "-vv"]) == 0
     assert "looking for models under" in caplog.text
     assert "candidate: " in caplog.text and "drone.mdzip (ZIP)" in caplog.text
-    assert "found 1 candidate(s)" in caplog.text and "2 file(s) skipped by type" in caplog.text
-    assert "report.docx" not in caplog.text
+    assert "found 2 candidate(s)" in caplog.text and "3 file(s) skipped by name" in caplog.text
+    assert "report.docx" not in caplog.text and "drone.bin" not in caplog.text
+    found = list(discover((tree / "bundle.zip").read_bytes(), "bundle.zip"))
+    assert [p.name for p in found] == ["models/drone.mdzip"]
 
 
 def test_which_tree(tmp_path, monkeypatch, caplog):

@@ -15,7 +15,10 @@ uv run cameo-ingest run                              # process it; continues a s
 uv run cameo-ingest status                           # what the tree holds
 ```
 
-Supported inputs are recognized by their content, so the file extension doesn't matter:
+A folder is searched for the files Cameo's projects and bundles are named as (`.mdzip`,
+`.mdzipx`, `.mdxml`, `.xmi`, `.xml`, `.uml`, `.rdzip`, and `.zip`, which may hold any of them as
+a folder would), each then taken by its content; a file named on the command line is taken
+whatever its name:
 
 | Input | Handling |
 |---|---|

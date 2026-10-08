@@ -348,6 +348,19 @@
   inner import gone. Left for CQ-013: the renderers' unused `ix`, whose 20 callers that stage
   rewrites anyway.
 
+#### CQ-025: a list of what is never a model, where a list of what can be one serves (the maintainer)
+
+- **Raised by the maintainer** during the remediation (2026-10-07): "I don't believe we need a
+  `NOT_MODELS`. We don't need to check every zip file, perhaps just '.zip' as a directory
+  surrogate, and the known extensions for Cameo."
+- **What was:** a folder's files were opened unless their extension was among 62 known
+  non-models (`cli.NOT_MODELS`); inside an archive, any member that began as a ZIP was searched
+  (a `.jar` in a plugin bundle too).
+- **Done (0.29.0):** `archive.CANDIDATE_EXTS`: Cameo's names (`PROJECT_EXTS`) and bundles
+  (`.zip`, `.rdzip`), for a folder's files and an archive's members alike, each still taken by
+  its content; a file named on the command line is taken whatever its name. No sample, fiction or
+  bundle holds a project under another name (every nested ZIP checked).
+
 ### Tests and scripts
 
 #### CQ-022: 85 of the suite's 289 seconds can go
