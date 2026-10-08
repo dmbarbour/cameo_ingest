@@ -10,7 +10,8 @@ import os
 from pathlib import Path
 from typing import Any
 
-from .config import BY_KEY, SETTINGS, parse_setting, shown
+from .. import session
+from ..config import BY_KEY, SETTINGS, parse_setting, shown, stored_settings, tree_settings
 
 LISTED = 12  # models shown at once
 SAME = "same"  # the vision model's answer for "the text model"
@@ -74,11 +75,12 @@ def choose_model(what: str, models: list[str] | None, current: str | None, visio
 def interview(out: Path) -> int:
     """Ask for the tree's settings, test them, show the changes, save them if wanted, and offer
     calibration. 0 when finished (saved or not), 130 when the input ends or is interrupted."""
-    from . import calibrate, checks, cli, textcal
-    from .config import TreeSettings
-    from .state import State
+    from .. import calibrate, checks, textcal
+    from ..config import TreeSettings
+    from ..state import State
+    from . import calibration
 
-    old = cli.tree_settings(cli.stored_settings(out)).stored()  # retired settings noticed, and dropped on saving
+    old = tree_settings(stored_settings(out)).stored()  # retired settings noticed, and dropped on saving
     new: dict[str, Any] = dict(old)
 
     def value(key: str) -> Any:
@@ -100,8 +102,8 @@ def interview(out: Path) -> int:
         base_url, key = os.environ.get("OPENAI_BASE_URL"), os.environ.get("OPENAI_API_KEY")
         print(f"The endpoint: {base_url or 'OpenAI (OPENAI_BASE_URL is not set)'}; its key: OPENAI_API_KEY "
               + ("is set" if key else "is NOT set"))
-        cfg = cli.llm_config(cli.tree_settings(new, quiet=True))
-        client = cli.make_client(cfg)
+        cfg = session.llm_config(tree_settings(new, quiet=True))
+        client = session.make_client(cfg)
         models: list[str] | None
         try:
             models = [m for m, _ in client.models()]
@@ -121,9 +123,9 @@ def interview(out: Path) -> int:
             put("text-model", choose_model("text model", models, value("text-model")))
             print("\nThe vision model describes diagrams and images; the text model does, unless another is named.")
             put("vision-model", choose_model("vision model", models, value("vision-model"), vision=True))
-            cfg = cli.llm_config(cli.tree_settings(new, quiet=True))
+            cfg = session.llm_config(tree_settings(new, quiet=True))
             print("\nTesting the models:")
-            results = checks.run_checks(cli.make_client(cfg), cfg)
+            results = checks.run_checks(session.make_client(cfg), cfg)
             for c in results:
                 print(f"  {'ok  ' if c.ok else 'FAIL'} {c.name}: {c.detail} ({c.seconds:.1f} s)")
             if all(c.ok for c in results[1:]) or not yes("A model failed its check. Choose the models again", True):
@@ -150,7 +152,7 @@ def interview(out: Path) -> int:
         if changes and not yes(f"Save them to {out}", True):
             print("Nothing saved.")
             return 0
-        if changes or old != cli.stored_settings(out):  # retired settings go too
+        if changes or old != stored_settings(out):  # retired settings go too
             state = State(out)
             try:
                 state.lock()
@@ -161,8 +163,8 @@ def interview(out: Path) -> int:
         if not llm_on:
             return 0
 
-        cfg = cli.llm_config(cli.tree_settings(cli.stored_settings(out), quiet=True))
-        cli.note_models(out, client, cfg)
+        cfg = session.llm_config(tree_settings(stored_settings(out), quiet=True))
+        session.note_models(out, client, cfg)
         state = State(out)
         try:
             vision = cfg.vision_model if new.get("render") is not False and not calibrate.recorded(state, cfg) else None
@@ -183,9 +185,9 @@ def interview(out: Path) -> int:
         dev = argparse.Namespace(llm_replay=None, no_preflight=True, heartbeat=30.0, suite="standard")
         code = 0
         if vision:
-            code = cli.calibrate_vision(out, dev) or code
+            code = calibration.calibrate_vision(out, dev) or code
         if text:
-            code = cli.calibrate_text(out, dev) or code
+            code = calibration.calibrate_text(out, dev) or code
         return code
     except (Ended, KeyboardInterrupt):
         print("\nNothing more saved.")

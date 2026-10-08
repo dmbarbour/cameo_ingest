@@ -103,12 +103,12 @@ def _draw(path: Path, draw: Callable[[], bytes | None]) -> bool:
     complete); False when there is nothing to draw."""
     if path.exists():
         return True
-    png = draw()
-    if png is None:
+    data = draw()  # a PNG, or an SVG
+    if data is None:
         return False
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_bytes(png)
+    tmp.write_bytes(data)
     tmp.replace(path)
     return True
 
@@ -116,59 +116,56 @@ def _draw(path: Path, draw: Callable[[], bytes | None]) -> bool:
 SKETCH = "re-drawn from layout data, not a Cameo rendering"
 
 
-def ingest_project(content: ContentInfo, project: Project, root: Path, llm: EnrichmentSession, render: bool = True,
-                   progress: Progress = QUIET, concurrency: int = 1, image_pixels: int = IMAGE_PIXELS,
-                   style: sketch.SketchStyle = sketch.STYLE,
-                   modules: tuple[int, int, int] = MODULES, part_chars: int = PART_CHARS[1]) -> ProjectResult:
-    """Parse, draw the sketches, ask the LLM (`enrich`), write."""
-    ix = parse_project(project, progress)
-    annotations: dict[str, list[Annotation]] = {}
-    base = Trace(content_sha256=content.sha256)
-    layouts = load_layouts(project, ix, progress)
-    writer = ProjectWriter(content, project, ix, root, annotations, layouts, modules)
-    enricher = Enricher(llm, writer.view, writer.plan, root, image_pixels, part_chars)
-
+def draw_sketches(writer: ProjectWriter, enricher: Enricher, project: Project, progress: Progress,
+                  image_pixels: int, style: sketch.SketchStyle) -> None:
+    """Draw each diagram's sketch (and a large one's modules: plan DV), annotate it, and queue its
+    LLM requests."""
+    ix, root, layouts = writer.view.ix, writer.root, writer.view.layouts
+    annotations = writer.view.ann  # the view's own: the enricher adds to it too (CQ-017)
     reused = 0  # sketches drawn by an interrupted attempt with the same tool and options
-    if render and layouts:
-        with progress.phase(f"{project.display_name}: rendering", len(layouts), "diagram") as ph:
-            for dia_id in layouts:
-                ph.advance()
-                d = ix.diagrams[dia_id]
-                el = ix.elements[dia_id]
-                graph = writer.view.graph(dia_id)
-                part = writer.view.partition(dia_id)  # a large diagram: an overview and a view per module (plan DV)
-                title = f"{d.diagram_type or 'Diagram'}: {ix.qualified_name(dia_id)}"
-                rel = writer.plan.dia_file[dia_id].removesuffix(".md") + ".png"
-                reused += (root / rel).exists()
-                if part is not None:
-                    drawn = _draw(root / rel, partial(sketch.overview_png, ix, part, title, image_pixels, style))
-                else:
-                    drawn = _draw(root / rel, partial(sketch.render_png, ix, graph, title, pixels=image_pixels,
-                                                      style=style))
-                if not drawn:
+    with progress.phase(f"{project.display_name}: rendering", len(layouts), "diagram") as ph:
+        for dia_id in layouts:
+            ph.advance()
+            d = ix.diagrams[dia_id]
+            el = ix.elements[dia_id]
+            graph = writer.view.graph(dia_id)
+            part = writer.view.partition(dia_id)  # a large diagram: an overview and a view per module (plan DV)
+            title = f"{d.diagram_type or 'Diagram'}: {ix.qualified_name(dia_id)}"
+            rel = writer.plan.dia_file[dia_id].removesuffix(".md") + ".png"
+            reused += (root / rel).exists()
+            if part is not None:
+                drawn = _draw(root / rel, partial(sketch.overview_png, ix, part, title, image_pixels, style))
+            else:
+                drawn = _draw(root / rel, partial(sketch.render_png, ix, graph, title, pixels=image_pixels,
+                                                  style=style))
+            if not drawn:
+                continue
+            _draw(root / (rel.removesuffix(".png") + ".svg"), partial(_svg, ix, graph, title))  # for people (KX)
+            tr = writer.view.trace(el).with_(entry=d.streams[0] if d.streams else el.entry, line=None,
+                                        derivation=Derivation(method="rendered", inputs=tuple(d.streams)))
+            label = f"Diagram sketch with its modules outlined ({SKETCH})" if part else f"Diagram sketch ({SKETCH})"
+            annotations.setdefault(dia_id, []).append(Annotation(label, "", tr, image=rel))
+            if part is None:
+                enricher.diagram(dia_id, tr, rel)
+                continue
+            for m in part.modules:
+                mrel = writer.plan.module_image(dia_id, m.num)
+                if not _draw(root / mrel, partial(sketch.module_png, ix, part, m.num, title, image_pixels, style)):
                     continue
-                _draw(root / (rel.removesuffix(".png") + ".svg"), partial(_svg, ix, graph, title))  # for people (KX)
-                tr = writer.view.trace(el).with_(entry=d.streams[0] if d.streams else el.entry, line=None,
-                                            derivation=Derivation(method="rendered", inputs=tuple(d.streams)))
-                label = f"Diagram sketch with its modules outlined ({SKETCH})" if part else f"Diagram sketch ({SKETCH})"
-                annotations.setdefault(dia_id, []).append(Annotation(label, "", tr, image=rel))
-                if part is None:
-                    enricher.diagram(dia_id, tr, rel)
-                    continue
-                for m in part.modules:
-                    mrel = writer.plan.module_image(dia_id, m.num)
-                    if not _draw(root / mrel, partial(sketch.module_png, ix, part, m.num, title, image_pixels, style)):
-                        continue
-                    annotations[dia_id].append(
-                        Annotation(f"Module M{m.num} sketch ({SKETCH})", "", tr, image=mrel, module=m.num))
-                    enricher.module(dia_id, part, m.num, tr, mrel)
-                enricher.large_diagram(dia_id, part, tr, rel)
+                annotations[dia_id].append(
+                    Annotation(f"Module M{m.num} sketch ({SKETCH})", "", tr, image=mrel, module=m.num))
+                enricher.module(dia_id, part, m.num, tr, mrel)
+            enricher.large_diagram(dia_id, part, tr, rel)
 
     if reused:
         log.info("%s: reused %d sketch(es) drawn by an interrupted run", project.display_name, reused)
 
-    # Embedded images (attachments, image shapes...). Linking them to elements depends on
-    # version-specific storage, so they are listed at project level for now.
+
+def extract_images(writer: ProjectWriter, enricher: Enricher, project: Project,
+                   base: Trace) -> list[tuple[str, str, Trace]]:
+    """Copy out the embedded images (attachments, image shapes...) and queue their LLM requests:
+    (entry, file, trace) each. Linking them to elements depends on version-specific storage, so
+    they are listed at project level for now."""
     images = []
     for entry in project.entry_names:
         if entry in project.model_entries or project.size(entry) < 64:
@@ -183,6 +180,23 @@ def ingest_project(content: ContentInfo, project: Project, root: Path, llm: Enri
         tr = base.with_(entry=entry)
         images.append((entry, rel, tr))
         enricher.image(entry, rel, mime, tr)
+    return images
+
+
+def ingest_project(content: ContentInfo, project: Project, root: Path, llm: EnrichmentSession, render: bool = True,
+                   progress: Progress = QUIET, concurrency: int = 1, image_pixels: int = IMAGE_PIXELS,
+                   style: sketch.SketchStyle = sketch.STYLE,
+                   modules: tuple[int, int, int] = MODULES, part_chars: int = PART_CHARS[1]) -> ProjectResult:
+    """Parse, draw the sketches, ask the LLM (`enrich`), write."""
+    ix = parse_project(project, progress)
+    base = Trace(content_sha256=content.sha256)
+    layouts = load_layouts(project, ix, progress)
+    writer = ProjectWriter(content, project, ix, root, layouts, modules)
+    enricher = Enricher(llm, writer.view, writer.plan, root, image_pixels, part_chars)
+
+    if render and layouts:
+        draw_sketches(writer, enricher, project, progress, image_pixels, style)
+    images = extract_images(writer, enricher, project, base)
 
     enricher.packages()
     if enricher.truncated:

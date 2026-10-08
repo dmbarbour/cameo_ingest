@@ -29,15 +29,18 @@ SKIP_MEMBER_ROLES = {
 
 
 class ProjectView:
+    """One project's indexes and caches, and what is found about it before it is written: the
+    pipeline draws the sketches and the enricher asks the LLM, both adding to `ann` (and the
+    enricher to `package_parts`, by `set_parts`); only then do the writers read them (CQ-017)."""
+
     def __init__(self, content: ContentInfo, project: Project, ix: ModelIndex,
-                 annotations: dict[str, list[Annotation]] | None = None,
                  layouts: dict[str, Layout] | None = None, modules: tuple[int, int, int] = MODULES):
         self.layouts = layouts or {}
         self.modules = modules  # large diagrams: split above N shapes, into MIN to MAX
         self.content = content
         self.project = project
         self.ix = ix
-        self.ann = annotations if annotations is not None else {}
+        self.ann: dict[str, list[Annotation]] = {}  # by element: sketches and the LLM's notes (CQ-017: the one owner)
         self.rels = sem.relationships(ix)
         self.rel_by_id = {r.id: r for r in self.rels}
         self.rels_by_end: dict[str, list[sem.Relationship]] = defaultdict(list)

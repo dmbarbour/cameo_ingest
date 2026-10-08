@@ -472,7 +472,7 @@ def test_every_template_filled_by_its_builder():
     project = next(discover(data, "drone.mdzip"))
     ix = parse_project(project)
     with tempfile.TemporaryDirectory() as tmp:
-        w = ProjectWriter(ContentInfo(hashlib.sha256(data).hexdigest(), "drone.mdzip"), project, ix, Path(tmp), {},
+        w = ProjectWriter(ContentInfo(hashlib.sha256(data).hexdigest(), "drone.mdzip"), project, ix, Path(tmp),
                           load_layouts(project, ix), (25, 6, 25))
         dia = next(iter(w.view.layouts))
         g, part, d = w.view.graph(dia), w.view.partition(dia), ix.diagrams[dia]

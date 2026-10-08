@@ -290,7 +290,7 @@ def test_config_test_and_models(tmp_path, monkeypatch, capsys, caplog):
     """`config test` checks that each model answers and the vision model reads a drawn number;
     `config models` lists the endpoint's models, those the tree uses marked; a model whose
     creation time changes is noted (plan CF-03)."""
-    from cameo_ingest import cli as cli_module
+    from cameo_ingest import session
     from cameo_ingest.checks import CARD_NUMBER
 
     class Endpoint:
@@ -306,7 +306,7 @@ def test_config_test_and_models(tmp_path, monkeypatch, capsys, caplog):
             return "Ready."
 
     endpoint = Endpoint()
-    monkeypatch.setattr(cli_module, "make_client", lambda cfg: endpoint)
+    monkeypatch.setattr(session, "make_client", lambda cfg: endpoint)
     out = tmp_path / "tree"
     assert cli(["config", "-o", str(out), "test"]) == 2
     assert "config set text-model" in capsys.readouterr().err
@@ -332,7 +332,7 @@ def test_config_test_and_models(tmp_path, monkeypatch, capsys, caplog):
 def test_config_interactive(tmp_path, monkeypatch, capsys):
     """`config -i` asks for each setting in turn, finds models by part of their names, tests them,
     and saves only the changes, and only when told to; the input ending saves nothing (plan CF-06)."""
-    from cameo_ingest import cli as cli_module
+    from cameo_ingest import session
     from cameo_ingest.checks import CARD_NUMBER
     from cameo_ingest.state import State
 
@@ -349,7 +349,7 @@ def test_config_interactive(tmp_path, monkeypatch, capsys):
             return "Ready."
 
     endpoint = Endpoint()
-    monkeypatch.setattr(cli_module, "make_client", lambda cfg: endpoint)
+    monkeypatch.setattr(session, "make_client", lambda cfg: endpoint)
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     out = tmp_path / "tree"
 

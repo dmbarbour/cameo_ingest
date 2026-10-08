@@ -22,7 +22,6 @@ from collections.abc import Callable
 from pathlib import Path
 
 from . import crossref, hierarchies
-from .annotations import Annotation
 from .archive import Project
 from .config import MODULES
 from .files import FilePlan
@@ -41,10 +40,9 @@ class ProjectWriter:
     (`view`), where its files are (`plan`), its chunks (`sink`), its pages and its tables."""
 
     def __init__(self, content: ContentInfo, project: Project, ix: ModelIndex, root: Path,
-                 annotations: dict[str, list[Annotation]] | None = None,
                  layouts: dict[str, Layout] | None = None, modules: tuple[int, int, int] = MODULES):
         self.root = root
-        self.view = ProjectView(content, project, ix, annotations, layouts, modules)
+        self.view = ProjectView(content, project, ix, layouts, modules)
         self.plan = FilePlan(self.view)
         self.sink = ChunkSink(self.view)
         self.pages = PageWriter(self.view, self.plan, self.sink, root)

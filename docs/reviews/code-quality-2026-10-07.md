@@ -174,6 +174,20 @@
 - **Opening a tree** (open, lock, `except StateError`, close) is written out 17 times; one context
   manager would serve.
 - **CQ-009R1 to R5,** one a bullet, each a separate small change.
+- **Weighed,** for where the command line's work belongs: (a) all in `cli.py`, as the composition
+  root (legitimate, and convenient, but 1,000 lines and the cycle with `interactive`, which calls
+  the calibrate commands back); (b) a command layer under a thin parser (most commands already are
+  such a function); (c) library pieces to their domains, and the commands in a package by group;
+  (d) a CLI framework (click, typer: a dependency and a rewrite, for nothing a user sees). (c).
+- **Done:** settings to `config` (`stored_settings`, `tree_settings`); the tree's LLM to a new
+  `session.py` (`llm_config`, `shared_store`, `make_client`, `note_models`), its SQL to
+  `llm.ResponseStore.adopt`; `runner.remove`, sharing `prune`'s deletion; and `cli/` a package:
+  `__init__` (the whole parser in one place, each command's function by `set_defaults`, the tree
+  commands by `needs_tree`, a `StateError` reported once, in `main`), `common` (`open_tree`,
+  `check_endpoint`), `tree`, `versions` (`versions_command` five functions), `calibration`,
+  `configure` and `interactive`, which imports `calibration`: no cycle. The largest module is 291
+  lines. Left: `interactive.interview` (F 44: a dialogue, read top to bottom) and `export`, which
+  CQ-006 rewrites.
 
 #### CQ-010: the tree's layout and its JSON Lines are spelled out in many places
 
@@ -264,6 +278,13 @@
   test failing loudly. `view.package_parts` is likewise changed by enrichment and read later by
   the pages, an order nothing states.
 - **CQ-017R1:** write through `view.ann`; extract `render_sketches` and `extract_images`.
+- **Weighed:** (a) the view the one owner of annotations, the pipeline writing through it; (b) an
+  `Annotations` collector passed to both (a type for a dict of lists); (c) the shared dict, with a
+  comment (the trap stays). (a). For `package_parts`: the view as the project's store of what is
+  found before writing, the order stated (pages, ledger and sink all read the view), or
+  enrichment's results passed to the writers (no behavior gained for the churn); the first.
+- **Done:** `ProjectView.ann` made by the view alone (no parameter); `pipeline.draw_sketches` and
+  `extract_images`; `ProjectView`'s docstring states the fill-then-write order.
 
 #### CQ-018: small text helpers written several times, with different rules
 

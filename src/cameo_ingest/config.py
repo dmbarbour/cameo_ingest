@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from dataclasses import dataclass, fields, replace
 from pathlib import Path
@@ -17,6 +18,9 @@ from typing import Any
 
 from .prompts import PART_CHARS
 from .provenance import sha256_text
+from .state import State
+
+log = logging.getLogger(__name__)
 
 # The sketches' uncalibrated defaults: gemma-4's figures at DeepInfra, for now (the maintainer's
 # decision, 2026-10-03; docs/research/gemma4-images-2026-09-30.md and
@@ -49,6 +53,29 @@ RETIRED = ("cross_index", "threads", "hierarchies", "line_refs", "env", "llm_tim
 def retired(stored: dict[str, Any]) -> list[str]:
     """The retired settings a tree remembers."""
     return sorted(k for k in RETIRED if stored.get(k) is not None)
+
+
+def stored_settings(out: Path) -> dict[str, Any]:
+    """What a tree remembers, as stored; nothing for a tree not started yet."""
+    if not State.exists(out):
+        return {}
+    st = State(out)
+    try:
+        return st.settings()
+    finally:
+        st.close()
+
+
+def tree_settings(stored: dict[str, Any], quiet: bool = False) -> TreeSettings:
+    """The tree's settings, as `config` set them (plan CF); those an older version remembered and
+    that are now defaults or calibrated are left out, with a notice unless `quiet`."""
+    if stored.get("chunk_style") == "markdown" and not quiet:  # retired in 0.6.0 (plan RA-02)
+        log.warning("the Markdown chunk style is retired: this tree's chunks will be plain text")
+    old = [k for k in retired(stored) if k != "chunk_style"]
+    if old and not quiet:  # heuristics are defaults, not settings (ADR-0027); the rest is `config`'s
+        log.warning("this tree remembers settings that are now defaults or calibrated, and ignores them: %s",
+                    ", ".join(old))
+    return TreeSettings.from_stored(stored)
 
 
 @dataclass(frozen=True)

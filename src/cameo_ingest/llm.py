@@ -109,6 +109,22 @@ class ResponseStore(SqliteCache):
         );
     """
 
+    def adopt(self, old: Path) -> None:
+        """Copy another store's answers and request log in, keeping ours where both have one: the
+        columns both have, since an old store may lack some (plan CF-04)."""
+        with self._lock:
+            self._db.execute("ATTACH DATABASE ? AS old", (str(old),))
+            try:
+                for table in ("responses", "requests"):
+                    main_cols = [r[1] for r in self._db.execute(f"PRAGMA main.table_info({table})")]
+                    old_cols = {r[1] for r in self._db.execute(f"PRAGMA old.table_info({table})")}
+                    cols = ", ".join(c for c in main_cols if c in old_cols)
+                    if cols:
+                        self._db.execute(f"INSERT OR IGNORE INTO main.{table} ({cols}) SELECT {cols} FROM old.{table}")
+                self._db.commit()
+            finally:
+                self._db.execute("DETACH DATABASE old")
+
     def get(self, endpoint: str | None, model: str, key: str) -> str | None:
         """The recorded answer; with endpoint None, from any endpoint (replay)."""
         with self._lock:

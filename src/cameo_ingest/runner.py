@@ -324,6 +324,23 @@ def status(state: State) -> dict[str, Any]:
     }
 
 
+def _delete_outputs(out: Path, shas: list[str]) -> None:
+    """The projects' folders, published and half-built."""
+    projects = out / PROJECTS
+    for sha in shas:
+        for d in (projects / sha, projects / WORK / sha):
+            if d.exists():
+                shutil.rmtree(d)
+
+
+def remove(state: State, out: Path, items: list[tuple[str, str]]) -> None:
+    """Remove projects, (sha256, name) each, with their output, and keep them out of later runs
+    while their inputs remain (plan PV); the root's files follow. The state must be locked."""
+    state.remove(items)
+    _delete_outputs(out, [sha for sha, _ in items])
+    exports.rebuild(state, out)
+
+
 def prune(state: State, out: Path, dry_run: bool = False) -> dict[str, Any]:
     """Drop missing inputs, sightings in old versions of changed inputs, and the contents
     that no existing input contains any more, with their output (plan decision 3)."""
@@ -331,10 +348,6 @@ def prune(state: State, out: Path, dry_run: bool = False) -> dict[str, Any]:
     orphans = state.orphans()
     if not dry_run:
         state.prune([r["sha256"] for r in orphans])
-        projects = out / PROJECTS
-        for r in orphans:
-            for d in (projects / r["sha256"], projects / WORK / r["sha256"]):
-                if d.exists():
-                    shutil.rmtree(d)
+        _delete_outputs(out, [r["sha256"] for r in orphans])
         exports.rebuild(state, out)
     return {"inputs": missing, "projects": [{"token": f"sha256:{r['sha256']}", "name": r["name"]} for r in orphans]}
