@@ -23,6 +23,25 @@ const [chromeBin, profile, pagePath, query] = process.argv.slice(2);
     q.dispatchEvent(new Event('input'));
     return await wait(() => / in \\d+ topics?$/.test(document.getElementById('count').textContent) && document.getElementById('count').textContent);`);
   out.spans = await c.run("return [...document.querySelectorAll('#results .group-model')].map((m) => m.textContent);");
+  // cleared, the search leaves nothing behind: an item opened from browsing marks no words (CQ-002)
+  const openFirst = `const q = document.getElementById('q'); q.value = ''; q.dispatchEvent(new Event('input'));
+    await wait(() => document.querySelector('#results .browse-lead'));
+    const back = [...document.querySelectorAll('.browse-lead a')].find((a) => /topics/.test(a.textContent));
+    if (back) back.click(); // browsing may have been switched to models
+    await wait(() => document.querySelector('#results .group.topic'));
+    if (!document.querySelector('.topic-body .group-head')) document.querySelector('#results .group.topic .group-head').click();
+    if (!document.querySelector('.topic-body .result')) (await wait(() => document.querySelector('.topic-body .group-head'))).click();
+    (await wait(() => document.querySelector('.topic-body .result'))).click();
+    return (await wait(() => document.querySelector('#detail h2'))).textContent;`;
+  const name = await c.run(openFirst);
+  const word = (name.match(/[A-Za-z]{4,}/) || [name])[0];
+  out.marksBefore = await c.run(`const q = document.getElementById('q'); q.value = ${JSON.stringify(word)}; q.dispatchEvent(new Event('input'));
+    await wait(() => /found/.test(document.getElementById('count').textContent));
+    document.querySelector('#results .result').click();
+    await wait(() => document.querySelector('#detail mark'));
+    return document.querySelectorAll('#detail mark').length;`);
+  await c.run(openFirst);
+  out.marksAfterClear = await c.run("return document.querySelectorAll('#detail mark').length;");
   out.errors = c.errors;
   clearTimeout(timer);
   console.log(JSON.stringify(out));

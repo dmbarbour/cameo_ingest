@@ -58,3 +58,21 @@ def test_families_keep_rivals_apart(tmp_path, capsys):
     kin = report.split("## Built on one another, kept apart")[1].split("## Related")[0]
     assert kin.count("**Rivals on a shared root:**") == 2 and kin.count("**Derived by others:**") == 3
     assert "in " in kin and "lineage/bids/aquila" in kin
+
+
+def test_the_older_is_older_in_utc():
+    """Saves in different time zones are ordered by the instant, not the text (CQ-001): 11:39 at
+    UTC-7 is 18:39 UTC, after 15:00 at UTC+1 (14:00 UTC), though it sorts first as text."""
+    from array import array
+
+    from cameo_ingest.fingerprint import NO_MAKER
+
+    def model(sha, saved):
+        n = 40
+        return lineage.Model(sha, sha, saved, [f"/{sha}/m.mdzip"], array("q", range(n)), [],
+                             array("i", [NO_MAKER] * n), array("i", [0] * n))
+
+    west, east = model("a", "2023-11-02T11:39:23-07:00"), model("b", "2023-11-02T15:00:00+01:00")
+    for x, y in ((west, east), (east, west)):
+        p = lineage.compare(x, y)
+        assert (p.a.sha, p.b.sha) == ("b", "a")

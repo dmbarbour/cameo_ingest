@@ -20,6 +20,7 @@ to copy if they agree.
 from __future__ import annotations
 
 import csv
+import datetime as dt
 import itertools
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -66,12 +67,12 @@ def _when(m: Member) -> tuple[int, str]:
     """For ordering newest first: a known time, then a time from the zip's dates, then none."""
     if not m.saved:
         return (0, "")
-    return (1 if m.saved_from == "zip" else 2, _utc(m.saved))
+    return (1 if m.saved_from == "zip" else 2, utc(m.saved))
 
 
-def _utc(iso: str) -> str:
-    import datetime as dt
-
+def utc(iso: str) -> str:
+    """An ISO time in UTC, without its offset, so that times saved in different zones order as
+    text (CQ-001); a time without an offset is taken as it is."""
     when = dt.datetime.fromisoformat(iso)
     if when.tzinfo is not None:
         when = when.astimezone(dt.UTC).replace(tzinfo=None)

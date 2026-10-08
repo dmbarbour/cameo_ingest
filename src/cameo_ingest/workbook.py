@@ -22,6 +22,8 @@ from typing import Any
 import xlsxwriter
 
 from .catalog import ProjectCatalog
+from .shared import BASES
+from .subjects import UNSORTED, UNSORTED_NOTE
 from .text import plural, xml_safe
 
 # Characters per cell, by sheet; Excel's own limit is 32,767.
@@ -171,7 +173,7 @@ def _topics(topics: dict[str, Any] | None) -> dict[str, str]:
     view = next((v for v in (topics or {}).get("views", []) if v["id"] == (topics or {}).get("default")), None)
     if view is None:
         return {}
-    out = {ref: "Not sorted yet" for ref in view.get("unsorted", [])}
+    out = dict.fromkeys(view.get("unsorted", []), UNSORTED)
     for t in view["topics"]:
         for ref in t["subjects"]:
             out[ref] = t["label"]
@@ -190,7 +192,7 @@ def _subject_rows(families: list[dict[str, Any]], names: dict[tuple[str, str], s
                          topic.get(f"{f['tokens'][0]}/{n}") if v["id"] == f["default"] else None)
                         for n, s in enumerate(v["subjects"])]
             if v.get("unsorted"):
-                subjects.append(("Not sorted yet", "The LLM gave no answer for these; the next run asks again.",
+                subjects.append((UNSORTED, UNSORTED_NOTE,
                                  v["unsorted"], None))
             for label, holds, keys, topic_label in subjects:
                 rows = []
@@ -229,7 +231,7 @@ def _packages(path: str | None) -> dict[str, str]:
     return {name: parts[i] for i, (name, _) in enumerate(PACKAGES) if i < len(parts)}
 
 
-MATCH = {"element": "the same element", "requirement id": "the same requirement Id", "name": "the same name"}
+MATCH = dict(zip(BASES, ("the same element", "the same requirement Id", "the same name"), strict=True))
 
 
 def _also_in(found: list[Any], labels: dict[str, str]) -> str:

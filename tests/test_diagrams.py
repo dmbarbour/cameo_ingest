@@ -382,3 +382,14 @@ def test_what_shapes_hold(tmp_path):
     chunks = [json.loads(line) for line in (project_dir(out) / "index/chunks.jsonl").open()]
     assert any("- [1] «Block» Drone: properties battery; operations charge()" in c["text"]
                for c in chunks if c["metadata"].get("element_id") == "d1")
+
+
+def test_a_link_label_takes_its_drawn_name():
+    """What a label box draws takes the name's place, and only the name's (CQ-004)."""
+    from cameo_ingest.diagram_graph import link_label
+
+    assert link_label(["flow"], "flow", "", "flow(x)") == "«flow» flow(x)"  # not «flow(x)»
+    assert link_label([], "send", "", "send(a, b)") == "send(a, b)"
+    assert link_label(["refine"], "", "", "drawn") == "«refine» (drawn)"
+    assert link_label([], None, "Energy", None) == "Energy"
+    assert link_label([], "Energy", "Energy", "Energy") == "Energy"  # a flow named as it is, once

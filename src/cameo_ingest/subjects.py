@@ -53,6 +53,7 @@ ABOUT_CHARS = 200
 UNSORTED_LIMIT = 0.05  # more unsorted than this, and the fallback is the default view
 CONTEXT_WEIGHT = 0.5  # sharing where shown elements sit counts half as much as sharing an element
 UNSORTED = "Not sorted yet"
+UNSORTED_NOTE = "The LLM gave no answer for these; the next run asks again."
 
 WORD = re.compile(r"[a-z][a-z0-9]+")
 STOP = frozenset("""a an and are as at be by for from has have in into is it its of on or that the this to with
@@ -453,11 +454,6 @@ def ways_for(llm: Any, fams: list[Family], concurrency: int = 1, advance: Any = 
                           "unsorted": unsorted})
         out[f.tokens[0]] = views
     return out
-
-
-def llm_ways(llm: Any, f: Family, concurrency: int = 1, advance: Any = None) -> list[dict[str, Any]] | None:
-    """One family's ways (`ways_for`)."""
-    return ways_for(llm, [f], concurrency, advance)[f.tokens[0]]
 
 
 def requests(f: Family) -> int:

@@ -31,10 +31,11 @@ from typing import Any
 from . import __version__
 from . import runner as tree
 from .archive import ZIP_MAGIC, sniff_xmi
-from .config import IMAGE_PIXELS, ProjectOptions, TreeSettings
+from .config import IMAGE_PIXELS, ProjectOptions, TreeSettings, retired
 from .llm import EnrichmentSession, LLMConfig, connect
 from .progress import Progress
 from .runner import Runner
+from .searchpage import SKETCHES
 from .state import State, StateError
 
 log = logging.getLogger("cameo_ingest")
@@ -49,11 +50,6 @@ NO_MODEL = """error: the tree uses the LLM, but names no model. Either
 or set it all up with `cameo-ingest config -i`. The endpoint is $OPENAI_BASE_URL (unset: OpenAI),
 its key $OPENAI_API_KEY; `cameo-ingest config models` lists the endpoint's models."""
 
-# Settings a tree may remember from an older version, now fixed defaults or calibrated
-# (ADR-0027, 2026-10-05; plan CF, 0.21.0): ignored, with a notice.
-RETIRED = ("cross_index", "threads", "hierarchies", "line_refs", "env", "llm_timeout", "llm_retries", "cache_dir",
-           "image_pixels", "diagram_modules", "sketch_font_px", "sketch_arrow_px", "sketch_line_px", "image_first",
-           "part_chars", "calibrate")
 
 PROGRESS_LOGGER = "cameo_ingest.progress"
 _handlers: list[logging.Handler] = []  # ours, replaced when main() runs again (as in tests)
@@ -178,7 +174,7 @@ def build_parser() -> argparse.ArgumentParser:
     ex.add_argument("--workbook", type=Path, metavar="FILE", help="write the catalog as an Excel workbook (.xlsx)")
     ex.add_argument("--search-page", type=Path, metavar="FILE",
                     help="write the catalog as one self-contained web page (.html) that searches in a browser")
-    ex.add_argument("--sketches", choices=("none", "webp", "svg"), default="none",
+    ex.add_argument("--sketches", choices=SKETCHES, default="none",
                     help="put the diagrams' sketches in the search page: the PNG sketches as WebP, or the SVG "
                          "sketches (default: none)")
     sub.add_parser("scan", parents=[common],
@@ -438,27 +434,16 @@ def versions_command(out: Path, args: argparse.Namespace) -> int:
         state.close()
 
 
-def flag_pair(group: Any, name: str, on: str, off: str, default: bool) -> None:
-    """--NAME and --no-NAME, both setting NAME (None when neither is given: the stored setting,
-    or `default`), with the default named in the help (AR-013R2)."""
-    dest = name.replace("-", "_")
-    group.add_argument(f"--{name}", dest=dest, action="store_const", const=True, default=None,
-                       help=on + (" (the default)" if default else ""))
-    group.add_argument(f"--no-{name}", dest=dest, action="store_const", const=False,
-                       help=off + ("" if default else " (the default)"))
-
-
 def tree_settings(stored: dict[str, Any], quiet: bool = False) -> TreeSettings:
     """The tree's settings, as `config` set them (plan CF); those an older version remembered and
     that are now defaults or calibrated are left out, with a notice."""
-    s = dict(stored)
-    if s.pop("chunk_style", None) == "markdown" and not quiet:  # retired in 0.6.0 (plan RA-02)
+    if stored.get("chunk_style") == "markdown" and not quiet:  # retired in 0.6.0 (plan RA-02)
         log.warning("the Markdown chunk style is retired: this tree's chunks will be plain text")
-    retired = [k for k in RETIRED if s.pop(k, None) is not None]
-    if retired and not quiet:  # heuristics are defaults, not settings (ADR-0027); the rest is `config`'s
+    old = [k for k in retired(stored) if k != "chunk_style"]
+    if old and not quiet:  # heuristics are defaults, not settings (ADR-0027); the rest is `config`'s
         log.warning("this tree remembers settings that are now defaults or calibrated, and ignores them: %s",
-                    ", ".join(sorted(retired)))
-    return TreeSettings.from_stored(s)
+                    ", ".join(old))
+    return TreeSettings.from_stored(stored)
 
 
 def stored_settings(out: Path) -> dict[str, Any]:
@@ -500,7 +485,7 @@ def run_tree(args: argparse.Namespace, argv: list[str]) -> int:
     if args.llm_replay is not None and not (cfg.enabled and args.llm_replay.is_file()):
         print(f"error: --llm-replay needs a model and an existing store file ({args.llm_replay})", file=sys.stderr)
         return 2
-    llm = EnrichmentSession(cfg, shared_store(out, settings),
+    llm = EnrichmentSession(cfg, shared_store(out),
                             connect(cfg, args.llm_replay))
     if cfg.enabled and not args.no_preflight and not check_endpoint(llm):
         return 5
@@ -641,7 +626,7 @@ def calibrate_text(out: Path, args: argparse.Namespace) -> int:
     if settings.no_llm or not cfg.text_model:
         print("error: calibrate-text needs a text model: cameo-ingest config set text-model NAME", file=sys.stderr)
         return 2
-    llm = EnrichmentSession(cfg, shared_store(out, settings),
+    llm = EnrichmentSession(cfg, shared_store(out),
                             connect(cfg, args.llm_replay))
     if not args.no_preflight and not check_endpoint(llm):
         return 5
@@ -683,7 +668,7 @@ def calibrate_vision(out: Path, args: argparse.Namespace) -> int:
         print("error: calibrate-vision needs a vision model: cameo-ingest config set vision-model NAME (or "
               "text-model, which reads images too unless another is set)", file=sys.stderr)
         return 2
-    llm = EnrichmentSession(cfg, shared_store(out, settings),
+    llm = EnrichmentSession(cfg, shared_store(out),
                             connect(cfg, args.llm_replay))
     if not args.no_preflight and not check_endpoint(llm):
         return 5
@@ -889,13 +874,13 @@ def note_models(out: Path, client: Any, cfg: LLMConfig) -> None:
         st.close()
 
 
-def shared_store(out: Path, settings: TreeSettings) -> Path:
+def shared_store(out: Path) -> Path:
     """The LLM store's directory (`config.store_dir`), with a tree's own store from before 0.20.2
     copied into it once, so that nothing it paid for is asked again (plan CF-04)."""
     from .config import store_dir
     from .llm import STORE_FILE
 
-    store = store_dir(settings.cache_dir)
+    store = store_dir()
     old = out / ".cache" / STORE_FILE
     if not old.is_file() or not State.exists(out) or old.resolve() == (store / STORE_FILE).resolve():
         return store
@@ -977,9 +962,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "quality":
         from . import quality
 
-        state = State(out)
-        cache = shared_store(out, TreeSettings.from_stored(state.settings()))
-        state.close()
+        cache = shared_store(out)
         try:
             set_dir = quality.sample(out, cache, n=args.n, seed=args.seed, kinds=args.kind)
         except (FileNotFoundError, ValueError) as e:

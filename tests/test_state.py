@@ -75,6 +75,8 @@ def test_settings_and_options():
 
     s = TreeSettings.from_stored({"rag_files": False, "threads": False, "chunk_style": "markdown", "text_model": None})
     assert s.rag_files is False and s.rag_source == "trace" and s.stored() == {"rag_files": False}
+    old = TreeSettings.from_stored({"cache_dir": "/elsewhere", "image_pixels": 900, "render": False})  # CQ-003
+    assert old.stored() == {"render": False} and old.image_pixels is None  # retired, whoever reads them
     assert parse_modules(None) == MODULES and parse_modules("0:1:2") == (0, 1, 2)
     with pytest.raises(ValueError):
         parse_modules("25:6")

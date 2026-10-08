@@ -38,17 +38,26 @@ CALIBRATED = ("image_pixels", "diagram_modules", "sketch_font_px", "sketch_arrow
               "part_chars")
 
 
+# Settings a tree may remember from an older version, now fixed defaults or calibrated
+# (ADR-0027, 2026-10-05; plan CF, 0.21.0): ignored, with a notice. The calibrated ones remain
+# fields below, which only a calibration fills (`TreeSettings.calibrated`).
+RETIRED = ("cross_index", "threads", "hierarchies", "line_refs", "env", "llm_timeout", "llm_retries", "cache_dir",
+           "image_pixels", "diagram_modules", "sketch_font_px", "sketch_arrow_px", "sketch_line_px", "image_first",
+           "part_chars", "calibrate", "chunk_style")
+
+
+def retired(stored: dict[str, Any]) -> list[str]:
+    """The retired settings a tree remembers."""
+    return sorted(k for k in RETIRED if stored.get(k) is not None)
+
+
 @dataclass(frozen=True)
 class TreeSettings:
-    env: str | None = None  # a dotenv file, named rather than read: never secrets
     text_model: str | None = None
     vision_model: str | None = None
     no_llm: bool = False
-    llm_timeout: float | None = None
-    llm_retries: int | None = None
     llm_max_calls: int | None = None
     llm_concurrency: int | None = None
-    cache_dir: str | None = None
     render: bool = True
     image_pixels: int | None = None
     diagram_modules: str | None = None  # "N:MIN:MAX"
@@ -57,14 +66,14 @@ class TreeSettings:
     sketch_line_px: int | None = None
     image_first: bool | None = None  # the image before the text in vision requests; None: as calibrated
     part_chars: int | None = None  # the largest LLM input of package text; None: as calibrated (plan TC)
-    calibrate: bool = True  # calibrate to the vision model (plan VA) and the text model (plan TC)
     rag_files: bool = True
     rag_source: str = "trace"  # or "id"
 
     @classmethod
     def from_stored(cls, stored: dict[str, Any]) -> TreeSettings:
-        """The settings a tree remembers; any it no longer knows are left out."""
-        known = {f.name for f in fields(cls)}
+        """The settings a tree remembers; retired ones (`RETIRED`) and any it no longer knows are left
+        out, whichever command reads them (CQ-003)."""
+        known = {f.name for f in fields(cls)} - set(RETIRED)
         return cls(**{k: v for k, v in stored.items() if k in known and v is not None})
 
     def stored(self) -> dict[str, Any]:
@@ -207,13 +216,10 @@ def shown(key: str, stored: dict[str, Any]) -> tuple[str, bool]:
     return str(v), True
 
 
-def store_dir(cache_dir: str | None = None) -> Path:
+def store_dir() -> Path:
     """Where the LLM's answers, their request log and so the calibrations' answers live (plan
     CF-04): per user and shared by every tree, so that a second tree reuses what the first paid
-    for, and calibrates a model it has seen from stored answers. $CAMEO_INGEST_CACHE moves it; a
-    tree's own `cache_dir` setting (until 0.21.0) wins."""
-    if cache_dir:
-        return Path(cache_dir)
+    for, and calibrates a model it has seen from stored answers. $CAMEO_INGEST_CACHE moves it."""
     if os.environ.get("CAMEO_INGEST_CACHE"):
         return Path(os.environ["CAMEO_INGEST_CACHE"])
     return Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "cameo-ingest"

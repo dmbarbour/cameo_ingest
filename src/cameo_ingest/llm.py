@@ -67,11 +67,6 @@ class LLMConfig:
     def enabled(self) -> bool:
         return bool(self.text_model or self.vision_model)
 
-    def public(self) -> dict:
-        # Never record the API key.
-        return {"text_model": self.text_model, "vision_model": self.vision_model, "base_url": self.base_url,
-                "max_calls": self.max_calls}
-
 
 class ReplayMiss(Exception):
     """Replay mode met a request that the recorded store has no answer for."""

@@ -191,8 +191,7 @@ def find(catalogs: Callable[[], Iterable[Any]], related: Callable[[str, str], bo
         out[a.token, a.key].append(Link(b, basis, differences(a, b)))
         out[b.token, b.key].append(Link(a, basis, differences(b, a)))
 
-    for basis, groups, need_related in (("element", by_key, False), ("requirement id", by_rid, False),
-                                        ("name", by_name, True)):
+    for basis, groups, need_related in zip(BASES, (by_key, by_rid, by_name), (False, False, True), strict=True):
         for copies in groups.values():
             for i, a in enumerate(copies):
                 for b in copies[i + 1:]:

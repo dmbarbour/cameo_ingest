@@ -508,6 +508,7 @@ if (typeof document !== "undefined") {
   const state = { index: new Engine.Index(), projects: [], byKey: new Map(), summaries: new Map(), cancelled: false,
                   subjects: new Engine.Subjects([]), viewOf: new Map(), browse: null, open: new Set(),
                   topicView: null, browseBy: "topic",
+                  terms: [], copies: null, // the search shown: its words (marked in the detail pane), its folded copies
                   selected: null, mode: "lineage", // selected: null for every model, else a Set of page ids
                   compare: null }; // [page id, page id]: two models compared (plan SH-05)
   const SHOWN = 3; // results shown a group before "more"
@@ -660,14 +661,14 @@ if (typeof document !== "undefined") {
     detail();
   }
 
-  let last = { terms: [] };
-
   function run() {
     const q = $("q").value;
     const list = $("results"), info = $("count");
     list.replaceChildren();
-    if (!q.trim()) {
+    if (!q.trim()) { // no search: nothing of the last one carries over (CQ-002)
       info.textContent = "";
+      state.terms = [];
+      state.copies = null;
       if (state.compare) compare(list);
       else browse(list);
       return;
@@ -675,7 +676,7 @@ if (typeof document !== "undefined") {
     const t = now();
     const type = $("type").value || null;
     const res = state.index.search(q, { projects: state.selected, type });
-    last = res;
+    state.terms = res.terms || [];
     const ms = now() - t;
     info.textContent = res.total
       ? `${fmt(res.total)} found (${fmt(res.all)} with every word) in ${(ms / 1000).toFixed(2)} s` +
@@ -1065,7 +1066,7 @@ if (typeof document !== "undefined") {
   // elements, when `tags` are given and the element is in the page (TR-005). Nodes, never HTML.
   function textBlock(text, tags, pid) {
     const pre = el("pre", "text");
-    for (const piece of Engine.mark(text, last.terms || [])) {
+    for (const piece of Engine.mark(text, state.terms)) {
       for (const part of Engine.tagPieces(piece.text, tags)) {
         const d = part.tag === undefined ? undefined : state.byKey.get(pid + "\u0000" + part.tag);
         let node;

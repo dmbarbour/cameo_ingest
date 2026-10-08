@@ -122,6 +122,21 @@ def drawing_order(g: DiagramGraph) -> list[Node]:
                   key=lambda n: (n.depth, -n.view.rect[2] * n.view.rect[3]))  # type: ignore[index]
 
 
+def link_label(stereotypes: list[str], name: str | None, flow: str, drawn: str | None) -> str:
+    """A connection's label: its stereotypes, its name and what flows on it, unless that is its
+    name; what its label box draws, in place of the name where it contains it (a message's
+    signature with its arguments), else after (plan SK). Only the name is replaced, never a
+    stereotype spelled the same (CQ-004)."""
+    marks = [f"«{s}»" for s in stereotypes]
+    extra = [flow] if flow and flow != name else []
+    label = " ".join([*marks, *([name] if name else []), *extra])
+    if not drawn or drawn in label:
+        return label
+    if name and name in drawn:
+        return " ".join([*marks, drawn, *extra])
+    return f"{label} ({drawn})" if label else drawn
+
+
 def build(ix: ModelIndex, layout: Layout, rels: dict[str, Relationship],
           flows: dict[str, list[ItemFlow]]) -> DiagramGraph:
     g = DiagramGraph()
@@ -216,12 +231,7 @@ def build(ix: ModelIndex, layout: Layout, rels: dict[str, Relationship],
         el = ix.elements.get(v.element or "")
         stereotypes = sem.shown_stereotypes(ix, el.id) if el else []
         flow = sem.flow_label(ix, el) if el is not None and el.kind in ("Transition", "ControlFlow", "ObjectFlow") else ""
-        label = " ".join([f"«{s}»" for s in stereotypes] + ([el.name] if el and el.name else [])
-                         + ([flow] if flow and flow != (el.name if el else None) else []))
-        drawn = shown.get(v.view_id or "")
-        if drawn and drawn not in label:
-            name = el.name if el is not None and el.name else ""
-            label = label.replace(name, drawn) if name and name in drawn else f"{label} ({drawn})" if label else drawn
+        label = link_label(stereotypes, el.name if el is not None else None, flow, shown.get(v.view_id or ""))
         w = sem.wording(*stereotypes, rel.metaclass if rel else "", v.cls) if directed else None
         verb = w.forward if w else ""
         items = []
@@ -237,9 +247,13 @@ def build(ix: ModelIndex, layout: Layout, rels: dict[str, Relationship],
             source, target, at_first = target, source, not at_first
             items = [i[:-1] + "→" for i in items]
         g.links.append(Link(v, source, target, directed, label, verb, items, at_first, more))
+    in_tree: dict[str, list[Link]] = {}  # a tree's links, gathered once (CQ-004)
+    for lk in g.links:
+        if lk.view.tree:
+            in_tree.setdefault(lk.view.tree, []).append(lk)
     for v in layout.views:
         base = by_id.get(v.base or "")
-        members = [lk for lk in g.links if lk.view.tree and lk.view.tree == v.view_id]
+        members = in_tree.get(v.view_id or "", [])
         if v.cls != "Tree" or v.bars is None or base is None or base.rect is None or not members:
             continue
         vx, vy, left, right, hy = v.bars

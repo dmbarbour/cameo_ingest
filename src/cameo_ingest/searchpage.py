@@ -53,6 +53,7 @@ from pathlib import Path
 from typing import Any
 
 from .catalog import ProjectCatalog
+from .shared import BASES
 from .text import plural
 
 TITLE = "Model search"
@@ -92,7 +93,7 @@ def sketch_blocks(p: ProjectCatalog, pid: int, record: dict[str, Any], sketches:
     return [(f"s{pid}-{record['key']}-{i}", fmt, b64) for i, (fmt, b64) in enumerate(out)]
 
 
-BASIS = {"element": "e", "requirement id": "i", "name": "n"}
+BASIS = dict(zip(BASES, "ein", strict=True))
 
 
 def page_items(p: ProjectCatalog, sketch_ids: dict[str, list[str]] | None = None,

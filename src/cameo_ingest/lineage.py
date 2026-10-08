@@ -33,8 +33,9 @@ from array import array
 from dataclasses import dataclass, field
 from typing import Any
 
+from . import groups
 from .fingerprint import NO_MAKER, unpack_list, unpack_marks
-from .groups import RELATED_COVER, RELATED_MIN
+from .groups import RELATED_COVER, RELATED_MIN, utc
 
 COPY = 0.001  # own ids, as a share of a side (or COPY_MIN ids): under this, a side adds nothing
 COPY_MIN = 2
@@ -58,13 +59,6 @@ class Model:
     makers: list[str]
     who: array
     when: array
-
-    @property
-    def saved_day(self) -> int | None:
-        if not self.saved:
-            return None
-        d = dt.datetime.fromisoformat(self.saved)
-        return int((d.timestamp() if d.tzinfo else d.replace(tzinfo=dt.UTC).timestamp()) // 86_400)
 
 
 @dataclass
@@ -134,7 +128,7 @@ def compare(x: Model, y: Model) -> Pair | None:
     cover, jaccard = shared / smaller, shared / (len(x.hashes) + len(y.hashes) - shared)
     if not (cover >= RELATED_COVER and shared >= RELATED_MIN):
         return None
-    a, b = (x, y) if (x.saved or "", x.sha) <= (y.saved or "", y.sha) else (y, x)
+    a, b = (x, y) if (utc(x.saved) if x.saved else "", x.sha) <= (utc(y.saved) if y.saved else "", y.sha) else (y, x)
     ia = {h: i for i, h in enumerate(a.hashes)}
     ib = {h: i for i, h in enumerate(b.hashes)}
     in_both = [h for h in a.hashes if h in ib]
@@ -234,8 +228,6 @@ def facts(state: Any) -> dict[str, dict[str, Any]]:
     its family (the newest version's token), its rank there (0, the newest), how many versions, its
     kin (`[token, how it stands]`: `derived` from the other, `built-on` by the other, `root` shared,
     `branches`) and the models related to it."""
-    from . import groups
-
     rows = {r["sha256"]: r for r in state.catalog() if r["status"] != "removed"}
     report = groups.find(state.catalog(), state.fingerprint_ids(), {}, pairs=pairs(state))
     out: dict[str, dict[str, Any]] = {}

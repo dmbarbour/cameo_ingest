@@ -1,6 +1,9 @@
 # Review: code quality, 2026-10-07
 
-- **Status:** Open. Nothing fixed yet; the remediation order is at the end.
+- **Status:** Open. Stage 1 done (0.28.1): CQ-001 to CQ-004, CQ-021R1 but the renderers' `ix`.
+  The maintainer, starting the remediation: work from the easiest to the hardest, skip what needs
+  his input, and deliberate architecture (options, pros and cons) before judging, with today's
+  design counted only as the convenient option.
 - **Finding prefix:** `CQ`. Findings are `CQ-001` and so on; remediation steps `CQ-001R1` and so on.
 - **Subject:** cameo-ingest at `edbfc7c` (0.28.0): about 20,000 lines of Python in the package
   (17,000 outside the fiction builders), 1,265 lines of page script (`assets/search.js`), the
@@ -68,6 +71,7 @@
   Bidders in other time zones are the maintainer's ordinary case.
 - **CQ-001R1:** order by the same UTC key as `groups` (one helper, used by both), with a test of
   two offsets.
+- **Done (0.28.1):** `groups.utc`, used by both; `test_lineage.py::test_the_older_is_older_in_utc`.
 
 #### CQ-002: the search page keeps the last search's state after the box is cleared
 
@@ -77,6 +81,9 @@
   rows reuse the old search's copies ("X and 1 more", or not, by what was searched before), and
   the detail pane goes on marking the old words.
 - **CQ-002R1:** reset both whenever a view other than search is drawn; keep them in `state`.
+- **Done (0.28.1):** `state.terms` and `state.copies`, reset when the box is cleared; the topics
+  browser walk searches a word of an item, clears, reopens it and finds no marks (it fails on
+  0.28.0).
 
 #### CQ-003: `quality` still honours the retired `cache_dir` setting
 
@@ -86,6 +93,9 @@
   `run` ignores it (ADR-0030).
 - **CQ-003R1:** retire keys inside `from_stored`, and delete the fields no setting can set any
   more (`env`, `llm_timeout`, `llm_retries`, `cache_dir`, `calibrate`; see CQ-009).
+- **Done (0.28.1):** `config.RETIRED` and `config.retired`; `from_stored` drops them; the five
+  fields deleted; `store_dir` and `shared_store` lost their `cache_dir`. The calibrated fields
+  stay as the carriers of calibration: whether they deserve a type of their own is CQ-009's.
 
 #### CQ-004: two defects in `diagram_graph.build`
 
@@ -95,6 +105,8 @@
 - **A wasted quadratic loop** (`:242`): each view's tree members are gathered by scanning every
   link before the view is checked to be a tree at all.
 - **CQ-004R1:** replace only the name part; group links by tree once.
+- **Done (0.28.1):** `diagram_graph.link_label`, a pure function with its own test; trees' links
+  gathered once.
 
 #### CQ-005: "the family" names a different model in lineage than in subjects
 
@@ -294,6 +306,11 @@
   `cameo_tables.py` (Cameo's table diagrams) and `TableWriter.write_tables` (both) are easily
   confused; `tables.write_indices` writes five JSON Lines files by hand.
 - **CQ-021R1:** delete the dead; use the constants (an enum for match bases).
+- **Done (0.28.1):** the dead deleted; `subjects.UNSORTED` and a new `UNSORTED_NOTE` used by the
+  workbook; `shared.BASES` drives `find`, `searchpage.BASIS` and `workbook.MATCH` (a tuple did as
+  well as an enum); `searchpage.SKETCHES` gives the CLI its choices; `lineage.facts`' needless
+  inner import gone. Left for CQ-013: the renderers' unused `ix`, whose 20 callers that stage
+  rewrites anyway.
 
 ### Tests and scripts
 

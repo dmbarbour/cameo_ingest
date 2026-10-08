@@ -27,7 +27,6 @@ if TYPE_CHECKING:
     from .view import ProjectView
 
 MAX_ROWS = 60
-MAX_CHARS = 6000
 TEXT_CHARS = 200
 DOC_CHARS = 120
 

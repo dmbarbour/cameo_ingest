@@ -142,6 +142,7 @@ def test_topics_in_a_browser(page, tmp_path):
     assert seen["topics"] >= 2 and seen["subjects"] >= 2 and seen["models"] and seen["diagrams"] >= 1
     assert seen["byModel"] == 7 and seen["grouping"] == "topic"
     assert seen["count"] and any(m.startswith("in ") and "model" in m for m in seen["spans"])
+    assert seen["marksBefore"] > 0 and seen["marksAfterClear"] == 0
     assert seen["errors"] == []
 
 
