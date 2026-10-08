@@ -18,7 +18,9 @@ uv run cameo-ingest status                           # what the tree holds
 A folder is searched for the files Cameo's projects and bundles are named as (`.mdzip`,
 `.mdzipx`, `.mdxml`, `.xmi`, `.xml`, `.uml`, `.rdzip`, and `.zip`, which may hold any of them as
 a folder would), each then taken by its content; a file named on the command line is taken
-whatever its name:
+whatever its name. Other names are left out on purpose: a `.mdzip.bak` is not one of the
+projects people work on. A project found twice, as a `.zip` and the folder it was unzipped into,
+is one project, seen in two places:
 
 | Input | Handling |
 |---|---|

@@ -459,6 +459,10 @@
   (`.zip`, `.rdzip`), for a folder's files and an archive's members alike, each still taken by
   its content; a file named on the command line is taken whatever its name. No sample, fiction or
   bundle holds a project under another name (every nested ZIP checked).
+- **Confirmed by the maintainer** (2026-10-08): their corpus holds projects as `.mdzip`, and in
+  `.zip` packages holding `.mdzip` (often unzipped in place beside them, so seen twice: one
+  project, two sightings). Other names stay out even if a model is inside: "people's intuitions
+  are aligned with their use of file extensions" (a `.mdzip.bak` is not one of their projects).
 
 ### Tests and scripts
 
