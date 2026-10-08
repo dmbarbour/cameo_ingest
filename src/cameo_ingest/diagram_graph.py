@@ -155,127 +155,173 @@ def link_label(stereotypes: list[str], name: str | None, flow: str, drawn: str |
     return f"{label} ({drawn})" if label else drawn
 
 
-def build(ix: ModelIndex, layout: Layout, rels: dict[str, Relationship],  # noqa: C901 (CQ-014)
+def build(ix: ModelIndex, layout: Layout, rels: dict[str, Relationship],
           flows: dict[str, list[ItemFlow]]) -> DiagramGraph:
-    g = DiagramGraph()
-    by_id = layout.by_view_id()
-    for v in layout.views:  # parents come before the views nested in them
-        if v.is_path or v.cls in DECORATION or v.cls == "DiagramFrame" or not (v.element or v.text):
-            continue
-        owner = g.node_of.get(v.parent or "")
-        if v.cls in ATTACHED and owner is not None and owner.view.view_id == v.parent:
-            g.node_of[v.view_id or ""] = owner
-            g.pins[v.view_id or ""] = one_line(shape_label(ix, v).full())
-            g.pin_views.append(v)
-            continue
-        parent = by_id.get(v.parent or "")
-        while parent is not None and (parent.view_id or "") not in g.node_of:
-            parent = by_id.get(parent.parent or "")
-        up = g.node_of[parent.view_id or ""] if parent is not None else None
-        lb = shape_label(ix, v)
-        node = Node(len(g.nodes) + 1, v, one_line(lb.full() if v.element else f'"{v.text}"'),
-                    up.depth + 1 if up else 0, up.num if up else None, one_line(lb.shown()))
-        g.nodes.append(node)
-        g.node_of[v.view_id or ""] = node
+    """The diagram as numbered shapes, connections, pins, connector circles and trees."""
+    return _Builder(ix, layout, rels, flows).build()
 
-    def ends(view: View | None) -> set[str]:
+
+class _Builder:
+    """`build`'s steps, sharing the layout's views by id and the graph so far (CQ-014)."""
+
+    def __init__(self, ix: ModelIndex, layout: Layout, rels: dict[str, Relationship],
+                 flows: dict[str, list[ItemFlow]]):
+        self.ix, self.layout, self.rels, self.flows = ix, layout, rels, flows
+        self.g = DiagramGraph()
+        self.by_id = layout.by_view_id()
+        self.shown: dict[str, str] = {}  # a connection's view -> what its label box shows
+        self.halves: dict[str, list[View]] = defaultdict(list)  # a flow's element -> its two segments
+        self.joined: set[str] = set()  # flows whose segments are already one link
+
+    def build(self) -> DiagramGraph:
+        self.nodes()
+        self.label_boxes()
+        self.split_flows()
+        for v in self.layout.views:
+            if v.is_path and (v.first or v.second):
+                self.link(v)
+        self.trees()
+        return self.g
+
+    def nodes(self) -> None:
+        """The shapes, numbered in the layout's order (parents before the views nested in them),
+        and pins and ports, which belong to the shape they sit on."""
+        g = self.g
+        for v in self.layout.views:
+            if v.is_path or v.cls in DECORATION or v.cls == "DiagramFrame" or not (v.element or v.text):
+                continue
+            owner = g.node_of.get(v.parent or "")
+            if v.cls in ATTACHED and owner is not None and owner.view.view_id == v.parent:
+                g.node_of[v.view_id or ""] = owner
+                g.pins[v.view_id or ""] = one_line(shape_label(self.ix, v).full())
+                g.pin_views.append(v)
+                continue
+            parent = self.by_id.get(v.parent or "")
+            while parent is not None and (parent.view_id or "") not in g.node_of:
+                parent = self.by_id.get(parent.parent or "")
+            up = g.node_of[parent.view_id or ""] if parent is not None else None
+            lb = shape_label(self.ix, v)
+            node = Node(len(g.nodes) + 1, v, one_line(lb.full() if v.element else f'"{v.text}"'),
+                        up.depth + 1 if up else 0, up.num if up else None, one_line(lb.shown()))
+            g.nodes.append(node)
+            g.node_of[v.view_id or ""] = node
+
+    def label_boxes(self) -> None:
+        """What a connection's label box shows (a message's signature with its arguments, say), by
+        the connection's view: added to its text where the model's names don't say it (plan SK)."""
+        for v in self.layout.views:
+            path = self.by_id.get(v.parent or "")
+            if v.cls in LABELS and v.text and path is not None and path.is_path and path.view_id:
+                self.shown[path.view_id] = one_line(v.text)
+
+    def connector(self, view_id: str | None) -> bool:
+        v = self.by_id.get(view_id or "")
+        return v is not None and v.cls == "FlowConnector"
+
+    def split_flows(self) -> None:
+        """A long flow may be drawn as two segments, each ending at one of a pair of connector
+        circles rather than at the far shape; the segments share the flow's element (FU-017)."""
+        for v in self.layout.views:
+            if v.is_path and v.element and (self.connector(v.first) or self.connector(v.second)):
+                self.halves[v.element].append(v)
+
+    def ends(self, view: View | None) -> set[str]:
         """Element ids a flow's source or target may name for this end: the pin or shape,
         the shape a pin belongs to, and their types (item flows usually name the blocks
         that type the parts at a connector's ends)."""
         if view is None:
             return set()
-        node = g.node(view)
+        node = self.g.node(view)
         ids = {e for e in (view.element, node.view.element if node else None) if e}
-        return ids | {t for e in ids if e in ix.elements for r, t in ix.elements[e].refs if r == "type"}
+        return ids | {t for e in ids if e in self.ix.elements for r, t in self.ix.elements[e].refs if r == "type"}
 
-    # What a connection's label box shows (a message's signature with its arguments, say), by the
-    # connection's view: added to its text where the model's names don't say it (plan SK).
-    shown: dict[str, str] = {}
-    for v in layout.views:
-        path = by_id.get(v.parent or "")
-        if v.cls in LABELS and v.text and path is not None and path.is_path and path.view_id:
-            shown[path.view_id] = one_line(v.text)
-
-    def connector(view_id: str | None) -> bool:
-        v = by_id.get(view_id or "")
-        return v is not None and v.cls == "FlowConnector"
-
-    # A long flow may be drawn as two segments, each ending at one of a pair of connector
-    # circles rather than at the far shape; the segments share the flow's element (FU-017).
-    halves: dict[str, list[View]] = defaultdict(list)
-    for v in layout.views:
-        if v.is_path and v.element and (connector(v.first) or connector(v.second)):
-            halves[v.element].append(v)
-    joined: set[str] = set()
-
-    def shape_end(seg: View) -> tuple[View | None, bool]:
+    def shape_end(self, seg: View) -> tuple[View | None, bool]:
         """A segment's end at a shape, and whether that is its first end."""
-        return (by_id.get(seg.second or ""), False) if connector(seg.first) else (by_id.get(seg.first or ""), True)
+        if self.connector(seg.first):
+            return self.by_id.get(seg.second or ""), False
+        return self.by_id.get(seg.first or ""), True
 
-    for v in layout.views:
-        if not v.is_path or not (v.first or v.second):
-            continue
-        rel = rels.get(v.element or "")
+    def split_ends(self, pair: list[View], rel: Relationship | None) -> tuple[View, list[View], View | None,
+                                                                              View | None, bool]:
+        """A flow drawn in two segments, as one connection: (its segment to the target, the other,
+        source, target, whether the target is at the first point); the circles noted with the
+        shapes they lead to and from."""
+        (a, a_first), (b, b_first) = self.shape_end(pair[0]), self.shape_end(pair[1])
+        # Cameo stores a directed path's target as its first end (FU-001); the model's
+        # relationship, when there is one, decides.
+        to_target = pair[0] if a_first and not b_first else pair[1]
+        if rel is not None and rel.target in self.ends(a) and rel.source in self.ends(b):
+            to_target = pair[0]
+        elif rel is not None and rel.target in self.ends(b) and rel.source in self.ends(a):
+            to_target = pair[1]
+        from_source = pair[1] if to_target is pair[0] else pair[0]
+        (target, at_first), (source, _) = self.shape_end(to_target), self.shape_end(from_source)
+        for seg, far, arrow in ((from_source, target, "to {}"), (to_target, source, "from {}")):
+            circle = self.by_id.get((seg.first if self.connector(seg.first) else seg.second) or "")
+            node = self.g.node(far)
+            if circle is not None:
+                self.g.connectors.append((circle, arrow.format(node.num) if node else ""))
+        return to_target, [from_source], source, target, at_first
+
+    def path_ends(self, v: View, rel: Relationship | None, directed: bool) -> tuple[View | None, View | None, bool]:
+        """(source, target, whether the target is at the first point) of a connection drawn whole."""
+        first, second = self.by_id.get(v.first or ""), self.by_id.get(v.second or "")
+        if directed and not (rel is not None and (first and first.element, second and second.element)
+                             == (rel.source, rel.target)):
+            return second, first, True  # Cameo stores a directed path's target as its first end (FU-001)
+        return first, second, False
+
+    def link(self, v: View) -> None:
+        """One connection: its ends, its label and verb, and what flows on it."""
+        ix = self.ix
+        rel = self.rels.get(v.element or "")
         directed = v.cls in DIRECTED or (rel is not None and rel.metaclass in DIRECTED)
         more: list[View] = []
-        pair = halves.get(v.element or "", [])
+        pair = self.halves.get(v.element or "", [])
         if len(pair) == 2:
-            if v.element in joined:
-                continue
-            joined.add(v.element or "")
-            (a, a_first), (b, b_first) = shape_end(pair[0]), shape_end(pair[1])
-            # Cameo stores a directed path's target as its first end (FU-001); the model's
-            # relationship, when there is one, decides.
-            to_target = pair[0] if a_first and not b_first else pair[1]
-            if rel is not None and rel.target in ends(a) and rel.source in ends(b):
-                to_target = pair[0]
-            elif rel is not None and rel.target in ends(b) and rel.source in ends(a):
-                to_target = pair[1]
-            from_source = pair[1] if to_target is pair[0] else pair[0]
-            (target, at_first), (source, _) = shape_end(to_target), shape_end(from_source)
-            v, more = to_target, [from_source]
-            for seg, far, arrow in ((from_source, target, "to {}"), (to_target, source, "from {}")):
-                circle = by_id.get((seg.first if connector(seg.first) else seg.second) or "")
-                node = g.node(far)
-                if circle is not None:
-                    g.connectors.append((circle, arrow.format(node.num) if node else ""))
+            if v.element in self.joined:
+                return
+            self.joined.add(v.element or "")
+            v, more, source, target, at_first = self.split_ends(pair, rel)
         else:
-            first, second = by_id.get(v.first or ""), by_id.get(v.second or "")
-            source, target, at_first = first, second, False
-            if directed and not (rel is not None and (first and first.element, second and second.element)
-                                 == (rel.source, rel.target)):
-                # Cameo stores a directed path's target as its first end (FU-001).
-                source, target, at_first = second, first, True
+            source, target, at_first = self.path_ends(v, rel, directed)
         el = ix.elements.get(v.element or "")
         stereotypes = sem.shown_stereotypes(ix, el.id) if el else []
         flow = sem.flow_label(ix, el) if el is not None and el.kind in ("Transition", "ControlFlow", "ObjectFlow") else ""
-        label = link_label(stereotypes, el.name if el is not None else None, flow, shown.get(v.view_id or ""))
+        label = link_label(stereotypes, el.name if el is not None else None, flow, self.shown.get(v.view_id or ""))
         w = sem.wording(*stereotypes, rel.metaclass if rel else "", v.cls) if directed else None
-        verb = w.forward if w else ""
-        items = []
-        for f in flows.get(v.element or "", []):
-            names = ", ".join(sem.label(ix, i) for i in f.items) or sem.label(ix, f.id)
-            forward = f.source in ends(source) or f.target in ends(target)
-            back = not forward and (f.source in ends(target) or f.target in ends(source))
-            items.append(Flow(names, "→" if forward else "←" if back else ""))
+        items = self.items(v, source, target)
         if not directed and items and all(i.way == "←" for i in items):
             # A connector has no direction of its own: list it the way its items flow.
             source, target, at_first = target, source, not at_first
             items = [Flow(i.names, "→") for i in items]
-        g.links.append(Link(v, source, target, directed, label, verb, items, at_first, more))
-    in_tree: dict[str, list[Link]] = {}  # a tree's links, gathered once (CQ-004)
-    for lk in g.links:
-        if lk.view.tree:
-            in_tree.setdefault(lk.view.tree, []).append(lk)
-    for v in layout.views:
-        base = by_id.get(v.base or "")
-        members = in_tree.get(v.view_id or "", [])
-        if v.cls != "Tree" or v.bars is None or base is None or base.rect is None or not members:
-            continue
-        vx, vy, left, right, hy = v.bars
-        x = base.rect[0] + vx
-        parent = g.node_of.get(v.base or "")
-        to_parent = parent is not None and all(
-            m.directed and m.target is not None and g.node(m.target) is parent for m in members)
-        g.trees.append(Tree(v, parent, ((x, vy), (x, hy)), ((left, hy), (right, hy)), members, to_parent))
-    return g
+        self.g.links.append(Link(v, source, target, directed, label, w.forward if w else "", items, at_first, more))
+
+    def items(self, v: View, source: View | None, target: View | None) -> list[Flow]:
+        """What item flows convey over a connection, and which way, by the ends they name."""
+        out = []
+        for f in self.flows.get(v.element or "", []):
+            names = ", ".join(sem.label(self.ix, i) for i in f.items) or sem.label(self.ix, f.id)
+            forward = f.source in self.ends(source) or f.target in self.ends(target)
+            back = not forward and (f.source in self.ends(target) or f.target in self.ends(source))
+            out.append(Flow(names, "→" if forward else "←" if back else ""))
+        return out
+
+    def trees(self) -> None:
+        """Connections Cameo draws as one tree of bars from a base shape (plan SK)."""
+        g = self.g
+        in_tree: dict[str, list[Link]] = {}  # a tree's links, gathered once (CQ-004)
+        for lk in g.links:
+            if lk.view.tree:
+                in_tree.setdefault(lk.view.tree, []).append(lk)
+        for v in self.layout.views:
+            base = self.by_id.get(v.base or "")
+            members = in_tree.get(v.view_id or "", [])
+            if v.cls != "Tree" or v.bars is None or base is None or base.rect is None or not members:
+                continue
+            vx, vy, left, right, hy = v.bars
+            x = base.rect[0] + vx
+            parent = g.node_of.get(v.base or "")
+            to_parent = parent is not None and all(
+                m.directed and m.target is not None and g.node(m.target) is parent for m in members)
+            g.trees.append(Tree(v, parent, ((x, vy), (x, hy)), ((left, hy), (right, hy)), members, to_parent))

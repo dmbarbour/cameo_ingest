@@ -267,6 +267,12 @@
   circles (`:172-180`), which end is which (`:189-215`), the link's label (`:216-224`), flow items
   (`:227-238`), trees (`:240-250`).
 - **CQ-014R1:** one function a seam, after CQ-011 and CQ-012 (which remove much of the code).
+- **Weighed:** (a) a `_Builder` whose fields are the shared state (views by id, the graph, label
+  boxes, split flows) and whose methods are the seams; (b) free functions passing those along
+  each call; (c) leave it (every new notation lands here, so the cost recurs). (a).
+- **Done:** `diagram_graph._Builder`: `nodes`, `label_boxes`, `split_flows`, `ends`,
+  `split_ends`, `path_ends`, `link`, `items`, `trees` (radon 120 to 24 at most); its `noqa` gone.
+  The same 257 sketches, whose SVG tooltips carry each connection's label, verb and flows.
 
 #### CQ-015: threads and type hierarchies are one feature written twice, as loose dicts
 
