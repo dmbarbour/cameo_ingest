@@ -34,7 +34,7 @@ DOC_CHARS = 100  # of a kind's documentation, its first sentence
 def project_hierarchies(view: ProjectView, chunk_of: dict[str, str]) -> list[dict[str, Any]]:
     """The project's type hierarchies, from the in-memory model: the records of its
     `index/hierarchies.jsonl`, each a line per kind, as text without and with the chunk references
-    (`exports.Assembly.line_refs`, off)."""
+    (`rootfiles.Assembly.line_refs`, off)."""
     ix = view.ix
     generals: dict[str, list[str]] = defaultdict(list)  # a kind -> its generals, in the model's order
     specifics: dict[str, list[str]] = defaultdict(list)  # a general -> its kinds

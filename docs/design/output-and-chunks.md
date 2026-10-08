@@ -139,7 +139,7 @@ ADR-0007.
 - **What it leaves out:** nothing (ADR-0029). 0.19.1 left out the LLM's summaries and diagram
   descriptions, which crowded out answers (ADR-0028); since 0.20.0 they say what a package or
   diagram is about, and help questions about where something is described. The kinds left out
-  (`exports.Assembly.rag_without`) are part of each project's stamp, so a change rewrites its
+  (`rootfiles.Assembly.rag_without`) are part of each project's stamp, so a change rewrites its
   folder; `scripts/assemble_tree.py --rag-without KIND…` leaves some out of a copy, to measure.
 - **A generated chunk's class** (`about_class`, plan GS) is in its metadata and `rag/meta`.
 - **Measured** (plan RM): the pages in place of `rag/` lose a lot (e5-large's MRR@10 0.74 →
@@ -182,7 +182,7 @@ ADR-0019 (`crossref.py`).
 - **Line references** (`[project:chunk]` on each line) are off: they cost completeness (plan RF).
   The projects' records hold each line with and without one.
 - **Fixed, not settings** (ADR-0027): the index across models, threads and hierarchies are on,
-  and line references off, in `exports.Assembly`. To measure a change, `scripts/assemble_tree.py`
+  and line references off, in `rootfiles.Assembly`. To measure a change, `scripts/assemble_tree.py`
   rebuilds a copy of a tree with any of them changed (`--without threads`, `--line-refs`); the
   next run puts the defaults back. A tree that remembers one of the old switches is told it is
   ignored.

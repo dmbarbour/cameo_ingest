@@ -20,7 +20,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from . import exports, subjects
+from . import rootfiles, subjects
 from .archive import UnsupportedInput, discover
 from .config import ProjectOptions
 from .fingerprint import fingerprint
@@ -73,7 +73,7 @@ class Runner:
             self.llm.close()
             raise
         finally:  # subjects without the LLM unless the run got that far
-            exports.rebuild(self.state, self.out, with_subjects=outcome != "finished")
+            rootfiles.rebuild(self.state, self.out, with_subjects=outcome != "finished")
             self.state.finish_run(run_id, outcome, self.llm.report())
             self.write_run_json(run_id)
         if self.failed_projects:
@@ -338,7 +338,7 @@ def remove(state: State, out: Path, items: list[tuple[str, str]]) -> None:
     while their inputs remain (plan PV); the root's files follow. The state must be locked."""
     state.remove(items)
     _delete_outputs(out, [sha for sha, _ in items])
-    exports.rebuild(state, out)
+    rootfiles.rebuild(state, out)
 
 
 def prune(state: State, out: Path, dry_run: bool = False) -> dict[str, Any]:
@@ -349,5 +349,5 @@ def prune(state: State, out: Path, dry_run: bool = False) -> dict[str, Any]:
     if not dry_run:
         state.prune([r["sha256"] for r in orphans])
         _delete_outputs(out, [r["sha256"] for r in orphans])
-        exports.rebuild(state, out)
+        rootfiles.rebuild(state, out)
     return {"inputs": missing, "projects": [{"token": f"sha256:{r['sha256']}", "name": r["name"]} for r in orphans]}

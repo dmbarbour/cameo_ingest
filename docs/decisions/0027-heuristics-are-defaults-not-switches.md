@@ -38,10 +38,11 @@ maintainer declined:
   `--cross-index`, `--line-refs`) were retired on 2026-10-05, each for its measured default: the
   index across models (coverage@10 0.77 to 0.97, ADR-0019), threads (no measurable cost) and
   hierarchies (ADR-0026) are on; line references, which cost completeness, are off. They are
-  `exports.Assembly`, which `scripts/assemble_tree.py` varies for measurement. A tree that
+  `rootfiles.Assembly`, which `scripts/assemble_tree.py` varies for measurement. A tree that
   remembers one is told it is ignored, and the CLI no longer takes them.
 
 ## Changes
 
 - 2026-10-05: the review of the four older switches, which the consequences left to the roadmap,
   is done; the consequence says what became of each. Before: `f2b13e2`.
+- 2026-10-08: `exports.py` renamed `rootfiles.py` (review CQ-006). Before: `9bf1c07`.

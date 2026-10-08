@@ -13,7 +13,7 @@ cli ─► runner: check inputs ─► scan (archive.discover; state: contents, 
                 ─► per diagram: graph (diagram_graph), PNG and SVG sketches (sketch, sketch_svg),
                    its requests queued (enrich, prompt_values, prompts)
                 ─► embedded images ─► packages ─► enricher.run (rounds) ─► pages, tables, indices
-           ─► publish (rename + one transaction) ─► exports.rebuild (root files, rag/)
+           ─► publish (rename + one transaction) ─► rootfiles.rebuild (root files, rag/)
 export ─► catalog ─► workbook / searchpage
 ```
 

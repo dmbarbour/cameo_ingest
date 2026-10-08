@@ -29,7 +29,7 @@
 ## Decision
 
 - **Left out of `rag/`:** `generated:summary`, `generated:diagram_description` and
-  `generated:module_summary` (`exports.Assembly.rag_without`). A tree's `rag/` drops them on its
+  `generated:module_summary` (`rootfiles.Assembly.rag_without`). A tree's `rag/` drops them on its
   next run.
 - **Kept in `rag/`:** `generated:module_description` and `generated:image_description`.
 - **Kept everywhere else:** the pages show every summary and description, and `chunks.jsonl` keeps
@@ -47,3 +47,4 @@
 
 - 2026-10-05: superseded by ADR-0029: the requests ask what a package or diagram is about, and
   `rag/` leaves nothing out again. Before: `80de425`.
+- 2026-10-08: `exports.py` renamed `rootfiles.py` (review CQ-006). Before: `463e42e`.

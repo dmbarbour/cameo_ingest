@@ -54,7 +54,7 @@ shows the elements its diagrams show. Topics need at least two families (`MIN_FA
 - **`run`,** after building, with its session (`subjects.update`): a family is asked for again when
   its versions or its diagrams' names, places or about texts change (`Family.signature`), or its
   ways failed or were incomplete. A complete, unchanged family costs nothing.
-- **`exports.rebuild` without a session** (`remove`, `prune`, a run that stopped): an unchanged
+- **`rootfiles.rebuild` without a session** (`remove`, `prune`, a run that stopped): an unchanged
   family keeps its record; a changed one gets the fallback until the next run.
 - **A replayed run** (`--llm-replay`) counts a miss at the root as an unanswered request.
 - **Topics** are asked for after the families (`topics.update`), when the subjects' labels, what

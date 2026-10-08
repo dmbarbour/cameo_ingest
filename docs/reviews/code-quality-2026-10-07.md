@@ -150,6 +150,8 @@
   take it; every label from one map, with one fallback (`ExportInputs.label`); the per-project
   rebuilding of labels gone; the `export` command only calls them. The comparison tree's workbook
   and page are byte for byte the same.
+- **Renamed:** `exports.py` to `rootfiles.py`: elsewhere "the exports" are the workbook and the
+  page (`docs/design/exports.md`, ADR-0021). The design docs and ADR-0027 and 0028 follow.
 
 #### CQ-007: subjects and topics copy one algorithm, joined by private imports and a cycle
 

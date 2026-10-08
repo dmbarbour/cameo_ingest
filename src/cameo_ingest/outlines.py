@@ -25,7 +25,7 @@ class Line(TypedDict):
     id: str  # the element
     title: str
     text: str  # without chunk references
-    text_refs: str  # with them (`exports.Assembly.line_refs`)
+    text_refs: str  # with them (`rootfiles.Assembly.line_refs`)
 
 
 class Outline(TypedDict):

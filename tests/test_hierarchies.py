@@ -5,7 +5,7 @@ import json
 from fixture_model import EXTERNAL, LAYOUT_EXTERNAL, MODEL_EXTERNAL, make_mdzip
 from helpers import check_invariants, ingest, project_dir
 
-from cameo_ingest import exports
+from cameo_ingest import rootfiles
 from cameo_ingest.state import State
 
 
@@ -68,7 +68,7 @@ def test_hierarchies(tmp_path):
     assert det["metadata"]["element_id"] == "det" and "doppler" in det["metadata"]["element_ids"]
 
     state = State(out)
-    exports.rebuild(state, out, exports.Assembly(hierarchies=False))  # as scripts/assemble_tree.py does
+    rootfiles.rebuild(state, out, rootfiles.Assembly(hierarchies=False))  # as scripts/assemble_tree.py does
     state.close()
     assert not any(json.loads(line)["metadata"]["kind"] == "index:hierarchy" for line in (out / "chunks.jsonl").open())
     assert (proj / "HIERARCHIES.md").is_file()  # the page, either way
