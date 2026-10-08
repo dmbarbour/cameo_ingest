@@ -124,11 +124,9 @@ def build_parser() -> argparse.ArgumentParser:
                    ).set_defaults(func=tree.run)
     cf = sub.add_parser("config", parents=[common], help="show or change the tree's settings (plan CF)",
                         description="The tree's settings: show them, set one, or unset one (back to its default); "
-                                    "or -i, asked for one by one and tested. The LLM endpoint and key are "
+                                    "export them to JSON, or import them from it. The LLM endpoint and key are "
                                     "$OPENAI_BASE_URL and $OPENAI_API_KEY.")
     cf.set_defaults(func=configure.configure)
-    cf.add_argument("-i", "--interactive", action="store_true",
-                    help="ask for each setting, list and test the endpoint's models, and save at the end")
     cfs = cf.add_subparsers(dest="action", metavar="ACTION")
     cfs.add_parser("show", help="each setting, its value, and whether it is the tree's own or the default")
     cset = cfs.add_parser("set", help="set a setting")
@@ -136,6 +134,11 @@ def build_parser() -> argparse.ArgumentParser:
     cset.add_argument("value", metavar="VALUE")
     cunset = cfs.add_parser("unset", help="return a setting to its default")
     cunset.add_argument("key", metavar="KEY")
+    cexport = cfs.add_parser("export", help="the tree's own settings as JSON, keyed as `config` names them")
+    cexport.add_argument("file", nargs="?", type=Path, metavar="FILE", help="write here (default: print)")
+    cimport = cfs.add_parser("import", help="set the settings in a JSON file `config export` wrote (null: unset); "
+                                            "a wrong key or value changes nothing")
+    cimport.add_argument("file", type=Path, metavar="FILE", help="the JSON file, or - for stdin")
     cfs.add_parser("test", help="check the endpoint and key, and that each model answers (the vision model reads an "
                                 "image); exits 5 when a check fails")
     cmodels = cfs.add_parser("models", help="the endpoint's models, those the tree uses or has calibrated marked")

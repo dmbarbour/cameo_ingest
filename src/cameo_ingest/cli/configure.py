@@ -1,15 +1,16 @@
-"""`config`: show, set or unset the tree's settings, test the endpoint, list its models; `-i` asks
-for them one by one (`interactive`) (plan CF)."""
+"""`config`: show, set or unset the tree's settings, export and import them as JSON, test the
+endpoint, list its models (plan CF; RN-005)."""
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
 
 from .. import session
-from ..config import BY_KEY, SETTINGS, parse_setting, shown, stored_settings, tree_settings
+from ..config import BY_KEY, SETTINGS, exported, imported, parse_setting, shown, stored_settings, tree_settings
 from ..state import State
 from .common import open_tree
 
@@ -17,16 +18,19 @@ from .common import open_tree
 def configure(out: Path, args: argparse.Namespace) -> int:
     """`cameo-ingest config`: show, set or unset the tree's settings (plan CF-02). Setting one
     starts a tree, so that a tree can be configured before its first input."""
-    if args.interactive:
-        if args.action:
-            print("error: config -i takes no action", file=sys.stderr)
-            return 2
-        from .interactive import interview
-
-        return interview(out)
     action = args.action or "show"
     if action in ("test", "models"):
         return check_config(out, action, getattr(args, "filter", None))
+    if action == "export":
+        text = json.dumps(exported(stored_settings(out)), indent=1, ensure_ascii=False) + "\n"
+        if args.file is None:
+            sys.stdout.write(text)
+        else:
+            args.file.write_text(text, encoding="utf-8")
+            print(f"wrote the settings of {out} to {args.file}")
+        return 0
+    if action == "import":
+        return import_settings(out, args.file)
     if action == "show":
         stored = stored_settings(out)
         print(f"settings of {out}" + ("" if State.exists(out) else " (no tree yet: the defaults)"))
@@ -54,6 +58,29 @@ def configure(out: Path, args: argparse.Namespace) -> int:
             stored.pop(field, None)
         state.save_settings(tree_settings(stored).stored())  # retired settings go, with a notice
         print(f"{args.key} = {shown(args.key, state.settings())[0]}")
+    return 0
+
+
+def import_settings(out: Path, file: Path) -> int:
+    """`config import FILE` (RN-005): every setting in the file, or none when any is wrong."""
+    try:
+        text = sys.stdin.read() if str(file) == "-" else file.read_text(encoding="utf-8")
+        changes = imported(json.loads(text))
+    except (OSError, ValueError) as e:  # json's errors are ValueErrors
+        print(f"error: {file}: {e}; nothing was changed", file=sys.stderr)
+        return 2
+    with open_tree(out, lock=True) as state:
+        stored = state.settings()
+        for field, value in changes.items():
+            if value is None:
+                stored.pop(field, None)
+            else:
+                stored[field] = value
+        state.save_settings(tree_settings(stored).stored())
+        now = state.settings()
+    for s in SETTINGS:
+        if s.field in changes:
+            print(f"{s.key} = {shown(s.key, now)[0]}")
     return 0
 
 

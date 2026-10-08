@@ -243,6 +243,47 @@ def shown(key: str, stored: dict[str, Any]) -> tuple[str, bool]:
     return str(v), True
 
 
+EXPORT_FORMAT = 1  # of `config export`'s JSON
+
+
+def exported(stored: dict[str, Any]) -> dict[str, Any]:
+    """The tree's own settings as `config export` writes them: keyed as `config` names them, a
+    switch as true (on) or false, a count as a number (RN-005)."""
+    out: dict[str, Any] = {}
+    for s in SETTINGS:
+        v = stored.get(s.field)
+        if v is not None:
+            out[s.key] = (bool(v) != s.inverse) if s.kind == "switch" else v
+    return {"format": EXPORT_FORMAT, "settings": out}
+
+
+def imported(data: Any) -> dict[str, Any]:
+    """What `config import` sets, field -> stored value (None: back to the default), from
+    `exported`'s JSON; ValueError, naming every fault, when any key or value is wrong."""
+    if not isinstance(data, dict) or not isinstance(data.get("settings"), dict):
+        raise ValueError('expected {"format": 1, "settings": {KEY: VALUE, ...}}, as `config export` writes')  # noqa: TRY004 (a file's content, as the other faults)
+    if data.get("format", EXPORT_FORMAT) != EXPORT_FORMAT:
+        raise ValueError(f"format {data.get('format')!r}; this version reads format {EXPORT_FORMAT}")
+    out: dict[str, Any] = {}
+    faults = []
+    for key, v in data["settings"].items():
+        try:
+            if v is None:
+                if key not in BY_KEY:
+                    raise ValueError(f"no setting {key!r}; the settings are {', '.join(BY_KEY)}")
+                out[BY_KEY[key].field] = None
+            else:
+                if isinstance(v, (dict, list)):
+                    raise ValueError(f"{key} takes a single value, not {json.dumps(v)}")
+                value = parse_setting(key, ("on" if v else "off") if isinstance(v, bool) else str(v))
+                out[BY_KEY[key].field] = value
+        except ValueError as e:
+            faults.append(str(e))
+    if faults:
+        raise ValueError("; ".join(faults))
+    return out
+
+
 def store_dir() -> Path:
     """Where the LLM's answers, their request log and so the calibrations' answers live (plan
     CF-04): per user and shared by every tree, so that a second tree reuses what the first paid

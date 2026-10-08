@@ -44,7 +44,7 @@ export ─► catalog.export_inputs (lineage facts, shared items, labels, subjec
 | Tree | `state`, `runner`, `rootfiles`, `config`, `progress`, `treediff`, `crossref`, `groups`, `lineage` | The state database (all SQL); runs; root files and `rag/`; settings and options (ADR-0030); progress; tree comparison; the identifier index; version groups; lineage of models (ADR-0032) |
 | Discovery | `discovery`, `subjects`, `topics` | What subjects and topics share (asking, placing, merging, words) and `subjects.json`; each family's subjects (ADR-0031); topics across models |
 | Exports | `workbook`, `xlsx_parts`, `searchpage`, `shared` | The workbook, its tables, and the search page (ADR-0021), from `catalog.ExportInputs`; the same item in several models (ADR-0033) |
-| Commands | `cli/` | The parser, in one place (`cli/__init__`), each command's function by `set_defaults`; `tree`, `versions`, `calibration`, `configure` and `interactive`, by group; `common` (`open_tree`) |
+| Commands | `cli/` | The parser, in one place (`cli/__init__`), each command's function by `set_defaults`; `tree`, `versions`, `calibration` and `configure`, by group; `common` (`open_tree`) |
 | Evaluation | `evaluation/*` | Retrieval evaluation, fictional projects, judges (ADR-0023); never imported by the ingest |
 
 **Layering rules:**

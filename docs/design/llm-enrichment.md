@@ -166,7 +166,7 @@ ADR-0010 (`llm.py`, `sqlite_cache.py`).
   (`--llm-replay`, a developer's flag; a miss fails the project); `connect()` makes the run's.
 - **The endpoint and models** are `OPENAI_BASE_URL`, `OPENAI_API_KEY` and the tree's settings
   (ADR-0030); timeout 120 s and 2 retries are fixed (`llm.TIMEOUT`, `RETRIES`). `checks.run_checks`
-  serves `config test` and `config -i`: the endpoint lists its models, the text model answers
+  serves `config test`: the endpoint lists its models, the text model answers
   "ready", the vision model reads a drawn 731. A tree notes each model's creation time from
   `/models` in its `meta` table, and warns when it changes (`cli.note_models`).
 - **The preflight:** "Reply with the single word OK.", and the vision check sends a 32 × 32 white

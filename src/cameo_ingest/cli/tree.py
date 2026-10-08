@@ -29,8 +29,8 @@ log = logging.getLogger("cameo_ingest")
 NO_MODEL = """error: the tree uses the LLM, but names no model. Either
   - cameo-ingest config set text-model NAME (and vision-model, if another model reads images), or
   - cameo-ingest config set llm off, to ingest without summaries and descriptions,
-or set it all up with `cameo-ingest config -i`. The endpoint is $OPENAI_BASE_URL (unset: OpenAI),
-its key $OPENAI_API_KEY; `cameo-ingest config models` lists the endpoint's models."""
+then `cameo-ingest config test`. The endpoint is $OPENAI_BASE_URL (unset: OpenAI), its key
+$OPENAI_API_KEY; `cameo-ingest config models` lists the endpoint's models."""
 
 
 

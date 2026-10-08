@@ -23,8 +23,8 @@
   - `CAMEO_INGEST_TREE`, the tree when `-o` is not given; else `./ingest_tree`;
   - `CAMEO_INGEST_CACHE`, the LLM store, per user; else `~/.cache/cameo-ingest`.
 - **Everything else is the tree's,** in its `state.sqlite`, set only with `cameo-ingest config`:
-  - `config set KEY VALUE` and `config unset KEY` (back to the default), or `config -i`, which asks
-    for each, lists and tests the endpoint's models, and saves at the end;
+  - `config set KEY VALUE` and `config unset KEY` (back to the default); `config export` and
+    `config import`, the tree's own settings as JSON (0.31.0, RN-005);
   - eight settings, each reversible: `llm`, `text-model`, `vision-model`, `render`, `rag-files`,
     `rag-source`, `concurrency`, `max-calls`.
 - **Runs take only what is about the action:** inputs, `--meta`, `-o`, `-v`, `--log-file`. Four
@@ -45,3 +45,7 @@
 - **A breaking change:** scripts that passed settings as flags set them on the tree first. A tree
   that remembers a retired setting is told it is ignored.
 - **Developer scripts** keep their own `--env` for a developer's `.env`; the tool never reads it.
+
+## Changes
+
+- 2026-10-08: `config -i` removed, and `config export` and `import` added (review RN, RN-005). Before: `883c382`.

@@ -7,7 +7,8 @@ MagicDraw 18.x through Cameo 2026x, and it has been checked against 14 public sa
 
 ```sh
 uv sync
-uv run cameo-ingest config -i                       # choose and test the models (see "Configuration")
+uv run cameo-ingest config set text-model NAME       # choose the model (see "Configuration")
+uv run cameo-ingest config test                      # check the endpoint, the key and the models
 uv run cameo-ingest MODEL.mdzip [--meta program=XYZ] [-v]   # ingest files or directories into ./ingest_tree
 
 uv run cameo-ingest add more/models/ --meta supplier=ACME   # add to the task list
@@ -50,7 +51,7 @@ many files, bundles or names it turns up under.
 | `cameo-ingest export -o OUT [--workbook FILE] [--search-page FILE]` | Writes the catalog of the tree's models for people to search without tools: a workbook, a self-contained search page, or both (see "Searching without tools"). Apart from `run`, since it is a distribution step. |
 | `cameo-ingest calibrate-vision -o OUT [--suite quick\|standard]` | Calibrates the sketches to the tree's vision model on demand, as the first run with a model does on its own (see "Calibrating sketches to the vision model"). |
 | `cameo-ingest calibrate-text -o OUT` | Calibrates the part size to the tree's text model on demand, as the first run with a model does on its own (see "Calibrating the part size to the text model"). |
-| `cameo-ingest config [show]` / `config set KEY VALUE` / `config unset KEY` / `config -i` | The tree's settings (see "Configuration"). Each can be set and unset, back to its default; setting one starts a tree, so a tree can be configured before its first input. |
+| `cameo-ingest config [show]` / `config set KEY VALUE` / `config unset KEY` / `config export [FILE]` / `config import FILE` | The tree's settings (see "Configuration"). Each can be set and unset, back to its default; setting one starts a tree, so a tree can be configured before its first input. |
 | `cameo-ingest config test` / `config models [TEXT]` | Checks the endpoint, the key and the tree's models; lists the endpoint's models, those the tree uses or has calibrated marked. |
 
 - **Which tree.** Every command works on `-o OUT`; without it, on `$CAMEO_INGEST_TREE`; without
@@ -81,22 +82,22 @@ tree's, set with `cameo-ingest config`:
 export OPENAI_BASE_URL=https://api.deepinfra.com/v1/openai   # any OpenAI-compatible endpoint; unset for OpenAI
 export OPENAI_API_KEY=...
 cd my-work
-cameo-ingest config -i            # choose and test the models, calibrate: saved in ./ingest_tree
+cameo-ingest config set text-model google/gemma-4-31B-it   # saved in ./ingest_tree
+cameo-ingest config test          # the endpoint, the key, and each model answering
 cameo-ingest path/to/models/      # ingest into ./ingest_tree
 cameo-ingest status
 ```
 
-`config -i` checks the endpoint and key, asks whether to use the LLM, offers the endpoint's models
-(type part of a name to list those that hold it), tests each, asks for the switches, and saves
-only when told to, after a summary of the changes. Then it offers to calibrate to the models
-(see "Calibrating sketches to the vision model"); otherwise the first run does. Without it:
-`config set text-model google/gemma-4-31B-it`, then `config test`.
+`config models gemma` lists the endpoint's models whose names hold "gemma". The first run
+calibrates to the models (see "Calibrating sketches to the vision model").
 
 - **Another tree:** `-o DIR` on any command, or `export CAMEO_INGEST_TREE=DIR`.
 - **Without the LLM:** `cameo-ingest config set llm off` (and `on` again). A tree needs one or
   the other, a model or `llm off`; with neither, a run stops at once and says how to set one.
 - **The settings:** `config show`; `config set KEY VALUE`; `config unset KEY`, back to the
-  default:
+  default; `config export [FILE]` writes the tree's own settings as JSON (to the screen without
+  FILE), and `config import FILE` sets those in a file, `null` unsetting one, in another tree, say.
+  A wrong key or value in the file changes nothing:
 
   | Setting | Default | Purpose |
   |---|---|---|
