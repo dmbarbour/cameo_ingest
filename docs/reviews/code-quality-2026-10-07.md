@@ -122,6 +122,11 @@
   family" test at `workbook.py:271` compares against it.
 - **CQ-005R1:** with CQ-008: one lineage result per state, computed once, giving both the family
   and its newest written member.
+- **Weighed:** facts over the written projects (a family's newest, ranks and count among what the
+  exports hold), or over every project, with labels for the unwritten too ("version 2 of 3" whose
+  newest no export holds). The first: the facts are the exports' alone.
+- **Done:** `lineage.facts` over the written projects; `test_lineage.py::
+  test_a_family_is_named_by_its_newest_written_version`.
 
 ### Architecture and separation of concerns
 
@@ -137,6 +142,14 @@
   module and passed to both writers; `cli` only calls it.
 - **Also:** `exports.py` writes the root's files and has nothing to do with the `export` command;
   a name like `rootfiles.py` would end the confusion.
+- **Weighed:** (a) one `ExportInputs` (subjects, facts, links, labels) built once in a library
+  module and passed to both writers; (b) the four parameters kept, labels a fifth (each writer
+  still re-deriving); (c) each writer computing its own (twice the cost of matching copies across
+  models). (a), in `catalog`, which already reads the catalogs for the exports.
+- **Done:** `catalog.ExportInputs` and `export_inputs`; `write_workbook` and `write_search_page`
+  take it; every label from one map, with one fallback (`ExportInputs.label`); the per-project
+  rebuilding of labels gone; the `export` command only calls them. The comparison tree's workbook
+  and page are byte for byte the same.
 
 #### CQ-007: subjects and topics copy one algorithm, joined by private imports and a cycle
 

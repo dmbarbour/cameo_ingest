@@ -61,3 +61,27 @@ def test_the_older_is_older_in_utc():
     for x, y in ((west, east), (east, west)):
         p = lineage.compare(x, y)
         assert (p.a.sha, p.b.sha) == ("b", "a")
+
+
+def test_a_family_is_named_by_its_newest_written_version(lineage_tree, tmp_path):
+    """The exports' lineage facts are over the written projects (CQ-005): when Halvorsen's newest
+    version failed, the family is its older, written one, with one version, not a token the
+    exports don't hold."""
+    import shutil
+
+    out = tmp_path / "tree"
+    shutil.copytree(lineage_tree, out)
+    st = State(out)
+    try:
+        where = {r["content_sha256"]: st.sightings(r["content_sha256"])[0]["path"].split("/in/")[1] for r in st.written()}
+        newest = next(sha for sha, p in where.items() if p.startswith("lineage/bids/halvorsen/v2/"))
+        older = next(sha for sha, p in where.items() if p == "lineage/bids/halvorsen/Riverbend_Water_Treatment_Works.mdzip")
+        assert lineage.facts(st)[f"sha256:{older}"]["family"] == f"sha256:{newest}"  # both written
+        with st.db:
+            st.db.execute("UPDATE projects SET status = 'failed' WHERE content_sha256 = ?", (newest,))
+        facts = lineage.facts(st)
+    finally:
+        st.close()
+    assert f"sha256:{newest}" not in facts
+    fact = facts[f"sha256:{older}"]
+    assert fact["family"] == f"sha256:{older}" and fact["rank"] == 0 and fact["versions"] == 1

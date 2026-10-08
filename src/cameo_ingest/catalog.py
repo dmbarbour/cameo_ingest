@@ -210,3 +210,31 @@ def tree_catalogs(state: State, out: Path, missing: list[str], progress: Progres
                        for s in state.sightings(row["content_sha256"]) if s["input_status"] != "missing"]
             texts = {c["id"]: c["text"] for c in read_jsonl(index_file(d, "chunks"))} if chunks else {}
             yield ProjectCatalog(recs[0], recs[1:], ids, sources, texts, d)
+
+
+@dataclass
+class ExportInputs:
+    """What the workbook and the search page show beside the projects' catalogs (CQ-006): made once
+    for both, so that they agree."""
+
+    subjects: dict[str, Any] | None = None  # the tree's subjects.json (ADR-0031)
+    facts: dict[str, dict[str, Any]] = field(default_factory=dict)  # by token: `lineage.facts` (plan LN-06)
+    links: dict[tuple[str, str], list[Any]] = field(default_factory=dict)  # by (token, key): `shared.find` (plan SH)
+    labels: dict[str, str] = field(default_factory=dict)  # by token: each written project's label
+
+    def label(self, token: str) -> str:
+        return self.labels.get(token, token[7:15])
+
+
+def export_inputs(state: State, out: Path) -> ExportInputs:
+    """The tree's subjects, each written model's lineage facts and label, and its items' copies in
+    other models; the catalogs are read twice for the copies, as `shared.find` needs."""
+    from . import discovery, lineage, shared
+    from .provenance import ContentInfo
+
+    facts = lineage.facts(state)
+    links = shared.find(lambda: tree_catalogs(state, out, [], QUIET), shared.related_by(facts))
+    labels = {f"sha256:{r['content_sha256']}": ContentInfo(r["content_sha256"], r["name"]).label
+              for r in state.written()}
+    return ExportInputs(discovery.read(out), facts, links, labels)
+

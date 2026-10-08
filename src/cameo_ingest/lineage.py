@@ -227,17 +227,19 @@ def facts(state: Any) -> dict[str, dict[str, Any]]:
     """What the exports show of each model (plan LN-06), by token: its save time and Cameo version,
     its family (the newest version's token), its rank there (0, the newest), how many versions, its
     kin (`[token, how it stands]`: `derived` from the other, `built-on` by the other, `root` shared,
-    `branches`) and the models related to it."""
-    rows = {r["sha256"]: r for r in state.catalog() if r["status"] != "removed"}
+    `branches`) and the models related to it. Over the written projects, those the exports hold: a
+    family's newest is its newest written version, its ranks and count among them (CQ-005)."""
+    written = {r["content_sha256"] for r in state.written()}
+    rows = {r["sha256"]: r for r in state.catalog() if r["sha256"] in written}
     report = groups.find(state.catalog(), state.fingerprint_ids(), {}, pairs=pairs(state))
     out: dict[str, dict[str, Any]] = {}
     for sha, r in rows.items():
         out[f"sha256:{sha}"] = {"saved": r["saved"], "exporter": r["exporter"], "family": f"sha256:{sha}", "rank": 0,
                                 "versions": 1, "kin": [], "related": []}
     for g in report.groups:
-        for rank, m in enumerate(g.members):
-            if f"sha256:{m.sha}" in out:
-                out[f"sha256:{m.sha}"].update(family=f"sha256:{g.members[0].sha}", rank=rank, versions=len(g.members))
+        members = [m for m in g.members if f"sha256:{m.sha}" in out]
+        for rank, m in enumerate(members):
+            out[f"sha256:{m.sha}"].update(family=f"sha256:{members[0].sha}", rank=rank, versions=len(members))
     for a, b, kind, _ in report.kin:
         ta, tb = f"sha256:{a.sha}", f"sha256:{b.sha}"
         if ta in out and tb in out:

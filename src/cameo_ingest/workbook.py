@@ -21,7 +21,7 @@ from typing import Any
 
 import xlsxwriter
 
-from .catalog import ProjectCatalog
+from .catalog import ExportInputs, ProjectCatalog
 from .discovery import UNSORTED, UNSORTED_NOTE, default_view, subject_ref
 from .shared import BASES
 from .text import plural, xml_safe
@@ -116,11 +116,12 @@ class _Sheet:
 
 
 def write_workbook(path: Path, projects: Iterable[ProjectCatalog], version: str,
-                   subjects: dict[str, Any] | None = None, facts: dict[str, dict[str, Any]] | None = None,
-                   links: dict[tuple[str, str], list[Any]] | None = None) -> dict[str, int]:
-    """Write the workbook; returns the rows per sheet. `subjects`: the tree's `subjects.json`, if any
-    (ADR-0031): the Subjects sheet, and each diagram's subject in the suggested view, with that
-    subject's topic across models (plan SB CP4)."""
+                   inputs: ExportInputs | None = None) -> dict[str, int]:
+    """Write the workbook; returns the rows per sheet. `inputs` (`catalog.export_inputs`): the
+    tree's subjects (ADR-0031: the Subjects sheet, and each diagram's subject in the suggested view,
+    with that subject's topic across models), the models' lineage and labels, and shared items."""
+    inputs = inputs or ExportInputs()
+    subjects = inputs.subjects
     families = (subjects or {}).get("families", [])
     topic = _topics((subjects or {}).get("topics"))
     suggested: dict[tuple[str, str], tuple[str, str | None]] = {}  # (token, diagram) -> (subject, topic)
@@ -131,7 +132,7 @@ def write_workbook(path: Path, projects: Iterable[ProjectCatalog], version: str,
                 for i in f["diagrams"].get(key, []):
                     suggested[f["tokens"][i], key] = (s["label"], topic.get(subject_ref(f["tokens"][0], n)))
     names: dict[tuple[str, str], str] = {}
-    labels: dict[str, str] = {}
+    labels = dict(inputs.labels)  # and each project's own, for a workbook made without inputs
     path.parent.mkdir(parents=True, exist_ok=True)
     book = xlsxwriter.Workbook(str(path), {"constant_memory": True, "strings_to_formulas": False,
                                            "strings_to_urls": False, "strings_to_numbers": False,
@@ -148,8 +149,8 @@ def write_workbook(path: Path, projects: Iterable[ProjectCatalog], version: str,
     n_projects = 0
     for p in projects:
         n_projects += 1
-        _project_rows(p, sheets, suggested, facts or {}, links or {})
-        labels[p.header.get("token") or ""] = p.label
+        labels.setdefault(p.header.get("token") or "", p.label)
+        _project_rows(p, sheets, suggested, inputs)
         for r in p.records:
             if r["type"] == "diagram":
                 names[p.header.get("token") or "", r["key"]] = r["name"]
@@ -210,14 +211,14 @@ _HOW = {"derived": "derived by others from", "built-on": "built on by others in"
         "branches": "a branch beside"}
 
 
-def _lineage(fact: dict[str, Any], labels: dict[str, str]) -> tuple[str, str]:
+def _lineage(fact: dict[str, Any], inputs: ExportInputs) -> tuple[str, str]:
     """The Versions and Lineage cells (plan LN-06)."""
     n = fact.get("versions", 1)
     versions = "" if n == 1 else ("newest of " if fact.get("rank") == 0 else f"version {n - fact['rank']} of ") + f"{n}"
     if n > 1 and fact.get("rank"):
-        versions += f"; the newest: {labels.get(fact['family'], fact['family'][:15])}"
-    notes = [f"{_HOW[how]} {labels.get(t, t[:15])}" for t, how in fact.get("kin", [])]
-    notes += [f"shares a part with {labels.get(t, t[:15])}" for t in fact.get("related", [])]
+        versions += f"; the newest: {inputs.label(fact['family'])}"
+    notes = [f"{_HOW[how]} {inputs.label(t)}" for t, how in fact.get("kin", [])]
+    notes += [f"shares a part with {inputs.label(t)}" for t in fact.get("related", [])]
     return versions, "; ".join(notes)
 
 
@@ -234,18 +235,18 @@ def _packages(path: str | None) -> dict[str, str]:
 MATCH = dict(zip(BASES, ("the same element", "the same requirement Id", "the same name"), strict=True))
 
 
-def _also_in(found: list[Any], labels: dict[str, str]) -> str:
+def _also_in(found: list[Any], inputs: ExportInputs) -> str:
     """The Also in cell (plan SH): each other model, how it matches, and what differs there."""
-    return "; ".join(f"{labels.get(lk.other.token, lk.other.token[7:15])} ("
+    return "; ".join(f"{inputs.label(lk.other.token)} ("
                      + ("the same" if not lk.differences else ", ".join(lk.differences)) + ")" for lk in found)
 
 
 def _project_rows(p: ProjectCatalog, sheets: dict[str, _Sheet], suggested: dict[tuple[str, str], tuple[str, str | None]],
-                  facts: dict[str, dict[str, Any]], links: dict[tuple[str, str], list[Any]]) -> None:
+                  inputs: ExportInputs) -> None:
     project, source = p.label, p.source_text()
     token = p.header.get("token") or ""
+    facts, links = inputs.facts, inputs.links
     newest = "no" if facts.get(token, {}).get("rank") else "yes"
-    labels = {t: f.get("label", t[7:15]) for t, f in facts.items()}
     family = facts.get(token, {}).get("family")
     described = {r["key"]: r["text"] for r in p.records
                  if r["type"] == "summary" and r["label"] == "Diagram description" and "module" not in r}
@@ -268,11 +269,11 @@ def _project_rows(p: ProjectCatalog, sheets: dict[str, _Sheet], suggested: dict[
     for r in p.records:
         t = r["type"]
         found = links.get((token, r["key"]), []) if t in ("requirement", "element", "diagram", "package") else []
-        also = _also_in(found, labels) if found else None
+        also = _also_in(found, inputs) if found else None
         for lk in found:  # the Shared sheet: copies elsewhere, and copies that differ (unchanged versions: Also in only)
             if lk.differences or facts.get(lk.other.token, {}).get("family") != family:
                 sheets["Shared"].add({"Item": r["name"], "Type": t.capitalize(), "Project": project,
-                                      "Also in": labels.get(lk.other.token, lk.other.token[7:15]),
+                                      "Also in": inputs.label(lk.other.token),
                                       "Match": MATCH[lk.basis],
                                       "Differences": "; ".join(lk.differences) or "none"}, LIMITS["search"])
         if t == "requirement":
@@ -318,7 +319,7 @@ def _project_rows(p: ProjectCatalog, sheets: dict[str, _Sheet], suggested: dict[
                                    "How": rec.get("how"), "Snippet": rec.get("snippet")}, LIMITS["search"])
     c = p.header.get("counts", {})
     fact = facts.get(p.header.get("token") or "", {})
-    versions, lineage = _lineage(fact, {t: f.get("label", t) for t, f in facts.items()})
+    versions, lineage = _lineage(fact, inputs)
     sheets["Projects"].add({"Project": p.header.get("name"), "Label": project, "Content": p.header.get("token"),
                             "Source": source, "Metadata": p.metadata_text(), "Saved": fact.get("saved"),
                             "Saved by": saved_by(p.header), "Versions": versions, "Lineage": lineage,

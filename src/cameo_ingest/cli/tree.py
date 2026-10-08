@@ -231,35 +231,23 @@ def export(out: Path, args: argparse.Namespace) -> int:
     if not (args.workbook or args.search_page):
         print("error: export needs --workbook FILE, --search-page FILE or both", file=sys.stderr)
         return 2
-    state = State(out)
     missing: list[str] = []
-    try:
-        from .. import discovery, lineage, shared
-        from ..progress import QUIET
-        from ..provenance import ContentInfo
-
-        families = discovery.read(out)
-        facts = lineage.facts(state)  # each model's save time, version, family and kin (plan LN-06)
-        links = shared.find(lambda: catalog.tree_catalogs(state, out, [], QUIET), shared.related_by(facts))  # plan SH
-        for r in state.written():
-            if f"sha256:{r['content_sha256']}" in facts:
-                facts[f"sha256:{r['content_sha256']}"]["label"] = ContentInfo(r["content_sha256"], r["name"]).label
+    with open_tree(out) as state:
+        inputs = catalog.export_inputs(state, out)  # once for both (CQ-006)
         if args.workbook:
             rows = workbook.write_workbook(args.workbook, catalog.tree_catalogs(state, out, missing, Progress()),
-                                           __version__, families, facts, links)
+                                           __version__, inputs)
             print(f"wrote {args.workbook} ({args.workbook.stat().st_size / 1e6:.1f} MB): "
                   + ", ".join(f"{n:,} {k}" for k, n in rows.items()))
         if args.search_page:
             missing.clear()
             counts = searchpage.write_search_page(
                 args.search_page, catalog.tree_catalogs(state, out, missing, Progress(), chunks=True), __version__,
-                args.sketches, families, facts, links)
+                args.sketches, inputs)
             print(f"wrote {args.search_page} ({args.search_page.stat().st_size / 1e6:.1f} MB): "
                   f"{counts['items']:,} items from {counts['projects']:,} models"
                   + (f", {counts['sketches']:,} sketches ({counts['sketch bytes'] / 1e6:.1f} MB)"
                      if counts["sketches"] else ""))
-    finally:
-        state.close()
     if missing:
         print(f"note: {len(missing)} project(s) were made before catalogs existed and are left out: "
               f"{', '.join(missing[:5])}{'…' if len(missing) > 5 else ''}; `run` makes them again", file=sys.stderr)

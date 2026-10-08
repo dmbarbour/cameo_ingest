@@ -52,7 +52,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any
 
-from .catalog import ProjectCatalog
+from .catalog import ExportInputs, ProjectCatalog
 from .discovery import split_ref
 from .shared import BASES
 from .text import plural
@@ -199,11 +199,11 @@ def page_topics(topics: dict[str, Any] | None, families: list[dict[str, Any]], p
 
 
 def write_search_page(path: Path, projects: Iterable[ProjectCatalog], version: str,
-                      sketches: str = "none", subjects: dict[str, Any] | None = None,
-                      facts: dict[str, dict[str, Any]] | None = None,
-                      links: dict[tuple[str, str], list[Any]] | None = None) -> dict[str, int]:
-    """Write the page; returns its counts (projects, items, bytes of data, sketches). `subjects`:
-    the tree's `subjects.json`, if any."""
+                      sketches: str = "none", inputs: ExportInputs | None = None) -> dict[str, int]:
+    """Write the page; returns its counts (projects, items, bytes of data, sketches). `inputs`
+    (`catalog.export_inputs`): the tree's subjects, the models' lineage, and shared items."""
+    inputs = inputs or ExportInputs()
+    subjects, facts, links = inputs.subjects, inputs.facts, inputs.links
     blocks: list[tuple[str, int, str]] = []
     pictures: list[tuple[str, str, str]] = []
     pids: dict[str, int] = {}
@@ -212,7 +212,7 @@ def write_search_page(path: Path, projects: Iterable[ProjectCatalog], version: s
     for pid, p in enumerate(projects):
         if p.header.get("token"):
             pids[p.header["token"]] = pid
-            labels[p.header["token"]] = p.label
+            labels[p.header["token"]] = inputs.labels.get(p.header["token"], p.label)
         sketch_ids: dict[str, list[str]] = {}
         for r in p.records:
             if r["type"] == "diagram" and (found := sketch_blocks(p, pid, r, sketches)):
@@ -220,7 +220,7 @@ def write_search_page(path: Path, projects: Iterable[ProjectCatalog], version: s
                 pictures += found
         items = page_items(p, sketch_ids, links)
         n_items += len(items)
-        fact = (facts or {}).get(p.header.get("token") or "", {})
+        fact = facts.get(p.header.get("token") or "", {})
         data = {"project": {"label": p.label, "name": p.header.get("name"), "token": p.header.get("token"),
                             "sources": p.sources, "counts": p.header.get("counts", {}),
                             **{k: fact[f] for k, f in (("sv", "saved"), ("ex", "exporter"), ("fm", "family"),
