@@ -105,8 +105,8 @@ def check_sketches(sample: Path) -> None:
     split = 0
     for dia_id, layout in load_layouts(proj, ix).items():
         g = dg.build(ix, layout, rels, flows)
-        sketch.render_png(ix, g, dia_id)
-        svg = render_svg(ix, g, dia_id)
+        sketch.render_png(g, dia_id)
+        svg = render_svg(g, dia_id)
         if svg is not None:
             keys = {e.get("data-k") for e in ElementTree.fromstring(svg).iter("{http://www.w3.org/2000/svg}g")}
             assert keys >= {n.view.element for n in g.nodes if n.view.rect and n.view.element}, dia_id
@@ -115,8 +115,8 @@ def check_sketches(sample: Path) -> None:
             continue
         split += 1
         assert sorted(k for m in part.modules for k in m.shapes) == [n.num for n in g.nodes], dia_id
-        assert sketch.overview_png(ix, part, dia_id)
-        assert all(sketch.module_png(ix, part, m.num, dia_id) for m in part.modules)
+        assert sketch.overview_png(part, dia_id)
+        assert all(sketch.module_png(part, m.num, dia_id) for m in part.modules)
     assert split
 
 

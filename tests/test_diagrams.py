@@ -286,13 +286,13 @@ def test_trees_frames_labels_and_association_classes(monkeypatch):
                         or arrowhead(d, p, q, hollow, **kw))
     monkeypatch.setattr(sketch, "_polyline", lambda d, pts, dashed, **kw: lines.append(dashed)
                         or polyline(d, pts, dashed, **kw))
-    assert sketch.render_png(ix, g, "BDD") is not None
+    assert sketch.render_png(g, "BDD") is not None
     hollow = sorted([h for h in heads if h[2]], key=lambda h: h[1][1])
     assert len(hollow) == 4 and all(q[1] < p[1] for p, q, _ in hollow)  # all pointing up
     tips = [q[1] for _, q, _ in hollow]
     assert tips[0] < tips[1] == tips[2] == tips[3]  # the tree's at Battery's lower edge, the stubs' at the bar
     assert lines.count(True) == 1  # the association-class line, and nothing else, dashed
-    svg = sketch_svg.render_svg(ix, g, "BDD")
+    svg = sketch_svg.render_svg(g, "BDD")
     assert "Generalization of [2]" in svg and svg.count('stroke-dasharray') == 1
     # A containment tree (Cameo draws a package's contents so too): bars, and no head at all.
     contained = re.sub(r"<elementID xmi:idref='g\d'/>", "",
@@ -303,7 +303,7 @@ def test_trees_frames_labels_and_association_classes(monkeypatch):
     (tree,) = view.graph("d1").trees
     assert not tree.to_parent
     heads.clear()
-    sketch.render_png(ix, view.graph("d1"), "BDD")
+    sketch.render_png(view.graph("d1"), "BDD")
     assert not [h for h in heads if h[2]] and not heads  # containment: no head at all
 
 
@@ -326,7 +326,7 @@ def test_a_tree_below_its_parent(monkeypatch):
     arrowhead = sketch._arrowhead
     monkeypatch.setattr(sketch, "_arrowhead",
                         lambda d, p, q, hollow, **kw: heads.append((p, q, hollow)) or arrowhead(d, p, q, hollow, **kw))
-    sketch.render_png(ix, view.graph("d1"), "BDD")
+    sketch.render_png(view.graph("d1"), "BDD")
     hollow = [h for h in heads if h[2]]
     assert len(hollow) == 4 and sum(q[1] > p[1] for p, q, _ in hollow) == 1  # the tree's head points down
 
@@ -334,8 +334,8 @@ def test_a_tree_below_its_parent(monkeypatch):
 def test_reading_guides():
     """Plan SK: a request explains the drawing conventions its sketch uses, and no others; a
     module's request those of its own shapes."""
+    from cameo_ingest import drawing
     from cameo_ingest import prompt_values as pv
-    from cameo_ingest import sketch
     from cameo_ingest.archive import discover
     from cameo_ingest.pipeline import load_layouts, parse_project
     from cameo_ingest.prompts import CURRENT
@@ -346,13 +346,13 @@ def test_reading_guides():
     ix = parse_project(project)
     view = ProjectView(ContentInfo(project.sha256, "drone.mdzip"), project, ix, layouts=load_layouts(project, ix))
     g = view.graph("d1")
-    assert sketch.conventions(g) == {"tags", "frames", "open", "hollow", "tree", "association-class"}
+    assert drawing.conventions(g) == {"tags", "frames", "open", "hollow", "tree", "association-class"}
     guide = pv.diagram_description(ix, g, ix.diagrams["d1"]).values["GUIDE"]
     t = CURRENT["diagram-description"]
     assert guide.startswith("\n\nReading the sketch:\n") and t.fragment("tree") in guide
     assert t.fragment("sequence") not in guide and t.fragment("pins") not in guide
     assert guide.index(t.fragment("tags")) < guide.index(t.fragment("tree"))  # in the template's order
-    assert sketch.conventions(g, {1}) == {"tags", "open"}  # around the Drone alone: its association
+    assert drawing.conventions(g, {1}) == {"tags", "open"}  # around the Drone alone: its association
     plain = next(discover(make_mdzip(), "drone.mdzip"))
     ix = parse_project(plain)
     view = ProjectView(ContentInfo(plain.sha256, "drone.mdzip"), plain, ix, layouts=load_layouts(plain, ix))

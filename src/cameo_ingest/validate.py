@@ -20,8 +20,8 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
+from . import drawing, sketch
 from . import eyechart as ec
-from . import sketch
 from .archive import discover
 from .config import IMAGE_PIXELS, TreeSettings
 from .diagram_graph import DiagramGraph
@@ -144,15 +144,15 @@ def sample(state: State, settings: TreeSettings, progress: Progress = QUIET, per
                 title = f"{kind}: {ix.qualified_name(dia_id)}"
                 drawn: dict[int, str] = {}
                 if num is None:
-                    png = sketch.render_png(ix, g, title, pixels, style=style, drawn=drawn)
+                    png = sketch.render_png(g, title, pixels, style=style, drawn=drawn)
                     ends = set(drawn)
-                    found = sketch.conventions(g)
+                    found = drawing.conventions(g)
                 else:
                     part = view.partition(dia_id)
-                    png = sketch.module_png(ix, part, num, title, pixels, style, drawn)
+                    png = sketch.module_png(part, num, title, pixels, style, drawn)
                     m = part.modules[num - 1]
                     ends = set(m.shapes) | set(m.boundary)
-                    found = sketch.conventions(g, set(m.shapes))
+                    found = drawing.conventions(g, set(m.shapes))
                 if png is None or not drawn:
                     continue
                 pool[stratum].append(Sketch(f"{r['sha256'][:12]}:{dia_id}" + (f":M{num}" if num else ""), r["name"],

@@ -142,7 +142,6 @@ def test_svg_sketch_names_its_elements(tmp_path):
 
     from cameo_ingest.diagram_graph import DiagramGraph, Link, Node
     from cameo_ingest.layout import View
-    from cameo_ingest.model import ModelIndex
     from cameo_ingest.sketch_svg import render_svg
 
     g = DiagramGraph()
@@ -152,7 +151,7 @@ def test_svg_sketch_names_its_elements(tmp_path):
         g.node_of[f"v{i}"] = node
     g.links.append(Link(View("l", "Dependency", None, points=[(130, 35), (210, 35)]), g.nodes[0].view,
                         g.nodes[1].view, True, "", "depends on", [], False))
-    svg = ElementTree.fromstring(render_svg(ModelIndex(), g, "Class Diagram: x\x08"))  # well-formed despite them
+    svg = ElementTree.fromstring(render_svg(g, "Class Diagram: x\x08"))  # well-formed despite them
     ns = {"s": "http://www.w3.org/2000/svg"}
     keyed = svg.findall(".//s:g[@data-k]", ns)
     assert {k.get("data-k") for k in keyed} == {"a", "b"}

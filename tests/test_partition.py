@@ -8,7 +8,6 @@ from cameo_ingest import diagram_graph as dg
 from cameo_ingest import sketch
 from cameo_ingest.config import IMAGE_PIXELS, MODULES
 from cameo_ingest.layout import View
-from cameo_ingest.model import ModelIndex
 from cameo_ingest.partition import partition, sequence_partition
 
 
@@ -86,17 +85,16 @@ def test_module_and_overview_views():
     g = two_clusters()
     part = partition(g)
     assert part is not None
-    ix = ModelIndex()
-    for png, mode in ((sketch.overview_png(ix, part, "Activity: big"), "RGB"),
-                      (sketch.module_png(ix, part, 1, "Activity: big"), "L")):
+    for png, mode in ((sketch.overview_png(part, "Activity: big"), "RGB"),
+                      (sketch.module_png(part, 1, "Activity: big"), "L")):
         assert png is not None
         with Image.open(io.BytesIO(png)) as img:
             w, h = img.size
             assert img.mode == mode and w * h <= IMAGE_PIXELS and w % 48 == 0 and h % 48 == 0
     # The crop is of module 1 alone, drawn larger than in the whole sketch.
-    whole = sketch.render_png(ix, g, "whole")
+    whole = sketch.render_png(g, "whole")
     assert whole is not None
-    with Image.open(io.BytesIO(whole)) as a, Image.open(io.BytesIO(sketch.module_png(ix, part, 1, "t") or b"")) as b:
+    with Image.open(io.BytesIO(whole)) as a, Image.open(io.BytesIO(sketch.module_png(part, 1, "t") or b"")) as b:
         assert b.size[0] / 700 > a.size[0] / 3700
 
 

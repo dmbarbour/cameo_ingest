@@ -19,7 +19,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from .config import IMAGE_PIXELS, SKETCH
 from .diagram_graph import DiagramGraph, Node, drawing_order
-from .model import ModelIndex
+from .drawing import DASHED, HOLLOW, ROUND, extent, flow_along, head_end, head_legs, mid_arrow
 from .partition import Partition
 from .text import one_line
 from .vision import patch_sides
@@ -47,11 +47,7 @@ class SketchStyle:
 
 
 STYLE = SketchStyle()
-FONT_PX, TITLE_PX = STYLE.font_px, STYLE.title_px
-DASHED = {"Dependency", "Abstraction", "Realization", "Usage", "Include", "Extend", "InterfaceRealization",
-          "LinkAttribute"}  # the last: an association to its class, as UML draws it (plan SK)
-HOLLOW = {"Generalization", "Realization", "InterfaceRealization"}
-ROUND = {"UseCase", "InitialNode", "ActivityFinalNode", "FlowFinalNode", "PseudoNode"}
+FONT_PX, TITLE_PX = STYLE.font_px, STYLE.title_px  # the defaults; a sketch draws with its style's
 
 
 @dataclass
@@ -80,50 +76,34 @@ def canvas(w: float, h: float, pixels: int = IMAGE_PIXELS, title_px: int = TITLE
     return W, H, max(0.01, min((W - 2 * m) / w, (H - 2 * m - t) / h))
 
 
-SEQUENCE = {"SequenceLifeline", "LifeLineLine", "Activation"}
+@dataclass
+class _Pen:
+    """A sketch being drawn: its image, where diagram units land, and what is in focus."""
+
+    d: ImageDraw.ImageDraw
+    frame: Frame
+    style: SketchStyle
+    font: ImageFont.ImageFont
+    x0: float
+    y0: float
+    scale: float
+    W: int
+    H: int
+
+    def P(self, x: float, y: float) -> tuple[float, float]:
+        return (x - self.x0) * self.scale + MARGIN, (y - self.y0) * self.scale + MARGIN + self.style.title_px
+
+    def lit(self, n: Node | None) -> bool:
+        return self.frame.focus is None or (n is not None and n.num in self.frame.focus)
+
+    def line(self, shown: bool) -> str | None:
+        return None if shown else FADED_LINE
+
+    def head(self, shown: bool) -> str:
+        return "black" if shown else FADED_LINE
 
 
-def conventions(g: DiagramGraph, focus: set[int] | None = None) -> set[str]:
-    """The drawing conventions a sketch of `g` uses (around the shapes in `focus`, for a module's
-    view), named as `prompts.GUIDE`'s sentences are, so that a request explains only those (plan SK)."""
-    def seen(n: Node | None) -> bool:
-        return n is not None and (focus is None or n.num in focus)
-
-    nodes = [n for n in g.nodes if seen(n)]
-    links = [lk for lk in g.links if seen(g.node(lk.source)) or seen(g.node(lk.target))]
-    found = {"tags"} if nodes else set()
-    if any(n.parent is not None for n in nodes):
-        found.add("nesting")
-    classes = {n.view.cls for n in nodes}
-    if "RectangularShape" in classes:
-        found.add("frames")
-    if "Bar" in classes:
-        found.add("bars")
-    if classes & SEQUENCE:
-        found.add("sequence")
-    kinds = {lk.view.cls for lk in links}
-    if kinds - {"LinkAttribute"}:
-        found.add("open")
-    if any(lk.directed and lk.view.cls in HOLLOW for lk in links):
-        found.add("hollow")
-    if kinds & DASHED - {"LinkAttribute"}:
-        found.add("dashed")
-    if "LinkAttribute" in kinds:
-        found.add("association-class")
-    for t in g.trees:
-        if any(m in links for m in t.members):
-            found.add("tree" if t.to_parent else "containment" if any(m.view.cls == "ContainmentLink"
-                                                                      for m in t.members) else "open")
-    if any(seen(g.node(v)) for v in g.pin_views):
-        found.add("pins")
-    if any({i.way for i in lk.items} in ({"→"}, {"←"}) for lk in links):
-        found.add("flows")
-    if g.connectors:
-        found.add("breaks")
-    return found
-
-
-def render_png(ix: ModelIndex, g: DiagramGraph, title: str, pixels: int = IMAGE_PIXELS,  # noqa: C901 (CQ-013)
+def render_png(g: DiagramGraph, title: str, pixels: int = IMAGE_PIXELS,
                frame: Frame | None = None, style: SketchStyle = STYLE, drawn: dict[int, str] | None = None,
                ) -> bytes | None:
     """A sketch that fills the model's pixel budget (FU-015): shapes tagged with their legend
@@ -133,161 +113,179 @@ def render_png(ix: ModelIndex, g: DiagramGraph, title: str, pixels: int = IMAGE_
     faded, and a connection leaving the picture ends in its far shape's number. `drawn`, if
     given, gets each shape in focus's name as drawn ("" when none fits), for validation."""
     f = frame or Frame()
-    FONT_PX, TITLE_PX = style.font_px, style.title_px  # the module's names, for this style
-    focus = f.focus
-    xs: list[float] = []
-    ys: list[float] = []
-    if f.region is not None:
-        xs += [f.region[0], f.region[2]]
-        ys += [f.region[1], f.region[3]]
-    else:
-        for n in g.nodes:
-            if n.view.rect:
-                x, y, w, h = n.view.rect
-                xs += [x, x + w]
-                ys += [y, y + h]
-        for lk in g.links:
-            for x, y in lk.view.points:
-                xs.append(x)
-                ys.append(y)
-        for t in g.trees:
-            for x, y in (*t.vertical, *t.horizontal):
-                xs.append(x)
-                ys.append(y)
-    if not xs:
+    box = f.region if f.region is not None else extent(g)
+    if box is None:
         return None
-    x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
+    x0, y0, x1, y1 = box
     w, h = max(1.0, x1 - x0), max(1.0, y1 - y0)
-    W, H, scale = canvas(w, h, pixels, TITLE_PX)
+    W, H, scale = canvas(w, h, pixels, style.title_px)
     if f.outlines:  # room above the drawing for module labels
-        pad = (FONT_PX + 16) / scale
+        pad = (style.font_px + 16) / scale
         y0, h = y0 - pad, h + pad
-        W, H, scale = canvas(w, h, pixels, TITLE_PX)
+        W, H, scale = canvas(w, h, pixels, style.title_px)
     img = Image.new("RGB" if f.fills or f.outlines else "L", (W, H), "white")
-    d = ImageDraw.Draw(img)
-    font = ImageFont.load_default(size=FONT_PX)
-    d.text((MARGIN, 2), _fit(d, title, font, img.width - 2 * MARGIN), fill="black", font=font)
-
-    def P(x: float, y: float) -> tuple[float, float]:
-        return (x - x0) * scale + MARGIN, (y - y0) * scale + MARGIN + TITLE_PX
-
-    def lit(n: Node | None) -> bool:
-        return focus is None or (n is not None and n.num in focus)
-
-    boxes = []
-    for n in drawing_order(g):
-        x, y, rw, rh = n.view.rect  # type: ignore[misc]
-        a, c = P(x, y), P(x + rw, y + rh)
-        c = (max(c[0], a[0] + 3), max(c[1], a[1] + 3))
-        ink, fill = (INK if lit(n) else FADED), f.fills.get(n.num, "white")
-        if n.view.cls in ROUND:
-            d.ellipse([a, c], outline=ink, fill=fill, width=1)
-        elif n.view.cls == "Bar":  # fork and join bars
-            d.rectangle([a, c], fill="black" if lit(n) else FADED)
-        else:
-            d.rectangle([a, c], outline=ink, fill=fill, width=1)
-        boxes.append((n, a, c))
-    stubs: list[tuple[int, tuple[float, float]]] = []  # far shapes of connections leaving the picture
-    # A tree's bars, and a head at the base when every member points there; the members keep their
-    # own heads too, at the bar: the model reads directions better so than from one head (plan SK).
-    for t in g.trees:
-        shown = lit(t.parent) or any(lit(g.node(m.source)) or lit(g.node(m.target)) for m in t.members)
-        kinds = {m.view.cls for m in t.members}
-        for a, b in (t.vertical, t.horizontal):
-            _polyline(d, [P(*a), P(*b)], dashed=bool(kinds & DASHED), fill=None if shown else FADED_LINE,
-                      width=style.line_px)
-        if t.to_parent:
-            _arrowhead(d, P(*t.vertical[1]), P(*t.vertical[0]), hollow=bool(kinds & HOLLOW),
-                       fill="black" if shown else FADED_LINE, size=style.arrow_px, stroke=style.head_stroke)
-    for lk in g.links:
-        if len(lk.view.points) < 2:
-            continue
-        pts = [P(*p) for p in lk.view.points]
-        s, t = g.node(lk.source), g.node(lk.target)
-        shown = lit(s) or lit(t)
-        _polyline(d, pts, dashed=lk.view.cls in DASHED, fill=None if shown else FADED_LINE, width=style.line_px)
-        for seg in lk.more:
-            if len(seg.points) >= 2:
-                _polyline(d, [P(*p) for p in seg.points], dashed=lk.view.cls in DASHED,
-                          fill=None if shown else FADED_LINE, width=style.line_px)
-        if lk.directed:
-            tip, prev = (pts[0], pts[1]) if lk.target_at_first_point else (pts[-1], pts[-2])
-            _arrowhead(d, prev, tip, hollow=lk.view.cls in HOLLOW, fill="black" if shown else FADED_LINE,
-                       size=style.arrow_px, stroke=style.head_stroke)
-        dirs = {i.way for i in lk.items}  # "→" source to target, "←" target to source
-        if dirs in ({"→"}, {"←"}):  # all items flow one way: show it halfway along
-            # The points run from the path's first end to its second.
-            _mid_arrow(d, pts, along=(dirs == {"→"}) != lk.target_at_first_point,
-                       fill="black" if shown else FADED_LINE, scale=style.arrow_px / 10)
-        if f.region is not None and shown and not (lit(s) and lit(t)):
-            far = t if lit(s) else s
-            far_first = (far is t) == lk.target_at_first_point  # the far end is at the first point
-            inner = pts[::-1] if far_first else pts
-            out = _leaving(inner, (0, TITLE_PX, W, H))
-            if far is not None and out is not None:
-                stubs.append((far.num, out))
-    for v, label in g.connectors:  # small circles where a flow's segments break off
-        if v.rect:
-            x, y, rw, rh = v.rect
-            cx, cy = P(x + rw / 2, y + rh / 2)
-            r = max(3.0, min(rw, rh) * scale / 2)
-            d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=INK, fill="white")
-            d.text((cx + r + 2, cy - FONT_PX / 2 - 1), label, fill="black", font=font)
-    for v in g.pin_views:  # pins and ports: dots on their owner's border
-        if v.rect:
-            x, y, rw, rh = v.rect
-            cx, cy = P(x + rw / 2, y + rh / 2)
-            dot = INK if lit(g.node(v)) else FADED
-            d.ellipse([cx - 2.5, cy - 2.5, cx + 2.5, cy + 2.5], fill=dot)
-    tagged: set[int] = set()
-    for n, a, c in boxes:  # tags last, so that no line crosses them
-        if not lit(n) and (n.num not in f.tagged or c[0] <= 0 or a[0] >= W or c[1] <= TITLE_PX or a[1] >= H):
-            continue  # context only, or out of the picture (then marked where its connections leave)
-        text_fill = "black" if lit(n) else FADED_TEXT
-        if not lit(n):  # a boundary shape cut by the picture's edge keeps its number in view
-            a = (min(max(a[0], 0), W - 40), min(max(a[1], TITLE_PX), H - FONT_PX - 4))
-            tagged.add(n.num)
-        tw = 0.0
-        if f.tags or not lit(n):
-            tag = str(n.num)
-            tw = d.textlength(tag, font=font)
-            d.rectangle([a[0] + 1, a[1] + 1, a[0] + tw + 5, a[1] + FONT_PX + 3], fill="#e4e4e4" if lit(n) else FADED_TAG)
-            d.text((a[0] + 3, a[1] + 1), tag, fill=text_fill, font=font)
-        room = c[0] - a[0] - tw - 10
-        name = n.shown or n.view.text or ""
-        text = _fit(d, name, font, room) if room > 4 * FONT_PX * 0.5 and c[1] - a[1] >= FONT_PX + 2 and name else ""
-        if text:
-            d.text((a[0] + tw + 8, a[1] + 1), text, fill=text_fill, font=font)
-        if drawn is not None and lit(n):
-            drawn[n.num] = text
-    big = ImageFont.load_default(size=FONT_PX + 4)
-    for label, (bx0, by0, bx1, by1), colour in f.outlines:  # an overview's modules
-        a, c = P(bx0, by0), P(bx1, by1)
-        d.rectangle([a[0] - 3, a[1] - 3, c[0] + 3, c[1] + 3], outline=colour, width=2)
-        lw, lh = d.textlength(label, font=big) + 8, FONT_PX + 9
-        # The label sits outside the outline's top left corner, so that it hides no shape's
-        # number: there is room above the drawing.
-        top = max(TITLE_PX, a[1] - 3 - lh)
-        d.rectangle([a[0] - 3, top, a[0] - 3 + lw, top + lh], fill=colour)
-        d.text((a[0] + 1, top + 1), label, fill="white", font=big)
+    pen = _Pen(ImageDraw.Draw(img), f, style, ImageFont.load_default(size=style.font_px), x0, y0, scale, W, H)
+    _title(pen, title)
+    boxes = _shapes(pen, g)
+    _trees(pen, g)
+    stubs = _links(pen, g)
+    _connectors_and_pins(pen, g)
+    tagged = _names(pen, boxes, drawn)
+    _outlines(pen)
     if f.region is not None:
-        seen = tagged
-        for num, (px, py) in stubs:
-            if num in seen:
-                continue
-            seen.add(num)
-            tag = str(num)
-            tw = d.textlength(tag, font=font)
-            px = min(max(px - tw / 2 - 2, 1), W - tw - 6)
-            py = min(max(py - FONT_PX / 2 - 1, TITLE_PX + 1), H - FONT_PX - 4)
-            d.rectangle([px, py, px + tw + 4, py + FONT_PX + 2], fill=FADED_TAG, outline=FADED)
-            d.text((px + 2, py), tag, fill=FADED_TEXT, font=font)
-        d.rectangle([0, 0, W, TITLE_PX - 1], fill="white")  # shapes cut by the region stop below the title
-        d.text((MARGIN, 2), _fit(d, title, font, img.width - 2 * MARGIN), fill="black", font=font)
-        d.line([(0, TITLE_PX - 1), (W, TITLE_PX - 1)], fill=FADED_LINE)
+        _stubs(pen, stubs, tagged)
+        pen.d.rectangle([0, 0, W, style.title_px - 1], fill="white")  # shapes cut by the region stop below the title
+        _title(pen, title)
+        pen.d.line([(0, style.title_px - 1), (W, style.title_px - 1)], fill=FADED_LINE)
     buf = io.BytesIO()
     img.save(buf, "PNG", compress_level=6)
     return buf.getvalue()
+
+
+Box = tuple[Node, tuple[float, float], tuple[float, float]]
+
+
+def _title(pen: _Pen, title: str) -> None:
+    pen.d.text((MARGIN, 2), _fit(pen.d, title, pen.font, pen.W - 2 * MARGIN), fill="black", font=pen.font)
+
+
+def _shapes(pen: _Pen, g: DiagramGraph) -> list[Box]:
+    """Each shape's outline, outer before inner; their corners, for the names drawn last."""
+    boxes = []
+    for n in drawing_order(g):
+        x, y, rw, rh = n.view.rect  # type: ignore[misc]
+        a, c = pen.P(x, y), pen.P(x + rw, y + rh)
+        c = (max(c[0], a[0] + 3), max(c[1], a[1] + 3))
+        ink, fill = (INK if pen.lit(n) else FADED), pen.frame.fills.get(n.num, "white")
+        if n.view.cls in ROUND:
+            pen.d.ellipse([a, c], outline=ink, fill=fill, width=1)
+        elif n.view.cls == "Bar":  # fork and join bars
+            pen.d.rectangle([a, c], fill="black" if pen.lit(n) else FADED)
+        else:
+            pen.d.rectangle([a, c], outline=ink, fill=fill, width=1)
+        boxes.append((n, a, c))
+    return boxes
+
+
+def _trees(pen: _Pen, g: DiagramGraph) -> None:
+    """A tree's bars, and a head at the base when every member points there; the members keep their
+    own heads too, at the bar: the model reads directions better so than from one head (plan SK)."""
+    for t in g.trees:
+        shown = pen.lit(t.parent) or any(pen.lit(g.node(m.source)) or pen.lit(g.node(m.target)) for m in t.members)
+        kinds = {m.view.cls for m in t.members}
+        for a, b in (t.vertical, t.horizontal):
+            _polyline(pen.d, [pen.P(*a), pen.P(*b)], dashed=bool(kinds & DASHED), fill=pen.line(shown),
+                      width=pen.style.line_px)
+        if t.to_parent:
+            _arrowhead(pen.d, pen.P(*t.vertical[1]), pen.P(*t.vertical[0]), hollow=bool(kinds & HOLLOW),
+                       fill=pen.head(shown), size=pen.style.arrow_px, stroke=pen.style.head_stroke)
+
+
+def _links(pen: _Pen, g: DiagramGraph) -> list[tuple[int, tuple[float, float]]]:
+    """Each connection: its line, its head, and an arrow halfway along a flow; returns, for a
+    frame's region, where connections leave the picture, with their far shapes' numbers."""
+    stubs = []
+    region = pen.frame.region is not None
+    for lk in g.links:
+        if len(lk.view.points) < 2:
+            continue
+        pts = [pen.P(*p) for p in lk.view.points]
+        s, t = g.node(lk.source), g.node(lk.target)
+        shown = pen.lit(s) or pen.lit(t)
+        dashed = lk.view.cls in DASHED
+        for seg in (lk.view, *lk.more):
+            if len(seg.points) >= 2:
+                _polyline(pen.d, pts if seg is lk.view else [pen.P(*p) for p in seg.points], dashed=dashed,
+                          fill=pen.line(shown), width=pen.style.line_px)
+        if lk.directed:
+            prev, tip = head_end(lk, pts)
+            _arrowhead(pen.d, prev, tip, hollow=lk.view.cls in HOLLOW, fill=pen.head(shown),
+                       size=pen.style.arrow_px, stroke=pen.style.head_stroke)
+        along = flow_along(lk)
+        if along is not None:  # all items flow one way: show it halfway along
+            pen.d.polygon(mid_arrow(pts, along, pen.style.arrow_px / 10), fill=pen.head(shown))
+        if region and shown and not (pen.lit(s) and pen.lit(t)):
+            far = t if pen.lit(s) else s
+            far_first = (far is t) == lk.target_at_first_point  # the far end is at the first point
+            out = _leaving(pts[::-1] if far_first else pts, (0, pen.style.title_px, pen.W, pen.H))
+            if far is not None and out is not None:
+                stubs.append((far.num, out))
+    return stubs
+
+
+def _connectors_and_pins(pen: _Pen, g: DiagramGraph) -> None:
+    """Small circles where a flow's segments break off, with where they go; pins and ports as dots
+    on their owner's border."""
+    for v, label in g.connectors:
+        if v.rect:
+            x, y, rw, rh = v.rect
+            cx, cy = pen.P(x + rw / 2, y + rh / 2)
+            r = max(3.0, min(rw, rh) * pen.scale / 2)
+            pen.d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=INK, fill="white")
+            pen.d.text((cx + r + 2, cy - pen.style.font_px / 2 - 1), label, fill="black", font=pen.font)
+    for v in g.pin_views:
+        if v.rect:
+            x, y, rw, rh = v.rect
+            cx, cy = pen.P(x + rw / 2, y + rh / 2)
+            pen.d.ellipse([cx - 2.5, cy - 2.5, cx + 2.5, cy + 2.5], fill=INK if pen.lit(g.node(v)) else FADED)
+
+
+def _names(pen: _Pen, boxes: list[Box], drawn: dict[int, str] | None) -> set[int]:
+    """Each shape's number tag and name, last, so that no line crosses them; returns the faded
+    shapes whose numbers were drawn."""
+    d, f, font, font_px, W, H, title_px = pen.d, pen.frame, pen.font, pen.style.font_px, pen.W, pen.H, pen.style.title_px
+    tagged: set[int] = set()
+    for n, a, c in boxes:
+        if not pen.lit(n) and (n.num not in f.tagged or c[0] <= 0 or a[0] >= W or c[1] <= title_px or a[1] >= H):
+            continue  # context only, or out of the picture (then marked where its connections leave)
+        text_fill = "black" if pen.lit(n) else FADED_TEXT
+        if not pen.lit(n):  # a boundary shape cut by the picture's edge keeps its number in view
+            a = (min(max(a[0], 0), W - 40), min(max(a[1], title_px), H - font_px - 4))
+            tagged.add(n.num)
+        tw = 0.0
+        if f.tags or not pen.lit(n):
+            tag = str(n.num)
+            tw = d.textlength(tag, font=font)
+            d.rectangle([a[0] + 1, a[1] + 1, a[0] + tw + 5, a[1] + font_px + 3], fill="#e4e4e4" if pen.lit(n) else FADED_TAG)
+            d.text((a[0] + 3, a[1] + 1), tag, fill=text_fill, font=font)
+        room = c[0] - a[0] - tw - 10
+        name = n.shown or n.view.text or ""
+        text = _fit(d, name, font, room) if room > 4 * font_px * 0.5 and c[1] - a[1] >= font_px + 2 and name else ""
+        if text:
+            d.text((a[0] + tw + 8, a[1] + 1), text, fill=text_fill, font=font)
+        if drawn is not None and pen.lit(n):
+            drawn[n.num] = text
+    return tagged
+
+
+def _outlines(pen: _Pen) -> None:
+    """An overview's modules: each outlined in its colour, its label outside the outline's top left
+    corner, so that it hides no shape's number (there is room above the drawing)."""
+    big = ImageFont.load_default(size=pen.style.font_px + 4)
+    for label, (bx0, by0, bx1, by1), colour in pen.frame.outlines:
+        a, c = pen.P(bx0, by0), pen.P(bx1, by1)
+        pen.d.rectangle([a[0] - 3, a[1] - 3, c[0] + 3, c[1] + 3], outline=colour, width=2)
+        lw, lh = pen.d.textlength(label, font=big) + 8, pen.style.font_px + 9
+        top = max(pen.style.title_px, a[1] - 3 - lh)
+        pen.d.rectangle([a[0] - 3, top, a[0] - 3 + lw, top + lh], fill=colour)
+        pen.d.text((a[0] + 1, top + 1), label, fill="white", font=big)
+
+
+def _stubs(pen: _Pen, stubs: list[tuple[int, tuple[float, float]]], tagged: set[int]) -> None:
+    """In a frame's region: the number of each far shape where its connections leave the picture,
+    once, unless the shape's own number is already in view."""
+    d, font, font_px = pen.d, pen.font, pen.style.font_px
+    seen = tagged
+    for num, (px, py) in stubs:
+        if num in seen:
+            continue
+        seen.add(num)
+        tag = str(num)
+        tw = d.textlength(tag, font=font)
+        px = min(max(px - tw / 2 - 2, 1), pen.W - tw - 6)
+        py = min(max(py - font_px / 2 - 1, pen.style.title_px + 1), pen.H - font_px - 4)
+        d.rectangle([px, py, px + tw + 4, py + font_px + 2], fill=FADED_TAG, outline=FADED)
+        d.text((px + 2, py), tag, fill=FADED_TEXT, font=font)
 
 
 def _leaving(pts: list[tuple[float, float]], box: tuple[float, float, float, float]) -> tuple[float, float] | None:
@@ -345,32 +343,11 @@ def _arrowhead(d: ImageDraw.ImageDraw, p: tuple[float, float], q: tuple[float, f
                fill: str = "black", size: float = 10, stroke: int = 2) -> None:
     """An arrowhead at `q`, pointing away from `p`: a hollow triangle for generalization and
     realization, an open arrow otherwise."""
-    ang = math.atan2(q[1] - p[1], q[0] - p[0])
-    left = (q[0] - size * math.cos(ang - 0.45), q[1] - size * math.sin(ang - 0.45))
-    right = (q[0] - size * math.cos(ang + 0.45), q[1] - size * math.sin(ang + 0.45))
+    left, right = head_legs(p, q, size)
     if hollow:
         d.polygon([q, left, right], outline=fill, fill="white")
     else:
         d.line([left, q, right], fill=fill, width=stroke)
-
-
-def _mid_arrow(d: ImageDraw.ImageDraw, pts: list[tuple[float, float]], along: bool, fill: str = "black",
-               scale: float = 1.0) -> None:
-    """A small filled triangle halfway along a connector, pointing the way its items flow:
-    along the points' order, or against it."""
-    lengths = [math.dist(p, q) for p, q in itertools.pairwise(pts)]
-    half, i = sum(lengths) / 2, 0
-    while i < len(lengths) - 1 and half > lengths[i]:
-        half -= lengths[i]
-        i += 1
-    p, q = pts[i], pts[i + 1]
-    t = half / lengths[i] if lengths[i] else 0.5
-    m = (p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t)
-    ang = math.atan2(q[1] - p[1], q[0] - p[0]) + (0 if along else math.pi)
-    tip = (m[0] + 6 * scale * math.cos(ang), m[1] + 6 * scale * math.sin(ang))
-    left = (m[0] - 4 * scale * math.cos(ang - 1.2), m[1] - 4 * scale * math.sin(ang - 1.2))
-    right = (m[0] - 4 * scale * math.cos(ang + 1.2), m[1] - 4 * scale * math.sin(ang + 1.2))
-    d.polygon([tip, left, right], fill=fill)
 
 
 # -- a large diagram's views (plan DV) -------------------------------------------------------------
@@ -381,15 +358,15 @@ def colour(num: int, light: bool) -> str:
     return f"#{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}"
 
 
-def overview_png(ix: ModelIndex, part: Partition, title: str, pixels: int = IMAGE_PIXELS,
+def overview_png(part: Partition, title: str, pixels: int = IMAGE_PIXELS,
                  style: SketchStyle = STYLE) -> bytes | None:
     """The whole diagram, each module's shapes tinted and outlined with its number (M1...)."""
     frame = Frame(fills={k: colour(m, True) for k, m in part.module_of.items()},
                   outlines=[(f"M{m.num}", m.box, colour(m.num, False)) for m in part.modules])
-    return render_png(ix, part.graph, f"{title}: {len(part.modules)} modules", pixels, frame, style)
+    return render_png(part.graph, f"{title}: {len(part.modules)} modules", pixels, frame, style)
 
 
-def module_png(ix: ModelIndex, part: Partition, num: int, title: str, pixels: int = IMAGE_PIXELS,
+def module_png(part: Partition, num: int, title: str, pixels: int = IMAGE_PIXELS,
                style: SketchStyle = STYLE, drawn: dict[int, str] | None = None) -> bytes | None:
     """Module `num` drawn on its own: its shapes numbered as in the diagram's legend, the
     rest of the diagram faded, and shapes of other modules it connects to keeping their
@@ -398,5 +375,5 @@ def module_png(ix: ModelIndex, part: Partition, num: int, title: str, pixels: in
     x0, y0, x1, y1 = m.box
     pad = max(20.0, 0.04 * max(x1 - x0, y1 - y0))
     frame = Frame(region=(x0 - pad, y0 - pad, x1 + pad, y1 + pad), focus=set(m.shapes), tagged=set(m.boundary))
-    return render_png(ix, part.graph, f"{title}: module M{num} of {len(part.modules)}", pixels, frame, style, drawn)
+    return render_png(part.graph, f"{title}: module M{num} of {len(part.modules)}", pixels, frame, style, drawn)
 

@@ -247,6 +247,18 @@
 - **CQ-013R2:** split `render_png` (F 80) at its seams: canvas, shapes, trees, links and tags,
   connectors and pins, numbers and names, module outlines, region finish. It shadows the module's
   `FONT_PX` and `TITLE_PX` (`:140`).
+- **Weighed:** (a) a shared `drawing.py` for what is geometry and convention, each renderer
+  emitting its own primitives; (b) one scene builder with two backends (one source of every
+  decision, but the PNG's regions, fading, edge tags and measured text have no SVG counterpart,
+  on code the vision calibration was measured against); (c) only the constants moved, so that
+  `sketch_svg` and `prompt_values` stop importing Pillow (the copied geometry stays). (a), each
+  renderer keeping its own sizes (the "drift" is two media's choices, not a fault).
+- **Done:** `drawing.py` (`DASHED`, `HOLLOW`, `ROUND`, `SEQUENCE`, `conventions`, `extent`,
+  `head_end`, `head_legs`, `flow_along`, `mid_arrow`); `render_png` in phases sharing a `_Pen`
+  (radon 80 to under 10; its parts 21 at most), `render_svg` likewise (35 to under 10); neither
+  `sketch_svg` nor `prompt_values` imports Pillow; the renderers' unused `ix` gone from them and
+  their 20 callers (CQ-021's leftover). Every sketch of 257 sample diagrams byte for byte the
+  same, after each step.
 
 #### CQ-014: `diagram_graph.build` (radon 120) has clear seams
 
@@ -424,6 +436,7 @@
   split; **R2:** the architecture doc brought up to date as the refactors land; **R3:**
   `catalog.project_catalog` (39), the one of the four no other finding splits.
 - **R1 done (0.28.2):** in `pyproject.toml`; the fictional projects' builders exempt (test data).
+  `render_png`'s exception went with CQ-013.
 
 ## Leave alone
 

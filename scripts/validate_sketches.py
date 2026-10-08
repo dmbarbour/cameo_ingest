@@ -123,10 +123,10 @@ def ask(tree: Path, keys: list[dict], llm: EnrichmentSession, sizes: TreeSetting
                 drawn: dict[int, str] = {}
                 part = view.partition(k["dia"])
                 if k["module"] is None:
-                    png = sketch.render_png(ix, g, title, pixels, style=style, drawn=drawn)
+                    png = sketch.render_png(g, title, pixels, style=style, drawn=drawn)
                     ends, focus = set(drawn), None
                 elif part is not None and k["module"] <= len(part.modules):
-                    png = sketch.module_png(ix, part, k["module"], title, pixels, style, drawn)
+                    png = sketch.module_png(part, k["module"], title, pixels, style, drawn)
                     m = part.modules[k["module"] - 1]
                     ends, focus = set(m.shapes) | set(m.boundary), set(m.shapes)
                 else:

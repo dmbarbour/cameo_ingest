@@ -13,10 +13,10 @@ from typing import Any
 from . import diagram_text as dt
 from . import semantics as sem
 from .diagram_graph import DiagramGraph
+from .drawing import conventions
 from .model import Diagram, Element, ModelIndex
 from .partition import Partition
 from .prompts import CONTEXT_CHARS, CURRENT, DIAGRAM_ITEMS, GUIDE, OWN_CHARS, PART_CHARS, Template, digest_chars
-from .sketch import conventions
 from .text import clip, first_sentence, one_line, plural
 
 

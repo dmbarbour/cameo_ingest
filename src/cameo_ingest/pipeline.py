@@ -93,8 +93,8 @@ def load_layouts(project: Project, ix: ModelIndex, progress: Progress = QUIET) -
     return out
 
 
-def _svg(ix: ModelIndex, graph, title: str) -> bytes | None:
-    svg = sketch_svg.render_svg(ix, graph, title)
+def _svg(graph, title: str) -> bytes | None:
+    svg = sketch_svg.render_svg(graph, title)
     return svg.encode("utf-8") if svg else None
 
 
@@ -134,13 +134,13 @@ def draw_sketches(writer: ProjectWriter, enricher: Enricher, project: Project, p
             rel = writer.plan.dia_file[dia_id].removesuffix(".md") + ".png"
             reused += (root / rel).exists()
             if part is not None:
-                drawn = _draw(root / rel, partial(sketch.overview_png, ix, part, title, image_pixels, style))
+                drawn = _draw(root / rel, partial(sketch.overview_png, part, title, image_pixels, style))
             else:
-                drawn = _draw(root / rel, partial(sketch.render_png, ix, graph, title, pixels=image_pixels,
+                drawn = _draw(root / rel, partial(sketch.render_png, graph, title, pixels=image_pixels,
                                                   style=style))
             if not drawn:
                 continue
-            _draw(root / (rel.removesuffix(".png") + ".svg"), partial(_svg, ix, graph, title))  # for people (KX)
+            _draw(root / (rel.removesuffix(".png") + ".svg"), partial(_svg, graph, title))  # for people (KX)
             tr = writer.view.trace(el).with_(entry=d.streams[0] if d.streams else el.entry, line=None,
                                         derivation=Derivation(method="rendered", inputs=tuple(d.streams)))
             label = f"Diagram sketch with its modules outlined ({SKETCH})" if part else f"Diagram sketch ({SKETCH})"
@@ -150,7 +150,7 @@ def draw_sketches(writer: ProjectWriter, enricher: Enricher, project: Project, p
                 continue
             for m in part.modules:
                 mrel = writer.plan.module_image(dia_id, m.num)
-                if not _draw(root / mrel, partial(sketch.module_png, ix, part, m.num, title, image_pixels, style)):
+                if not _draw(root / mrel, partial(sketch.module_png, part, m.num, title, image_pixels, style)):
                     continue
                 annotations[dia_id].append(
                     Annotation(f"Module M{m.num} sketch ({SKETCH})", "", tr, image=mrel, module=m.num))
