@@ -23,10 +23,8 @@ last run found for an unchanged family, and gives a changed one the fallback unt
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import math
-import re
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -36,29 +34,33 @@ from typing import Any
 import networkx as nx
 
 from . import groups as version_groups
-from .llm import ReplayMiss
+from . import topics
+from .discovery import (
+    UNSORTED_LIMIT,
+    asker,
+    distinctive,
+    louvain,
+    merge_down,
+    place,
+    read,
+    reply_json,
+    status,
+    target,
+    tokens,
+    write,
+)
 from .progress import QUIET, Progress
 from .prompts import SUBJECTS_ASSIGN, SUBJECTS_PROPOSE
 from .treefiles import index_file, project_dir, read_jsonl
 
 log = logging.getLogger(__name__)
 
-FILE = "subjects.json"
-FORMAT = 1
-SEED = 1
 MIN_ITEMS = 8  # a smaller family isn't split: its packages are its one view
 WAYS = 3
 BATCH = 30  # diagrams an assignment request
 EXAMPLES = 60  # example diagrams in an outline
 ABOUT_CHARS = 200
-UNSORTED_LIMIT = 0.05  # more unsorted than this, and the fallback is the default view
 CONTEXT_WEIGHT = 0.5  # sharing where shown elements sit counts half as much as sharing an element
-UNSORTED = "Not sorted yet"
-UNSORTED_NOTE = "The LLM gave no answer for these; the next run asks again."
-
-WORD = re.compile(r"[a-z][a-z0-9]+")
-STOP = frozenset("""a an and are as at be by for from has have in into is it its of on or that the this to with
-which what how each their they these those diagram model package shows show showing describes defines""".split())  # noqa: SIM905
 
 
 @dataclass
@@ -171,11 +173,6 @@ def _family(out: Path, name: str, tokens: list[str]) -> Family:
     return Family(name, tokens, items, names, related, copies)
 
 
-def target(n: int) -> int:
-    """How many subjects a family of n diagrams is split into: about the square root of n/2, 2 to 15."""
-    return max(2, min(15, round(math.sqrt(n / 2))))
-
-
 Split = dict[str, int]  # item key -> group
 
 
@@ -223,49 +220,28 @@ def _common(a: str, b: str) -> int:
     return n
 
 
-def louvain(g: nx.Graph) -> list[set[str]]:
-    """Louvain communities, the same whatever the hash seed: networkx gathers nodes in sets, whose
-    order for strings depends on it, so the nodes go in as numbers, in sorted order."""
-    names = sorted(g.nodes)
-    num = nx.Graph()
-    num.add_nodes_from(range(len(names)))
-    index = {n: i for i, n in enumerate(names)}
-    num.add_weighted_edges_from(sorted((min(index[a], index[b]), max(index[a], index[b]), d["weight"])
-                                       for a, b, d in g.edges(data=True)))
-    return [{names[i] for i in c} for c in nx.community.louvain_communities(num, weight="weight", seed=SEED)]
-
-
 def split_shared(f: Family, k: int) -> Split:
     """Louvain communities (seeded) of `_graph`, then merged down to k, and groups under 3 merged
     in any case: the smallest group joins the group it is most joined to, or, joined to none, the
     one whose package path it shares most of (a table, which shows nothing, goes by its package)."""
     g = _graph(f)
-    comms = louvain(g)
-    group = {key: i for i, c in enumerate(comms) for key in c}
-    members = dict(enumerate(comms))
-    least = 3 if len(f.items) >= 30 else 1
 
     def package(c: set[str]) -> str:
         return Counter(f.items[key].package for key in sorted(c)).most_common(1)[0][0]
 
-    while len(members) > 1 and (len(members) > k or min(len(c) for c in members.values()) < least):
-        small = min(members, key=lambda i: (len(members[i]), min(members[i])))
+    def into(small: int, members: dict[int, set[str]], group: dict[str, int]) -> int:
         ties: Counter[int] = Counter()
         for key in sorted(members[small]):
             for nb, data in sorted(g[key].items()):
                 if group[nb] != small:
                     ties[group[nb]] += data["weight"]
         if ties:
-            into = max(ties, key=lambda i: (ties[i], -i))
-        else:
-            pkg = package(members[small])
-            into = max((i for i in members if i != small),
-                       key=lambda i: (_common(pkg, package(members[i])), len(members[i]), -i))
-        for key in members.pop(small):
-            group[key] = into
-            members[into].add(key)
-    order = {i: n for n, i in enumerate(sorted(members, key=lambda i: (-len(members[i]), min(members[i]))))}
-    return {key: order[i] for key, i in group.items()}
+            return max(ties, key=lambda i: (ties[i], -i))
+        pkg = package(members[small])
+        return max((i for i in members if i != small),
+                   key=lambda i: (_common(pkg, package(members[i])), len(members[i]), -i))
+
+    return merge_down(louvain(g), k, into, least=3 if len(f.items) >= 30 else 1)
 
 
 def split_packages(f: Family, k: int) -> Split:
@@ -281,25 +257,12 @@ def split_packages(f: Family, k: int) -> Split:
     return best
 
 
-def _tokens(text: str) -> list[str]:
-    return [w for w in WORD.findall(text.lower()) if w not in STOP]
-
-
 def word_label(f: Family, s: Split, group: int, n: int = 3) -> str:
-    """A group's distinctive words: frequent in it, rare outside, leaving out the about texts' own
-    idiom (words in more than 30% of them)."""
-    inside: Counter[str] = Counter()
-    outside: Counter[str] = Counter()
-    everywhere: Counter[str] = Counter()
-    for key, g in s.items():
-        words = set(_tokens(f.items[key].title + " " + f.items[key].about))
-        (inside if g == group else outside).update(words)
-        everywhere.update(set(_tokens(f.items[key].about)))
+    """A group's distinctive words, leaving out the about texts' own idiom (words in more than 30%
+    of them)."""
+    everywhere = Counter(w for key in s for w in set(tokens(f.items[key].about)))
     common = {w for w, c in everywhere.items() if c > 0.3 * len(s)}
-    size = sum(1 for g in s.values() if g == group)
-    rest = max(1, len(s) - size)
-    score = {w: c / size - outside[w] / rest for w, c in inside.items() if (c > 1 or size == 1) and w not in common}
-    return ", ".join(w for w, _ in sorted(score.items(), key=lambda kv: (-kv[1], kv[0]))[:n]) or "(no distinctive words)"
+    return distinctive(s, lambda key: set(tokens(f.items[key].title + " " + f.items[key].about)), group, n, common)
 
 
 def package_label(f: Family, s: Split, group: int) -> str:
@@ -368,25 +331,8 @@ def batches(f: Family) -> list[list[str]]:
     return out
 
 
-def _json(reply: Any) -> Any:
-    text = reply[0] if isinstance(reply, tuple) else reply
-    if not text:
-        return None
-    m = re.search(r"\{.*\}", text, re.DOTALL)
-    try:
-        return json.loads(m.group(0)) if m else None
-    except json.JSONDecodeError:
-        return None
-
-
 def _asker(llm: Any, f: Family) -> Any:
-    def ask(template: Any, values: dict[str, str]) -> Any:
-        try:
-            return llm.ask(template, values, project=f"subjects:{f.name}", inputs=(f.tokens[0],))
-        except ReplayMiss as e:  # a replayed run: at the root, a miss is an unanswered request, not a failure
-            log.debug("subjects of %s: %s", f.name, e)
-            return None
-    return ask
+    return asker(llm, f"subjects:{f.name}", (f.tokens[0],))
 
 
 def ways_for(llm: Any, fams: list[Family], concurrency: int = 1, advance: Any = None) -> dict[str, list[dict[str, Any]] | None]:
@@ -399,7 +345,7 @@ def ways_for(llm: Any, fams: list[Family], concurrency: int = 1, advance: Any = 
                                                 "K": str(target(len(f.items))), "OUTLINE": outline(f)})
         if advance:
             advance(1)
-        ways = [w for w in ((_json(got) or {}).get("ways") or [])[:WAYS] if isinstance(w, dict)]
+        ways = [w for w in ((reply_json(got) or {}).get("ways") or [])[:WAYS] if isinstance(w, dict)]
         ways = [(w, [s for s in w.get("subjects") or [] if isinstance(s, dict) and s.get("label")]) for w in ways]
         return [{"principle": w.get("principle"), "subjects": subs} for w, subs in ways if len(subs) >= 2] or None
 
@@ -415,7 +361,7 @@ def ways_for(llm: Any, fams: list[Family], concurrency: int = 1, advance: Any = 
         r = _asker(llm, f)(SUBJECTS_ASSIGN, {"SUBJECTS": listing, "DIAGRAMS": text})
         if advance:
             advance(1)
-        reply = _json(r) or {}
+        reply = reply_json(r) or {}
         return {key: reply.get(str(i)) for i, key in enumerate(batch, 1)}
 
     with ThreadPoolExecutor(max(1, concurrency)) as pool:
@@ -432,22 +378,12 @@ def ways_for(llm: Any, fams: list[Family], concurrency: int = 1, advance: Any = 
         views = []
         for n, way in enumerate(ways):
             subjects = way["subjects"]
-            members: dict[int, list[str]] = defaultdict(list)
-            unsorted = []
-            for key, v in sorted(assigned[f.tokens[0], n].items()):
-                try:
-                    g = int(v) - 1
-                except (TypeError, ValueError):
-                    g = -1
-                if 0 <= g < len(subjects):
-                    members[g].append(key)
-                else:
-                    unsorted.append(key)
+            members, unsorted = place(assigned[f.tokens[0], n], len(subjects))
             views.append({"id": f"ways-{n + 1}", "kind": "llm", "title": str(way["principle"] or f"Way {n + 1}")[:80],
                           "model": llm.cfg.text_model,
                           "subjects": [{"label": str(subjects[g]["label"])[:80],
                                         "holds": str(subjects[g].get("holds", ""))[:300], "diagrams": members[g]}
-                                       for g in range(len(subjects)) if members[g]],
+                                       for g in range(len(subjects)) if members.get(g)],
                           "unsorted": unsorted})
         out[f.tokens[0]] = views
     return out
@@ -474,35 +410,25 @@ def entry(f: Family, ways: list[dict[str, Any]] | None, asked: bool) -> dict[str
         views.insert(0, shared_view(f))  # the fallback, first
     views.append(package_view(f))
     rec.update(views=views, default=views[0]["id"],
-               ways=("found" if ways and worst == 0 else "incomplete" if ways else "failed" if asked else "not asked"))
+               ways=status(bool(ways), worst == 0, asked))
     return rec
 
 
 def load(out: Path) -> dict[str, dict[str, Any]]:
-    """The last `subjects.json`, by its families' newest token."""
-    try:
-        data = json.loads((out / FILE).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    if data.get("format") != FORMAT:
-        return {}
-    return {rec["tokens"][0]: rec for rec in data.get("families", [])}
+    """The last `subjects.json`'s family records, by their newest token."""
+    return {rec["tokens"][0]: rec for rec in (read(out) or {}).get("families", [])}
 
 
 def load_topics(out: Path) -> dict[str, Any] | None:
     """The last `subjects.json`'s topics across models, if any."""
-    try:
-        data = json.loads((out / FILE).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    return data.get("topics") if data.get("format") == FORMAT else None
+    return (read(out) or {}).get("topics")
 
 
 def summary(out: Path) -> dict[str, Any]:
     """For `status`: how many families, how their ways stand, and how the topics across models do."""
-    recs = load(out)
-    topics = load_topics(out) or {}
-    return {"families": len(recs), **dict(sorted(Counter(r.get("ways") for r in recs.values()).items())),
+    data = read(out) or {}
+    recs, topics = data.get("families", []), data.get("topics") or {}
+    return {"families": len(recs), **dict(sorted(Counter(r.get("ways") for r in recs).items())),
             **({"topics": topics["ways"]} if topics.get("ways") else {})}
 
 
@@ -531,13 +457,8 @@ def update(state: Any, out: Path, llm: Any = None, concurrency: int = 1, progres
             found = ways_for(llm, todo, concurrency, ph.advance)
         asked = {f.tokens[0]: entry(f, found[f.tokens[0]], asked=True) for f in todo}
         records = [r if r is not None else asked[f.tokens[0]] for r, f in zip(records, fams, strict=True)]
-    from . import topics
-
     found = topics.update(fams, records, load_topics(out), llm if can_ask else None, concurrency, progress)
-    data = {"format": FORMAT, "families": records, "topics": found}
-    tmp = out / (FILE + ".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1, sort_keys=True), encoding="utf-8")
-    tmp.replace(out / FILE)
+    write(out, records, found)
     counts = Counter(r.get("ways") for r in records)
     for r in records:
         if r.get("ways") in ("failed", "incomplete"):

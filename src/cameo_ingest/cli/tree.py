@@ -234,12 +234,11 @@ def export(out: Path, args: argparse.Namespace) -> int:
     state = State(out)
     missing: list[str] = []
     try:
-        from .. import lineage, shared, subjects
+        from .. import discovery, lineage, shared
         from ..progress import QUIET
         from ..provenance import ContentInfo
 
-        sub = out / subjects.FILE
-        families = json.loads(sub.read_text(encoding="utf-8")) if sub.is_file() else None
+        families = discovery.read(out)
         facts = lineage.facts(state)  # each model's save time, version, family and kin (plan LN-06)
         links = shared.find(lambda: catalog.tree_catalogs(state, out, [], QUIET), shared.related_by(facts))  # plan SH
         for r in state.written():

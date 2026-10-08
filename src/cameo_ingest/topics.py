@@ -21,13 +21,29 @@ import math
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import networkx as nx
 
-from .llm import ReplayMiss
+from .discovery import (
+    UNSORTED_LIMIT,
+    asker,
+    default_view,
+    distinctive,
+    louvain,
+    merge_down,
+    place,
+    reply_json,
+    split_ref,
+    status,
+    subject_ref,
+    target,
+    tokens,
+)
 from .prompts import TOPICS_ASSIGN, TOPICS_PROPOSE
-from .subjects import UNSORTED_LIMIT, Family, _json, _tokens, louvain, target
+
+if TYPE_CHECKING:
+    from .subjects import Family
 
 log = logging.getLogger(__name__)
 
@@ -53,17 +69,13 @@ class Subject:
     @property
     def family(self) -> str:
         """Its family's newest token."""
-        return self.id.rpartition("/")[0]
+        return split_ref(self.id)[0]
 
     def describe(self, examples: int = EXAMPLES) -> str:
         holds = self.holds[:HOLDS_CHARS] + ("…" if len(self.holds) > HOLDS_CHARS else "")
         shown = "; ".join(self.titles[:examples])
         return (f"{self.label} ({self.model}, {len(self.diagrams)} diagrams)" + (f": {holds}" if holds else "")
                 + (f" e.g. {shown}" if shown else ""))
-
-
-def default_view(rec: dict[str, Any]) -> dict[str, Any]:
-    return next(v for v in rec["views"] if v["id"] == rec["default"])
 
 
 def subjects(fams: list[Family], recs: dict[str, dict[str, Any]]) -> list[Subject]:
@@ -78,7 +90,7 @@ def subjects(fams: list[Family], recs: dict[str, dict[str, Any]]) -> list[Subjec
             if not keys:
                 continue
             its = [f.items[k] for k in keys]
-            out.append(Subject(f"{f.tokens[0]}/{n}", f.name, s["label"], s.get("holds") or "", keys,
+            out.append(Subject(subject_ref(f.tokens[0], n), f.name, s["label"], s.get("holds") or "", keys,
                                [it.title for it in its],
                                " ".join([s["label"], s.get("holds") or ""] + [it.title + " " + it.about for it in its]),
                                set().union(*(it.shows for it in its))))
@@ -97,7 +109,7 @@ def similarity(subs: list[Subject]) -> dict[tuple[int, int], float]:
     """Cosine of the subjects' TF-IDF vectors, between subjects of different families: a model's
     own words (in no other family's subjects) would join its subjects to each other, and topics
     would be models again; words in more than half the subjects are left out too."""
-    docs = [Counter(_tokens(s.text)) for s in subs]
+    docs = [Counter(tokens(s.text)) for s in subs]
     n = len(subs)
     df = Counter(w for d in docs for w in d)
     spread: dict[str, set[str]] = defaultdict(set)
@@ -165,39 +177,22 @@ def graph(subs: list[Subject]) -> tuple[nx.Graph, dict[tuple[int, int], float]]:
 def split_words(subs: list[Subject], k: int | None = None) -> dict[int, int]:
     """Subject index -> topic: Louvain communities of `graph`, the smallest merged into the one
     it is most joined to (by every pair's weight) until k are left."""
-    k = k or target(len(subs))
     g, weight = graph(subs)
-    named = nx.relabel_nodes(g, {i: f"{i:06d}" for i in g.nodes})
-    comms = [{int(x) for x in c} for c in louvain(named)]
-    members = dict(enumerate(comms))
-    group = {i: n for n, c in members.items() for i in c}
-    while len(members) > max(1, k):
-        small = min(members, key=lambda n: (len(members[n]), min(members[n])))
+
+    def into(small: int, members: dict[int, set[int]], group: dict[int, int]) -> int:
         ties: Counter[int] = Counter()
         for i in members[small]:
             for j in range(len(subs)):
                 if group[j] != small:
                     ties[group[j]] += weight.get((min(i, j), max(i, j)), 0.0)
-        into = max((n for n in members if n != small), key=lambda n: (ties[n], len(members[n]), -n))
-        for i in members.pop(small):
-            group[i] = into
-            members[into].add(i)
-    order = {n: r for r, n in enumerate(sorted(members, key=lambda n: (-len(members[n]), min(members[n]))))}
-    return {i: order[n] for i, n in group.items()}
+        return max((n for n in members if n != small), key=lambda n: (ties[n], len(members[n]), -n))
+
+    return merge_down(louvain(g), k or target(len(subs)), into)
 
 
 def word_label(subs: list[Subject], split: dict[int, int], topic: int, n: int = 3) -> str:
-    """A topic's distinctive words, from its subjects' labels and what they hold: frequent in it,
-    rare outside."""
-    inside: Counter[str] = Counter()
-    outside: Counter[str] = Counter()
-    for i, t in split.items():
-        words = set(_tokens(subs[i].label + " " + subs[i].holds))
-        (inside if t == topic else outside).update(words)
-    size = sum(1 for t in split.values() if t == topic)
-    rest = max(1, len(split) - size)
-    score = {w: c / size - outside[w] / rest for w, c in inside.items() if c > 1 or size == 1}
-    return ", ".join(w for w, _ in sorted(score.items(), key=lambda kv: (-kv[1], kv[0]))[:n]) or "(no distinctive words)"
+    """A topic's distinctive words, from its subjects' labels and what they hold."""
+    return distinctive(split, lambda i: set(tokens(subs[i].label + " " + subs[i].holds)), topic, n)
 
 
 def _view(subs: list[Subject], split: dict[int, int], vid: str, kind: str, title: str,
@@ -253,43 +248,27 @@ def requests(subs: list[Subject]) -> int:
 def llm_view(llm: Any, subs: list[Subject], concurrency: int = 1, advance: Any = None) -> dict[str, Any] | None:
     """The LLM's topics, every subject placed or left unsorted; None when the proposal failed."""
 
-    def ask(template: Any, values: dict[str, str]) -> Any:
-        try:
-            return llm.ask(template, values, project="topics", inputs=(signature(subs),))
-        except ReplayMiss as e:
-            log.debug("topics: %s", e)
-            return None
-
+    ask = asker(llm, "topics", (signature(subs),))
     models = len({s.family for s in subs})
     got = ask(TOPICS_PROPOSE, {"MODELS": str(models), "K": str(target(len(subs))), "SUBJECTS": listing(subs)})
     if advance:
         advance(1)
-    topics = [t for t in ((_json(got) or {}).get("topics") or []) if isinstance(t, dict) and t.get("label")]
+    topics = [t for t in ((reply_json(got) or {}).get("topics") or []) if isinstance(t, dict) and t.get("label")]
     if len(topics) < 2:
         return None
     menu = "\n".join(f"{n}. {t['label']}: {t.get('holds', '')}" for n, t in enumerate(topics, 1))
 
     def assign(batch: list[int]) -> dict[int, Any]:
         text = "\n".join(f"{n}. {subs[i].describe()}" for n, i in enumerate(batch, 1))
-        reply = _json(ask(TOPICS_ASSIGN, {"TOPICS": menu, "SUBJECTS": text})) or {}
+        reply = reply_json(ask(TOPICS_ASSIGN, {"TOPICS": menu, "SUBJECTS": text})) or {}
         if advance:
             advance(1)
         return {i: reply.get(str(n)) for n, i in enumerate(batch, 1)}
 
     with ThreadPoolExecutor(max(1, concurrency)) as pool:
         answers = list(pool.map(assign, batches(subs)))
-    split: dict[int, int] = {}
-    unsorted = []
-    for got_ in answers:
-        for i, v in sorted(got_.items()):
-            try:
-                t = int(v) - 1
-            except (TypeError, ValueError):
-                t = -1
-            if 0 <= t < len(topics):
-                split[i] = t
-            else:
-                unsorted.append(i)
+    members, unsorted = place({i: v for got_ in answers for i, v in got_.items()}, len(topics))
+    split = {i: t for t, ids in members.items() for i in ids}
     return _view(subs, split, "llm", "llm", "Topics across models",
                  {t: str(topics[t]["label"])[:80] for t in range(len(topics))},
                  {t: str(topics[t].get("holds", ""))[:300] for t in range(len(topics))}, unsorted)
@@ -313,7 +292,7 @@ def entry(subs: list[Subject], view: dict[str, Any] | None, asked: bool) -> dict
     else:
         views.append(words_view(subs))
     rec.update(views=views, default=views[0]["id"],
-               ways=("found" if view and unsorted == 0 else "incomplete" if view else "failed" if asked else "not asked"))
+               ways=status(view is not None, unsorted == 0, asked))
     return rec
 
 

@@ -22,8 +22,8 @@ from typing import Any
 import xlsxwriter
 
 from .catalog import ProjectCatalog
+from .discovery import UNSORTED, UNSORTED_NOTE, default_view, subject_ref
 from .shared import BASES
-from .subjects import UNSORTED, UNSORTED_NOTE
 from .text import plural, xml_safe
 
 # Characters per cell, by sheet; Excel's own limit is 32,767.
@@ -125,11 +125,11 @@ def write_workbook(path: Path, projects: Iterable[ProjectCatalog], version: str,
     topic = _topics((subjects or {}).get("topics"))
     suggested: dict[tuple[str, str], tuple[str, str | None]] = {}  # (token, diagram) -> (subject, topic)
     for f in families:
-        view = next(v for v in f["views"] if v["id"] == f["default"])
+        view = default_view(f)
         for n, s in enumerate(view["subjects"]):
             for key in s["diagrams"]:
                 for i in f["diagrams"].get(key, []):
-                    suggested[f["tokens"][i], key] = (s["label"], topic.get(f"{f['tokens'][0]}/{n}"))
+                    suggested[f["tokens"][i], key] = (s["label"], topic.get(subject_ref(f["tokens"][0], n)))
     names: dict[tuple[str, str], str] = {}
     labels: dict[str, str] = {}
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -170,9 +170,9 @@ def write_workbook(path: Path, projects: Iterable[ProjectCatalog], version: str,
 def _topics(topics: dict[str, Any] | None) -> dict[str, str]:
     """Each subject's topic in the suggested topics across models, by "token/n" (a family's newest
     token and the subject's place in its default view)."""
-    view = next((v for v in (topics or {}).get("views", []) if v["id"] == (topics or {}).get("default")), None)
-    if view is None:
+    if not (topics or {}).get("views"):
         return {}
+    view = default_view(topics)
     out = dict.fromkeys(view.get("unsorted", []), UNSORTED)
     for t in view["topics"]:
         for ref in t["subjects"]:
@@ -189,7 +189,7 @@ def _subject_rows(families: list[dict[str, Any]], names: dict[tuple[str, str], s
         for v in sorted(f["views"], key=lambda v: v["id"] != f["default"]):
             title = v["title"] + (" (suggested)" if v["id"] == f["default"] else "")
             subjects = [(s["label"], s.get("holds", ""), s["diagrams"],
-                         topic.get(f"{f['tokens'][0]}/{n}") if v["id"] == f["default"] else None)
+                         topic.get(subject_ref(f["tokens"][0], n)) if v["id"] == f["default"] else None)
                         for n, s in enumerate(v["subjects"])]
             if v.get("unsorted"):
                 subjects.append((UNSORTED, UNSORTED_NOTE,

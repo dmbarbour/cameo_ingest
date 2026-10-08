@@ -7,6 +7,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from cameo_ingest import discovery
+
 
 def test_families_and_splits(tmp_path):
     pytest.importorskip("numpy")  # the study's word clusters
@@ -90,7 +92,7 @@ def _update(out, llm=None):
         counts = subjects.update(st, out, llm)
     finally:
         st.close()
-    data = json.loads((out / subjects.FILE).read_text())
+    data = json.loads((out / discovery.FILE).read_text())
     return counts, {r["name"]: r for r in data["families"]}
 
 
@@ -143,11 +145,11 @@ def test_subjects_and_their_fallbacks(versions_tree, tmp_path):
     _, kept = _update(out)  # no session (`remove`, `prune`): kept
     assert kept[fork] == f
 
-    (out / subjects.FILE).unlink()
+    (out / discovery.FILE).unlink()
     _, fams = _update(out, FakeLLM(fail="propose"))
     assert fams[fork]["ways"] == "failed" and fams[fork]["default"] == "shared"
 
-    (out / subjects.FILE).unlink()
+    (out / discovery.FILE).unlink()
     _, fams = _update(out, FakeLLM(fail=1))
     f = fams[fork]
     unsorted = f["views"][1]["unsorted"]

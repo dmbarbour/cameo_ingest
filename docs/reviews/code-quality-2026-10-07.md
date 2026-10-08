@@ -159,6 +159,21 @@
   `subjects.load_topics`, raw at `cli.py:305`), twice by `subjects.summary`.
 - **CQ-008R1:** with CQ-007: typed records (the file, a family, a view, a subject reference) with
   `default_view()`, and one loader.
+- **Weighed** (CQ-007 and CQ-008 together): where the shared code lives: (a) a low-level
+  `discovery.py` with what both use and the file's format, `topics` importing `subjects` for its
+  `Family` type alone, so that imports at run time go one way; (b) the two merged (about 900
+  lines, for two steps); (c) `subjects`' helpers made public for `topics` (the cycle stays unless
+  writing the file moves out). And the records: dataclasses (every dict access in the workbook and
+  page converted, for a file whose shape is its contract with them), or the JSON dicts kept, with
+  every piece of knowledge about their references in one module (the duplication found was the
+  reference and the default view, not the dicts). (a), with the dicts.
+- **Done:** `discovery.py`: `asker`, `reply_json`, `place`, `status`, `louvain`, `merge_down`,
+  `distinctive`, `tokens`, `target`, the constants, and the file (`read`, `write`,
+  `default_view`, `subject_ref`, `split_ref`). `subjects` and `topics` use them, the topics'
+  merging and labels by the same code as the subjects'; `topics` imports `subjects` only for type
+  hints; `subjects.update` writes the file by `discovery.write`; the workbook, the page and the
+  export command read through it. The comparison tree is the same (`treediff`), `subjects.json`
+  included; the LLM's path is the tests' (a fake endpoint).
 
 #### CQ-009: `cli.py` holds library logic
 

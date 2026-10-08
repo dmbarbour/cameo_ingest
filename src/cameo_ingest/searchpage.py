@@ -53,6 +53,7 @@ from pathlib import Path
 from typing import Any
 
 from .catalog import ProjectCatalog
+from .discovery import split_ref
 from .shared import BASES
 from .text import plural
 
@@ -175,8 +176,8 @@ def page_topics(topics: dict[str, Any] | None, families: list[dict[str, Any]], p
             where[f["tokens"][0]] = fi_of[first]
 
     def member(ref: str) -> list[int] | None:
-        token, _, n = ref.rpartition("/")
-        return [where[token], int(n)] if token in where else None
+        token, n = split_ref(ref)
+        return [where[token], n] if token in where else None
 
     views = []
     for v in topics["views"]:

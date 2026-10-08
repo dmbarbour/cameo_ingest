@@ -21,8 +21,9 @@ from pathlib import Path
 from typing import Any
 
 from .. import subjects as production
+from ..discovery import target, tokens  # noqa: F401 (target: the study's name)
 from ..state import State
-from ..subjects import Family, Item, Split, _tokens, split_packages, target  # noqa: F401 (the study's names)
+from ..subjects import Family, Item, Split, split_packages  # noqa: F401 (the study's names)
 from ..subjects import split_shared as split_graph
 from ..subjects import word_label as label  # noqa: F401 (the study's name)
 
@@ -51,7 +52,7 @@ def split_words(f: Family, k: int) -> Split:
     import numpy as np
 
     keys = sorted(f.items)
-    docs = [_tokens(f.items[key].words + " " + " ".join(f.names.get(e, "") for e in sorted(f.items[key].shows)))
+    docs = [tokens(f.items[key].words + " " + " ".join(f.names.get(e, "") for e in sorted(f.items[key].shows)))
             for key in keys]
     vocab = {w: i for i, w in enumerate(sorted({w for d in docs for w in d}))}
     df = Counter(w for d in docs for w in set(d))
