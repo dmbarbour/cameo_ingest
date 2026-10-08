@@ -70,6 +70,183 @@ def _prefix_for(uri: str, uri2prefix: dict[str, str]) -> str:
     return uri2prefix.get(uri, uri)
 
 
+class _Frame:
+    """An open XML element of the model, as the parser reads it (CQ-019): what its children are
+    (`child`), and what its text says when it ends (`close`). A frame of one kind for each place
+    in the document that reads differently."""
+
+    def child(self, p: _Parser, node, prefix: str, local: str, xid: str | None) -> _Frame:
+        return _IGNORE
+
+    def close(self, p: _Parser, text: str) -> None:
+        pass
+
+
+class _Ignored(_Frame):
+    """Something read no further: its children are ignored too."""
+
+
+_IGNORE = _Ignored()
+
+
+class _Root(_Frame):
+    """`xmi:XMI`'s children: the documentation, extensions, stereotype applications (an element of
+    a profile's namespace with a `base_` attribute) and the model's top elements."""
+
+    def child(self, p: _Parser, node, prefix: str, local: str, xid: str | None) -> _Frame:
+        if prefix == "xmi" and local == "Documentation":
+            return _Doc()
+        if prefix == "xmi" and local == "Extension":
+            return _Ext(None)
+        base_attrs = [k for k in node.attrib if p.qname(k)[1].startswith("base_")]
+        if prefix not in ("uml", "xmi") and base_attrs and xid:
+            tags: dict[str, list[str]] = {}
+            for k, v in p.plain_attrs(node).items():
+                if not k.startswith("base_"):
+                    tags.setdefault(k, []).append(v)
+            app = StereotypeApplication(
+                id=xid,
+                stereotype=f"{prefix}:{local}",
+                profile_uri=node.tag[1:].split("}", 1)[0] if node.tag.startswith("{") else p.literal_ns.get(prefix, ""),
+                base=node.get(base_attrs[0]) or "",
+                tags=tags,
+                entry=p.entry,
+                line=node.sourceline,
+            )
+            p.ix.stereotypes[xid] = app
+            return _Stereo(app)
+        if xid:
+            el = p._element(node, xid, prefix, local, owner=None)
+            p.ix.roots.append(xid)
+            return _Owned(el)
+        return _IGNORE
+
+
+class _Doc(_Frame):
+    """`xmi:Documentation`: the exporter's name and version."""
+
+    def child(self, p: _Parser, node, prefix: str, local: str, xid: str | None) -> _Frame:
+        return _DocValue(local)
+
+
+class _DocValue(_Frame):
+    def __init__(self, key: str):
+        self.key = key
+
+    def close(self, p: _Parser, text: str) -> None:
+        if text:
+            p.ix.exporter[self.key] = text
+
+
+class _Owned(_Frame):
+    """An element's children: owned elements, references (`xmi:idref`, `href`), extensions, and
+    property values written as elements."""
+
+    def __init__(self, el: Element):
+        self.el = el
+
+    def child(self, p: _Parser, node, prefix: str, local: str, xid: str | None) -> _Frame:
+        owner = self.el
+        if prefix == "xmi" and local == "Extension":
+            return _Ext(owner)
+        if xid:
+            el = p._element(node, xid, prefix, local, owner=owner.id)
+            owner.children.append(xid)
+            return _Owned(el)
+        idref = p.xattr(node, "idref") or node.get("href")
+        if idref:
+            owner.refs.append((local, idref))
+            if node.get("href") and not idref.startswith("#"):
+                p.ix.external_refs.add(idref)
+            return _IGNORE
+        return _Value(owner, local)
+
+
+class _Value(_Frame):
+    """A property's value written as an element's text; a repeated one joins by lines."""
+
+    def __init__(self, owner: Element, role: str):
+        self.owner, self.role = owner, role
+
+    def close(self, p: _Parser, text: str) -> None:
+        if text:
+            prev = self.owner.attrs.get(self.role)
+            self.owner.attrs[self.role] = f"{prev}\n{text}" if prev else text
+
+
+class _Stereo(_Frame):
+    """A stereotype application's tagged values written as elements: references or text."""
+
+    def __init__(self, app: StereotypeApplication):
+        self.app = app
+
+    def child(self, p: _Parser, node, prefix: str, local: str, xid: str | None) -> _Frame:
+        ref = p.xattr(node, "idref") or node.get("href")
+        if ref:
+            self.app.tags.setdefault(local, []).append(ref)
+            if node.get("href") and not ref.startswith("#"):
+                p.ix.external_refs.add(ref)
+            return _IGNORE
+        return _StereoValue(self.app, local)
+
+
+class _StereoValue(_Frame):
+    def __init__(self, app: StereotypeApplication, role: str):
+        self.app, self.role = app, role
+
+    def close(self, p: _Parser, text: str) -> None:
+        if text:
+            self.app.tags.setdefault(self.role, []).append(text)
+
+
+class _Ext(_Frame):
+    """`xmi:Extension` (of an element, or at the root): diagrams, at any depth; the rest ignored."""
+
+    def __init__(self, owner: Element | None):
+        self.owner = owner
+
+    def child(self, p: _Parser, node, prefix: str, local: str, xid: str | None) -> _Frame:
+        if p.xattr(node, "type") == "uml:Diagram" and xid:
+            owner_id = node.get("ownerOfDiagram") or (self.owner.id if self.owner else None)
+            el = p._element(node, xid, "uml", local, owner=owner_id)
+            if self.owner is not None:
+                self.owner.children.append(xid)
+            dia = Diagram(id=xid, name=node.get("name") or "", owner=owner_id, diagram_type=None,
+                          uml_type=None, entry=p.entry, line=node.sourceline)
+            p.ix.diagrams[xid] = dia
+            return _InDiagram(el, dia)
+        return _Ext(self.owner)
+
+
+class _InDiagram(_Frame):
+    """A diagram's contents, at any depth: its type, the streams of its layout, what it shows
+    (`usedObjects`), and its documentation (an owned comment)."""
+
+    def __init__(self, el: Element, dia: Diagram):
+        self.el, self.dia = el, dia
+
+    def child(self, p: _Parser, node, prefix: str, local: str, xid: str | None) -> _Frame:
+        dia = self.dia
+        if node.get("umlType") or (local == "DiagramRepresentationObject"):
+            dia.diagram_type = dia.diagram_type or node.get("type")
+            dia.uml_type = dia.uml_type or node.get("umlType")
+        sid = node.get("streamContentID")
+        if sid:
+            dia.streams.append(sid)
+        ref = p.xattr(node, "idref")
+        if not ref and local == "usedObjects" and (node.get("href") or "").startswith("#"):
+            ref = node.get("href")[1:]  # how Cameo writes them: href='#id' (BASE-013)
+        if ref:
+            dia.shown.append(ref)
+            if local == "usedObjects":
+                dia.used.append(ref)
+        if local == "ownedComment" and xid:  # diagram documentation
+            frame = _Owned(p._element(node, xid, prefix, local, owner=self.el.id))
+            self.el.children.append(xid)
+            return frame
+        return self
+
+
 class _Parser:
     def __init__(self, index: ModelIndex, entry: str):
         self.ix = index
@@ -79,9 +256,7 @@ class _Parser:
         # `xmlns:MD_Customization_for_SysML::additional_stereotypes` (TR-001): read as written.
         self.literal_ns: dict[str, str] = {}
         self.xmi_uri = "http://www.omg.org/spec/XMI/20131001"
-        # Stack of (frame kind, payload). Kinds: root, element, value, ignore, ext,
-        # diagram, stereo, doc.
-        self.stack: list[tuple[str, object]] = []
+        self.stack: list[_Frame] = []  # the open elements' frames
 
     # -- helpers ---------------------------------------------------------------
     def qname(self, tag: str) -> tuple[str, str]:
@@ -114,148 +289,22 @@ class _Parser:
         return out
 
     # -- events ----------------------------------------------------------------
-    def start(self, node) -> None:  # noqa: C901 (CQ-019)
+    def start(self, node) -> None:
         prefix, local = self.qname(node.tag)
-        parent_kind, parent = self.stack[-1] if self.stack else ("none", None)
-        xid = self.xattr(node, "id")
-        line = node.sourceline
-
-        if parent_kind == "none":
+        if not self.stack:  # the document's root
             for k, v in node.attrib.items():
                 if k.startswith("xmlns:"):  # a declaration XML refused, kept as an attribute (TR-001)
                     self.literal_ns[k[6:]] = v
                     self.ix.namespaces.setdefault(k[6:], v)
-            if prefix == "xmi" and local == "XMI":
-                self.stack.append(("root", None))
-            else:  # a bare uml:Model / uml:Package document
-                self.stack.append(("root", None))
-                self.start(node)  # re-dispatch as a root child
+            self.stack.append(_Root())
+            if not (prefix == "xmi" and local == "XMI"):  # a bare uml:Model / uml:Package document
+                self.stack.append(self.stack[-1].child(self, node, prefix, local, self.xattr(node, "id")))
                 self.stack.pop(-2)
             return
-
-        if parent_kind == "root":
-            if prefix == "xmi" and local == "Documentation":
-                self.stack.append(("doc", None))
-                return
-            if prefix == "xmi" and local == "Extension":
-                self.stack.append(("ext", None))
-                return
-            base_attrs = [k for k in node.attrib if self.qname(k)[1].startswith("base_")]
-            if prefix not in ("uml", "xmi") and base_attrs and xid:
-                base = node.get(base_attrs[0])
-                tags: dict[str, list[str]] = {}
-                for k, v in self.plain_attrs(node).items():
-                    if not k.startswith("base_"):
-                        tags.setdefault(k, []).append(v)
-                app = StereotypeApplication(
-                    id=xid,
-                    stereotype=f"{prefix}:{local}",
-                    profile_uri=node.tag[1:].split("}", 1)[0] if node.tag.startswith("{") else self.literal_ns.get(prefix, ""),
-                    base=base or "",
-                    tags=tags,
-                    entry=self.entry,
-                    line=line,
-                )
-                self.ix.stereotypes[xid] = app
-                self.stack.append(("stereo", app))
-                return
-            if xid:
-                el = self._element(node, xid, prefix, local, owner=None)
-                self.ix.roots.append(xid)
-                self.stack.append(("element", el))
-                return
-            self.stack.append(("ignore", None))
-            return
-
-        if parent_kind == "doc":
-            self.stack.append(("docvalue", local))
-            return
-
-        if parent_kind == "element":
-            owner: Element = parent  # type: ignore[assignment]
-            if prefix == "xmi" and local == "Extension":
-                self.stack.append(("ext", owner))
-                return
-            if xid:
-                el = self._element(node, xid, prefix, local, owner=owner.id)
-                owner.children.append(xid)
-                self.stack.append(("element", el))
-                return
-            idref = self.xattr(node, "idref") or node.get("href")
-            if idref:
-                owner.refs.append((local, idref))
-                if node.get("href") and not idref.startswith("#"):
-                    self.ix.external_refs.add(idref)
-                self.stack.append(("ignore", None))
-                return
-            self.stack.append(("value", (owner, local)))
-            return
-
-        if parent_kind == "stereo":
-            app: StereotypeApplication = parent  # type: ignore[assignment]
-            ref = self.xattr(node, "idref") or node.get("href")
-            if ref:
-                app.tags.setdefault(local, []).append(ref)
-                if node.get("href") and not ref.startswith("#"):
-                    self.ix.external_refs.add(ref)
-                self.stack.append(("ignore", None))
-            else:
-                self.stack.append(("stereovalue", (app, local)))
-            return
-
-        if parent_kind == "ext":
-            if self.xattr(node, "type") == "uml:Diagram" and xid:
-                owner_el = parent if isinstance(parent, Element) else None
-                owner_id = node.get("ownerOfDiagram") or (owner_el.id if owner_el else None)
-                el = self._element(node, xid, "uml", local, owner=owner_id)
-                if owner_el is not None:
-                    owner_el.children.append(xid)
-                dia = Diagram(
-                    id=xid, name=node.get("name") or "", owner=owner_id, diagram_type=None,
-                    uml_type=None, entry=self.entry, line=line,
-                )
-                self.ix.diagrams[xid] = dia
-                self.stack.append(("diagram", (el, dia)))
-                return
-            self.stack.append(("ext", parent))
-            return
-
-        if parent_kind in ("diagram", "diagram_inner"):
-            el, dia = parent  # type: ignore[misc]
-            if node.get("umlType") or (local == "DiagramRepresentationObject"):
-                dia.diagram_type = dia.diagram_type or node.get("type")
-                dia.uml_type = dia.uml_type or node.get("umlType")
-            sid = node.get("streamContentID")
-            if sid:
-                dia.streams.append(sid)
-            ref = self.xattr(node, "idref")
-            if not ref and local == "usedObjects" and (node.get("href") or "").startswith("#"):
-                ref = node.get("href")[1:]  # how Cameo writes them: href='#id' (BASE-013)
-            if ref:
-                dia.shown.append(ref)
-                if local == "usedObjects":
-                    dia.used.append(ref)
-            if local == "ownedComment" and xid:  # diagram documentation
-                self.stack.append(("element", self._element(node, xid, prefix, local, owner=el.id)))
-                el.children.append(xid)
-                return
-            self.stack.append(("diagram_inner", parent))
-            return
-
-        self.stack.append(("ignore", None))
+        self.stack.append(self.stack[-1].child(self, node, prefix, local, self.xattr(node, "id")))
 
     def end(self, node) -> None:
-        kind, payload = self.stack.pop()
-        text = (node.text or "").strip()
-        if kind == "value" and text:
-            owner, role = payload  # type: ignore[misc]
-            prev = owner.attrs.get(role)
-            owner.attrs[role] = f"{prev}\n{text}" if prev else text
-        elif kind == "stereovalue" and text:
-            app, role = payload  # type: ignore[misc]
-            app.tags.setdefault(role, []).append(text)
-        elif kind == "docvalue" and text:
-            self.ix.exporter[payload] = text  # type: ignore[index]
+        self.stack.pop().close(self, (node.text or "").strip())
 
     def _element(self, node, xid: str, prefix: str, local: str, owner: str | None) -> Element:
         xtype = self.xattr(node, "type") or (f"{prefix}:{local}" if prefix else local)

@@ -341,6 +341,15 @@
   turn up. Frame kinds are bare strings with an `object` payload (five `type: ignore`s); the
   comment at `:82-83` lists 8 of the 11 kinds.
 - **CQ-019R1:** a handler a parent kind, a dispatch table, named kinds.
+- **Weighed:** (a) a table of handlers by the parent's kind (mechanical; the payloads stay
+  `object`, and the `type: ignore`s with them); (b) a class a kind of frame, each saying what its
+  children are and what its text means when it ends (typed, a kind's start and end together; more
+  small classes, and the hot loop rewritten); (c) only the comment corrected. (b): the parser
+  changes as Cameo's quirks turn up.
+- **Done:** `xmi._Frame` and its kinds (`_Root`, `_Doc`, `_DocValue`, `_Owned`, `_Value`,
+  `_Stereo`, `_StereoValue`, `_Ext`, `_InDiagram`, `_Ignored`); `start` and `end` are a few lines;
+  no `type: ignore` and no `noqa` left. Every sample, bundle and fictional project (40) parses to
+  the same index, whole; TMT-2024x parses in the same time (6.0 s, 5.9 s before).
 
 #### CQ-020: the page script keeps logic in its interface, out of the tested engine
 
