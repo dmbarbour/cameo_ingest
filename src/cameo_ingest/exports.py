@@ -32,6 +32,7 @@ from typing import Any
 
 from . import chunks, crossref, hierarchies
 from . import plain as pl
+from . import threads as threads_mod
 from .config import TreeSettings
 from .ledger import MAX_ROWS
 from .provenance import TOOL, ContentInfo, chunk_ref, sha256_bytes, short_id
@@ -198,7 +199,7 @@ def thread_chunks(tree: Tree) -> dict[str, list[dict[str, Any]]]:
     out = {}
     for sha, p in tree.written.items():
         records = read_jsonl(index_file(project_dir(tree.out, sha), "threads"), missing_ok=True)
-        out[sha] = crossref.thread_chunks(records, ContentInfo(sha, p["name"]),
+        out[sha] = threads_mod.thread_chunks(records, ContentInfo(sha, p["name"]),
                                           refs=tree.assembly.line_refs)
     return out
 

@@ -15,14 +15,12 @@ place, where otherwise every kind's own chunk holds a piece of it.
 
 from __future__ import annotations
 
-import re
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 
-from . import chunks
-from . import plain as pl
 from . import semantics as sem
-from .provenance import TOOL, ContentInfo, chunk_ref
+from .outlines import Sort, outline_chunks, outline_page
+from .provenance import ContentInfo, chunk_ref
 from .text import first_sentence, one_line
 
 if TYPE_CHECKING:
@@ -31,10 +29,6 @@ if TYPE_CHECKING:
 FILE = "HIERARCHIES.md"  # each project's page of them
 MIN_KINDS = 3  # a hierarchy's kinds, its root included
 DOC_CHARS = 100  # of a kind's documentation, its first sentence
-
-
-def _anchor(term: str) -> str:
-    return re.sub(r"[^a-z0-9-]+", "-", term.lower()).strip("-")
 
 
 def project_hierarchies(view: ProjectView, chunk_of: dict[str, str]) -> list[dict[str, Any]]:
@@ -126,42 +120,20 @@ def _heading(h: dict[str, Any], content: ContentInfo) -> str:
             f"{levels} level{'s' if levels != 1 else ''}")
 
 
+SORT = Sort("index:hierarchy", "Hierarchy", FILE, _heading,
+            lambda h: h["element_ids"][0] if h["root"] not in h["element_ids"] else h["root"])
+
+
 def hierarchy_chunks(hierarchies: list[dict[str, Any]], content: ContentInfo, refs: bool = False) -> list[dict[str, Any]]:
-    """A chunk (in parts) per hierarchy, its `file` relative to the project. A part after the
-    first starts with its first line's ancestors, so that each part says what its kinds are kinds
-    of."""
-    out = []
-    for h in hierarchies:
-        rows = [("  " * ln["depth"]) + (ln["text_refs"] if refs else ln["text"]) for ln in h["lines"]]
-        context: list[list[str]] = []
-        above: list[str] = []
-        for ln in h["lines"]:
-            above = above[:ln["depth"]]
-            context.append([f"{'  ' * d}- {title} (continued)" for d, title in enumerate(above)])
-            above.append(ln["title"])
-        texts = pl.parts_with_context(_heading(h, content), rows, context)
-        for k, text in enumerate(texts, 1):
-            out.append(chunks.make((content.sha256, "index:hierarchy", h["root"], str(k)),
-                                   f"Hierarchy: {h['title']}" + (f" (part {k} of {len(texts)})" if len(texts) > 1 else ""),
-                                   text, {
-                "kind": "index:hierarchy", "file": f"{FILE}#{_anchor('hierarchy-' + h['root'])}",
-                "content": content.token, "element_id": h["element_ids"][0] if h["root"] not in h["element_ids"]
-                else h["root"], "element_ids": h["element_ids"],
-                "provenance": {"derivation": {"method": "assembled", "tool": TOOL}, "locator": h["locator"]},
-                **({"part": k, "parts": len(texts)} if len(texts) > 1 else {}),
-            }))
-    return out
+    """A chunk (in parts) per hierarchy, its `file` relative to the project; each part says what
+    its kinds are kinds of."""
+    return outline_chunks(SORT, hierarchies, content, refs)
 
 
 def hierarchies_page(hierarchies: list[dict[str, Any]], content: ContentInfo) -> str:
     """HIERARCHIES.md: a project's type hierarchies, for reading, with each line's chunk reference."""
-    lines = [f"# Hierarchies: kinds in {content.label}", "",
-             ("Each general that other kinds specialize, and nothing above it in this project (or a type "
-              "outside it that two or more of its kinds specialize), with its kinds, level by level. "
-              "`[9ffd7a2c:14d101e0b1d2]` is the project's short id and the element's chunk id, as in "
-              "`chunks.jsonl`."), ""]
-    for h in hierarchies:
-        lines += [f'<a id="{_anchor("hierarchy-" + h["root"])}"></a>', "",
-                  f"## {_heading(h, content).removeprefix('Hierarchy: ')}", ""]
-        lines += [("  " * ln["depth"]) + ln["text_refs"] for ln in h["lines"]] + [""]
-    return "\n".join(lines)
+    return outline_page(SORT, hierarchies, content, f"Hierarchies: kinds in {content.label}",
+                        "Each general that other kinds specialize, and nothing above it in this project (or a type "
+                        "outside it that two or more of its kinds specialize), with its kinds, level by level. "
+                        "`[9ffd7a2c:14d101e0b1d2]` is the project's short id and the element's chunk id, as in "
+                        "`chunks.jsonl`.")

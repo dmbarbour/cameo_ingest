@@ -21,7 +21,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from . import crossref, hierarchies
+from . import hierarchies
+from . import threads as threads_mod
 from .archive import Project
 from .config import MODULES
 from .files import FilePlan
@@ -69,7 +70,7 @@ class ProjectWriter:
     def _write_indices(self) -> None:
         """The indices, once every chunk is made; and the project's threads, for which the
         tree decides whether its chunks include them (AR-014R2)."""
-        threads = crossref.project_threads(self.view, self.sink.main)
+        threads = threads_mod.project_threads(self.view, self.sink.main)
         kinds = hierarchies.project_hierarchies(self.view, self.sink.main)  # plan TH
         self.pages.write_threads(threads)
         self.pages.write_hierarchies(kinds)

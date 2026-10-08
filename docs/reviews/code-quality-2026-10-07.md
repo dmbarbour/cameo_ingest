@@ -284,6 +284,14 @@
   through pages, tables and JSON Lines with no declared shape. `crossref` also mixes the index
   across models with per-project threads.
 - **CQ-015R1:** one record type, one chunker, one page writer; threads in their own module.
+- **Weighed:** (a) one module for outlines (trees of lines), chunking and paging from a small
+  description of each sort, the records still built by each, declared by a `TypedDict`; (b)
+  dataclasses for the records, converted at every JSON Lines boundary; (c) the two merged into one
+  module (their records' building has nothing in common). (a).
+- **Done:** `outlines.py` (`Line`, `Outline`, `Sort`, `outline_chunks`, `outline_page`,
+  `anchor`); `threads.py`, out of `crossref`; `hierarchies` on the same. A tree of the fiction and
+  the lineage cases (17 projects, 61 thread and 6 hierarchy chunks) built before and after:
+  `treediff` finds them the same.
 
 #### CQ-016: an element's section is built in the view, a diagram's in the page writer
 

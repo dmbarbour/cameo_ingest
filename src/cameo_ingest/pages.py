@@ -9,11 +9,12 @@ from pathlib import Path
 from typing import Any
 
 from . import cameo_tables as ct
-from . import crossref, hierarchies
 from . import diagram_graph as dg
 from . import diagram_text as dt
+from . import hierarchies
 from . import sections as sx
 from . import semantics as sem
+from . import threads as threads_mod
 from .annotations import Annotation
 from .external import library_name
 from .files import FilePlan, relpath
@@ -328,7 +329,7 @@ class PageWriter:
         if threads:
             fm = front_matter({"title": f"Threads in {self.view.content.name}", "kind": "threads",
                                "provenance": self.view.file_provenance(trace=self.view.trace().to_dict())})
-            self.write_text(crossref.THREADS, fm + crossref.threads_page(threads, self.view.content))
+            self.write_text(threads_mod.THREADS, fm + threads_mod.threads_page(threads, self.view.content))
 
     def write_hierarchies(self, kinds: list[dict[str, Any]]) -> None:
         """HIERARCHIES.md: the project's type hierarchies, when it has any (plan TH)."""
