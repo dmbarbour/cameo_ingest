@@ -1,6 +1,7 @@
 # Review: running a tree, from the maintainer's trial of 2026-10-08
 
-- **Status:** Open; remediation under way (plan below).
+- **Status:** Open until the maintainer's trial. Every remedy shipped in 0.31.0: RN-001 to RN-006
+  done (the plan below).
 - **Prefix:** `RN`. Findings are `RN-001` and so on; remediation steps are `RN-001R1` and so on.
 - **Subject:** 0.30.0, run by the maintainer on their own models: calibration, LLM requests,
   progress on a terminal, and `config`.
