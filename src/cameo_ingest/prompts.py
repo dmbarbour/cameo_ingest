@@ -55,6 +55,7 @@ class Template:
     # (AR-009), so that no wording reaches the model outside a version.
     fragments: tuple[tuple[str, str], ...] = ()
     classes: tuple[str, ...] = ()  # an answer starts with 'Class: <one of these>' (plan GS)
+    partial: bool = False  # a reply cut short serves, to its last whole sentence: prose, not JSON (RN-002)
 
     @property
     def key(self) -> str:
@@ -117,6 +118,7 @@ _DIAGRAM_SLOTS = (
 
 PACKAGE_SUMMARY = Template(
     id="package-summary",
+    partial=True,
     version=4,
     purpose=(
         "A summary of one package for a search index, stored as a generated:summary chunk and shown at "
@@ -197,6 +199,7 @@ _SKETCH = Slot(
 
 DIAGRAM_DESCRIPTION = Template(
     id="diagram-description",
+    partial=True,
     version=6,
     purpose=(
         "A description of one diagram for a search index, stored as a generated:diagram_description chunk "
@@ -222,6 +225,7 @@ DIAGRAM_DESCRIPTION = Template(
 
 IMAGE_DESCRIPTION = Template(
     id="image-description",
+    partial=True,
     version=2,
     purpose=(
         "A description of one image embedded in the model (an attachment or image shape), for a search "
@@ -250,6 +254,7 @@ _MODULES = ("The diagram is too large to read in one image, so its shapes have b
 
 MODULE_DESCRIPTION = Template(
     id="module-description",
+    partial=True,
     version=3,
     purpose="A description of one module of a large diagram, for a search index, stored as a "
             "generated:module_description chunk (with the module's place in the diagram) and shown in the "
@@ -296,6 +301,7 @@ MODULE_DESCRIPTION = Template(
 
 DIAGRAM_SYNTHESIS = Template(
     id="diagram-synthesis",
+    partial=True,
     version=2,
     purpose="A description of a large diagram as a whole, for a search index, built from its modules' "
             "descriptions; stored as its generated:diagram_description chunk and shown on the diagram's page.",
@@ -338,6 +344,7 @@ _PARTS = ("The package is too large to summarize at once, so its elements have b
 
 MODULE_SUMMARY = Template(
     id="module-summary",
+    partial=True,
     version=3,
     purpose="A summary of one part of a large package, for a search index, stored as a generated:module_summary "
             "chunk (with the elements it covers) and shown in the package page's list of parts. The "
@@ -367,6 +374,7 @@ MODULE_SUMMARY = Template(
 
 PACKAGE_SYNTHESIS = Template(
     id="package-synthesis",
+    partial=True,
     version=3,
     purpose="A summary of a large package, or of a run of its parts when there are many, built from the parts' "
             "summaries; stored as the package's generated:summary chunk (or a generated:module_summary chunk "
@@ -401,6 +409,7 @@ PACKAGE_SYNTHESIS = Template(
 # analysis, summarized in one request from a digest rather than in parts (FU-022).
 INSTANCES_SUMMARY = Template(
     id="instances-summary",
+    partial=True,
     version=2,
     purpose="A summary of a large package made mostly of instance specifications (at least 80% of its elements), "
             "for a search index, from a digest of them; stored as the package's generated:summary chunk and shown "

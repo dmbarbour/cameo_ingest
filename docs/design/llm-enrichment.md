@@ -165,9 +165,21 @@ ADR-0010 (`llm.py`, `sqlite_cache.py`).
 - **The client:** `ChatClient` is `OpenAIChat` (any OpenAI-compatible endpoint) or `ReplayChat`
   (`--llm-replay`, a developer's flag; a miss fails the project); `connect()` makes the run's.
 - **The endpoint and models** are `OPENAI_BASE_URL`, `OPENAI_API_KEY` and the tree's settings
-  (ADR-0030); timeout 120 s and 2 retries are fixed (`llm.TIMEOUT`, `RETRIES`). `checks.run_checks`
-  serves `config test`: the endpoint lists its models, the text model answers
-  "ready", the vision model reads a drawn 731. A tree notes each model's creation time from
+  (ADR-0030), with the settings `timeout` and `time-limit` (RN-004; `llm.TIMEOUT`, 120 s, and
+  `TIME_LIMIT`, 600 s); 2 retries are fixed (`RETRIES`).
+- **Streaming** (RN-002): `OpenAIChat` streams every request, so the timeout is httpx's wait for
+  the next bytes, not for the whole answer: unstreamed, an endpoint sends nothing until it has
+  written all, and an answer taking over 120 s failed however fast it came (measured on DeepInfra:
+  a 4 s timeout failed a 600-word answer unstreamed, at 4.2 s; streamed, it finished in 35.9 s).
+  The SDK retries until the answer starts; no word before a timeout is retried by the client.
+- **A reply cut short** raises `llm.Partial` (`cause`: `time`, `output` or `broken`). A template
+  whose answer is prose (`Template.partial`: the descriptions and summaries) keeps it to its last
+  whole sentence or line (`text.whole_sentences`); others fail. One cut by a limit is stored, with
+  why and the time limit in the store's `partial` table, and asked again only under a longer
+  limit; one broken off is used and not stored. The derivation says why (`Derivation.partial`);
+  `run.json` counts `partial` and `broken_off`.
+- **Checks:** `checks.run_checks` serves `config test`: the endpoint lists its models, the text
+  model answers "ready", the vision model reads a drawn 731. A tree notes each model's creation time from
   `/models` in its `meta` table, and warns when it changes (`cli.note_models`).
 - **The preflight:** "Reply with the single word OK.", and the vision check sends a 32 × 32 white
   PNG. It bypasses the store and the budget, and failure exits 5.

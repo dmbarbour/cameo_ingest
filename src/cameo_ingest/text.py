@@ -66,6 +66,18 @@ def first_sentence(text: str, limit: int) -> str:
     return clip(text[:m.start()] if m else text, limit)
 
 
+# Where a reply cut short can end: after a sentence (a stop not after a bare number, as a list's
+# "2." is), or at a line's end (a list item, a heading).
+_WHOLE = re.compile(r"(?<![\s\d])[.!?][\"'\u201d)\]]*(?=\s|$)|\n")
+
+
+def whole_sentences(text: str) -> str:
+    """`text` as far as its last whole sentence or line: what a reply cut short says for certain
+    (RN-002); empty when it has none."""
+    ends = [m.end() for m in _WHOLE.finditer(text)]
+    return text[:ends[-1]].rstrip() if ends else ""
+
+
 def natural_key(text: str) -> list[tuple[int, int | str]]:
     """A sort key that orders numbers in text as numbers: REQ-2 before REQ-10, REQ.1.2 before REQ.1.10."""
     return [(0, int(t)) if t.isdigit() else (1, t.lower()) for t in re.split(r"(\d+)", text) if t]

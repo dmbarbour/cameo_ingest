@@ -22,8 +22,9 @@ log = logging.getLogger(__name__)
 
 
 def llm_config(settings: TreeSettings) -> LLMConfig:
-    """The tree's models and call budget, at $OPENAI_BASE_URL (plan CF)."""
-    return LLMConfig.from_env(settings.text_model, settings.vision_model, max_calls=settings.llm_max_calls)
+    """The tree's models, call budget, timeout and time limit, at $OPENAI_BASE_URL (plan CF; RN-004)."""
+    return LLMConfig.from_env(settings.text_model, settings.vision_model, max_calls=settings.llm_max_calls,
+                              timeout=settings.request_timeout, time_limit=settings.request_time_limit)
 
 
 def shared_store(out: Path) -> Path:

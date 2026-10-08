@@ -25,13 +25,14 @@
 - **Everything else is the tree's,** in its `state.sqlite`, set only with `cameo-ingest config`:
   - `config set KEY VALUE` and `config unset KEY` (back to the default); `config export` and
     `config import`, the tree's own settings as JSON (0.31.0, RN-005);
-  - eight settings, each reversible: `llm`, `text-model`, `vision-model`, `render`, `rag-files`,
-    `rag-source`, `concurrency`, `max-calls`.
+  - ten settings, each reversible: `llm`, `text-model`, `vision-model`, `render`, `rag-files`,
+    `rag-source`, `concurrency`, `max-calls`, and since 0.31.0 `timeout` and `time-limit` (RN-004).
 - **Runs take only what is about the action:** inputs, `--meta`, `-o`, `-v`, `--log-file`. Four
   flags stay for developers, hidden and never remembered: `--no-calibrate`, `--no-preflight`,
   `--llm-replay`, `--heartbeat`.
 - **Sizes come from calibration or defaults** (ADR-0027): pixel budget, sketch sizes, modules,
-  image order and part size. Timeout and retries are fixed, 120 s and 2.
+  image order and part size. Retries are fixed, 2; the timeout and time limit are settings, since
+  they depend on the endpoint, which the user knows (RN-004).
 - **Checks:** `config test` (each model answers; the vision model reads a drawn number) and
   `config models` (the endpoint's list).
 - **A model's identity** is the endpoint and the model's id: OpenAI-compatible endpoints give no
@@ -49,3 +50,4 @@
 ## Changes
 
 - 2026-10-08: `config -i` removed, and `config export` and `import` added (review RN, RN-005). Before: `883c382`.
+- 2026-10-08: `timeout` and `time-limit` are settings (RN-004). Before: `8fb6d2a`.

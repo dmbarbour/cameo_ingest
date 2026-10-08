@@ -109,6 +109,8 @@ calibrates to the models (see "Calibrating sketches to the vision model").
   | `rag-source` | `trace` | The form of `rag/` files' source line, `trace` or `id`. |
   | `concurrency` | 1 | LLM requests sent at once (see "Progress, logs and speed"). |
   | `max-calls` | no limit | Stop calling the LLM after N requests in a run; 0 counts what a run would ask (`skipped_budget` in `run.json`). |
+  | `timeout` | 120 | Seconds an LLM request may wait for its next words, the first included. |
+  | `time-limit` | 600 | Seconds an LLM request may take in all; a description cut there keeps its whole sentences. |
 
 - **Checks:** `config models [TEXT]` lists the endpoint's models; `config test` checks the endpoint, the key and each model (the vision model reads
   a drawn number). Every run with a model also sends one tiny request per model before any work
@@ -118,7 +120,13 @@ calibrates to the models (see "Calibrating sketches to the vision model").
   when it changes.
 
 These four variables are all there is: `OPENAI_BASE_URL`, `OPENAI_API_KEY`,
-`CAMEO_INGEST_TREE`, `CAMEO_INGEST_CACHE`. Requests time out after 120 s and are retried twice.
+`CAMEO_INGEST_TREE`, `CAMEO_INGEST_CACHE`. Requests are streamed: one times out when the model
+sends nothing for `timeout` seconds (120), and is retried twice. An answer still coming at
+`time-limit` (600 s) is cut there: a description or summary keeps its whole sentences, and is
+asked again only by a run with a longer limit; an answer that must be whole (JSON) fails. An
+answer whose connection breaks off is used as far as its whole sentences, and asked again by
+the next run. `run.json` lists both (`partial`, `broken_off`), and the item's provenance says
+why (`derivation.partial`).
 Since 0.21.0, `--env`, the model and LLM flags, `OPENAI_MODEL` and the other `CAMEO_INGEST_*`
 variables are gone; a tree that remembers one of its old settings is told it is ignored. The API
 key is never written to the outputs or the logs.

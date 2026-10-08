@@ -91,6 +91,7 @@ class Derivation:
     prompt_sha256: str | None = None
     template: str | None = None  # the prompt template and version, e.g. "package-summary@v1"
     inputs: tuple[str, ...] = ()  # locators of the inputs an LLM saw
+    partial: str | None = None  # why the answer was cut short, kept to its whole sentences (RN-002)
 
 
 EXTRACTED = Derivation()
@@ -128,5 +129,7 @@ class Trace:
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["derivation"]["inputs"] = list(self.derivation.inputs)
+        if d["derivation"]["partial"] is None:  # only on what was cut short
+            del d["derivation"]["partial"]
         d["locator"] = self.locator()
         return {k: v for k, v in d.items() if v not in (None, [], ())}

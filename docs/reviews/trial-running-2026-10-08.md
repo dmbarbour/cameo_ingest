@@ -74,6 +74,14 @@
     asked again (RN-006).
   - Chosen: the second and third. The text says nothing of it; the item's provenance does
     (`derivation.partial`), and `run.json` counts them.
+- **Done:** R1 and R2. `llm.OpenAIChat.complete` streams, retries a timeout before the first word,
+  and raises `llm.Partial` (`time`, `output`, `broken`); `Template.partial` on the eight prose
+  templates; `EnrichmentSession._complete` keeps a cut reply to `text.whole_sentences`, stores a
+  limit's cut with its `partial` row (`ResponseStore.cut`), asks again under a longer limit, and
+  never stores a broken one; outcomes `partial` and `broken_off`. Tests: `tests/test_streaming.py`
+  (a fake stream: slow and steady is whole; a stall is retried, then fails; a broken reply, the
+  time limit and the output limit say what they held; the session's three cases). The live tests
+  pass on DeepInfra, streamed.
 
 ### RN-003: a log line breaks the progress bars
 
@@ -105,6 +113,8 @@
   longest wait for the next words (the first included); `time-limit`, the longest a request may
   take, after which RN-002's rule applies. The old setting's stored name (`llm_timeout`) stays
   retired: what a tree remembers from 0.20 meant something else.
+- **Done:** R1. `TreeSettings.request_timeout` and `request_time_limit`, set as `timeout` and
+  `time-limit`; `session.llm_config` passes them; ADR-0030 updated.
 
 ### RN-005: `config -i`; exporting and importing settings
 
