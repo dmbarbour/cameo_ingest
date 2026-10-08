@@ -3,7 +3,7 @@
 - **Status:** Accepted, 2026-10-07 (plan SB; the maintainer: "Yes, write the ADR and start CP3"); updated on
   2026-10-07 (Changes, below).
 - **Sources:**
-  - `docs/plans/subjects-2026-10-06.md`, its steps SB-01 to SB-06;
+  - `docs/archive/plans/subjects-2026-10-06.md`, its steps SB-01 to SB-06 and SB-08;
   - `docs/research/subjects-2026-10-07.md`;
   - TR-002 (`docs/reviews/trial-2026-10-06.md`); ADR-0020 (versions), ADR-0027, ADR-0029.
 
@@ -41,6 +41,11 @@
   them as views of a family, the default first.
 - **Computed by `run`, at the root,** after the projects are built, since families span projects:
   `subjects.json`, read by the exports.
+- **Topics across models,** the same way one level up: the families' suggested subjects gathered
+  into topics, the LLM's (proposed from the list of every subject, then each subject placed) by
+  default, and subjects joined by words and shared elements, only between models, as the
+  fallback, under the same rules (failed, or over 5% unsorted). The judges preferred the LLM's
+  topics in all 30 verdicts, and found its intruders 51% of the time against 43%.
 
 ## Consequences
 
@@ -55,3 +60,4 @@
 ## Changes
 
 - 2026-10-07: families from lineage (ADR-0032), so that rival bids keep their own diagrams. Before: `9536e4d`.
+- 2026-10-07: topics across models (plan SB CP4; `docs/research/subjects-2026-10-07.md`). Before: `5831a93`.

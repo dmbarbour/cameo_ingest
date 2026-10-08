@@ -311,8 +311,9 @@ out/
     text/<project>/      a .txt file per chunk, named <sha256 of its text>.txt
     meta/<project>/      each file's metadata, <sha256>.json, at the same path
   run.json               the latest run: times, command, options, LLM calls and outcomes
-  subjects.json          each model's diagrams in subjects, several ways, for browsing and for
-                         grouping search results (see "Searching without tools")
+  subjects.json          each model's diagrams in subjects, several ways, and the subjects in
+                         topics across models, for browsing and for grouping search results
+                         (see "Searching without tools")
   calibration/           the vision models' calibrations: eye charts, replies, reports, and
                          their validation on the tree's own sketches
   quality/               spot-check sets of LLM requests and answers (`quality sample`)
@@ -566,8 +567,9 @@ everything it shows is inside the file, compressed.
   summaries about it, marked as such. In a diagram's text, each shape's number, `[3]`, links to
   its element, as a click on the shape in its sketch does.
 - **Linking:** `search.html#q=REQ-1` opens the page with that search.
-- **Browsing by subject:** with nothing typed, the page lists the models; choose one to see its
-  diagrams in subjects, and choose how they are split (see "Subjects", below).
+- **Browsing by topic and subject:** with nothing typed, the page lists topics across the models
+  shown; a topic opens each model's subjects on it, and a subject its diagrams. Or browse a model:
+  its diagrams in subjects, split the way you choose (see "Subjects", below).
 - **The same item in other models:** an item's view lists **Also in**: each other model that holds
   it (the same element, the same requirement Id, or the same name between related models), how
   that model stands to this one (an older version, a rival on a shared root, ...), and what differs
@@ -577,9 +579,10 @@ everything it shows is inside the file, compressed.
 - **Comparing two models:** choose two in the model chooser and press Compare: what changed
   between them, what is only in either, and how many items are the same, by kind, each a link.
   A version and the next, a bid and the customer's model, or two rival bids.
-- **Results by subject:** a search's results come grouped by subject, each group led by its best
-  result, with the rest a click away. A diagram held by several versions of a model shows once,
-  with how many versions hold it. "Group by subject" turns this off.
+- **Results by topic or subject:** a search's results come grouped by topic across models (each
+  result naming its subject), each group led by its best result, with the rest a click away.
+  "Group" switches to subjects, or off. A diagram held by several versions of a model shows once,
+  with how many versions hold it.
 
 SharePoint downloads HTML files rather than showing them, so readers save the page and open the
 saved copy. Opened from inside a zip without extracting it first, it says so.
@@ -594,7 +597,8 @@ by:
   filter it to see each model once;
 - **Package 1, 2, 3:** the first levels of an item's package;
 - **Subject:** a diagram's, in the suggested view (see "Subjects", below), and an element's or
-  requirement's, where most of the diagrams that show it are;
+  requirement's, where most of the diagrams that show it are; **Topic:** that subject's topic
+  across models;
 - **Coverage:** what relates to a requirement (satisfied, verified, refined, derived, traced),
   or "none";
 - **Shows** (a diagram's shapes) and **Diagrams** (where an element is shown);
@@ -610,7 +614,7 @@ by:
 | `Relationships` | Each relationship, as the pages word it |
 | `Diagrams` | Diagrams, with what they show, their subject and their generated descriptions |
 | `Shared` | The same item in two models, a row a pair: how they match, and what differs |
-| `Subjects` | Each model's diagrams by subject, a row per view, subject and diagram: filter Model and View |
+| `Subjects` | Each model's diagrams by subject, a row per view, subject and diagram, with the topic: filter Model and View, or Topic |
 | `Summaries` | Generated summaries, marked with the model that wrote them |
 | `Projects` | Each model: its source, metadata, save time, Cameo version, versions and lineage, and counts |
 
@@ -627,6 +631,11 @@ a corpus covers instead, each model's diagrams are split into a few subjects, se
   and labelled by their distinctive words. Diagrams the LLM gave no answer for wait under "Not
   sorted yet" until the next run asks again.
 - **By package** is always there, as the model has it.
+- **Topics across models** gather the models' subjects (in their suggested views), so that what
+  different models hold on one thing, the bids' power supplies or every model's requirements, can
+  be read together. The LLM proposes them from the list of every subject, then places each
+  subject (a request for every 30); without it, subjects are joined by the words and the elements
+  they share with other models' subjects.
 
 A panel of three AI judges preferred the LLM's subjects in every comparison, mostly for their
 labels; how natural they are on real models is for their readers to say

@@ -9,12 +9,11 @@ plan yet is in `docs/roadmap.md`. When a plan is done, its content goes to `docs
 
 | Plan | Prefix | Status |
 |---|---|---|
-| [Subjects for discovery](subjects-2026-10-06.md) | SB | CP1 to CP3 done (0.22.0); the maintainer's trial, then CP4 |
 | [Lineage of models, and choosing them](lineage-2026-10-07.md) | LN | CP1 to CP4 done (0.24.0); the maintainer's trial |
 
 ## Archived
 
-Retired on 2026-10-03; TC, CT and TH on 2026-10-04; IS, RM, GS and CF on 2026-10-05; WT and SH on 2026-10-07.
+Retired on 2026-10-03; TC, CT and TH on 2026-10-04; IS, RM, GS and CF on 2026-10-05; WT, SH and SB on 2026-10-07.
 
 | Plan | Prefix | Done | Its content now |
 |---|---|---|---|
@@ -39,6 +38,7 @@ Retired on 2026-10-03; TC, CT and TH on 2026-10-04; IS, RM, GS and CF on 2026-10
 | [Configuration through `cameo-ingest config`](../archive/plans/configuration-2026-10-05.md) | CF | 2026-10-05 (0.21.1); four variables, the rest in the tree | ADR-0030; design/llm-enrichment; README |
 | [The workbook as a set of tables](../archive/plans/workbook-tables-2026-10-07.md) | WT | 2026-10-07 (0.25.0); slicers set aside | ADR-0021; design/exports; README |
 | [The same item in several models, and how it differs](../archive/plans/shared-items-2026-10-07.md) | SH | 2026-10-07 (0.27.0); comparing in the search page only | ADR-0033; design/exports; README |
+| [Subjects for discovery](../archive/plans/subjects-2026-10-06.md) | SB | 2026-10-07: CP1 to CP3 (0.22.0), CP4, topics across models (0.28.0); the maintainer's trial pending | ADR-0031; design/subjects, design/exports; research/subjects-2026-10-07; README |
 
 ## Reviews
 

@@ -1,7 +1,7 @@
 # Design: subjects for discovery
 
 How a model's diagrams are split into subjects, for browsing and for grouping search results
-(`subjects.py`). Decision: ADR-0031. Plan SB (`docs/plans/subjects-2026-10-06.md`) and
+(`subjects.py`). Decision: ADR-0031. Plan SB (`docs/archive/plans/subjects-2026-10-06.md`) and
 `docs/research/subjects-2026-10-07.md` hold the study.
 
 ## Families and items
