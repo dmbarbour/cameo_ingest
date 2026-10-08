@@ -101,6 +101,10 @@
   - *enlighten:* pins bars with the terminal's scroll region; a new dependency, less common.
   - Chosen: tqdm's pattern, for logs and prints alike, through one stream that writes lines with
     `tqdm.write` (reproduced: the bars stay as the last lines, the messages above them).
+- **Done:** R1. `progress.AboveBars` and `progress.console()`, around every command in
+  `cli.main`; bars are drawn on the terminal itself (`progress._terminal`). Checked in the emulator
+  with the real modules: at every redraw sampled, the last two lines are the run's bar and the
+  phase's, whole, and every warning and print above them. Test: `tests/test_progress.py`.
 
 ### RN-004: the timeout can't be set
 

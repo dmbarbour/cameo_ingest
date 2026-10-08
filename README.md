@@ -146,7 +146,8 @@ while the store is kept: a fresh store gets fresh answers from the model.
 ### Progress, logs and speed
 
 On a terminal, each phase (scanning inputs, building projects, and per project: parsing,
-layouts, rendering, LLM requests, writing) shows a progress bar. Otherwise (a batch job, or
+layouts, rendering, LLM requests, writing) shows a progress bar. The bars stay as the
+terminal's last lines, and warnings and other messages scroll above them. Otherwise (a batch job, or
 output redirected), a heartbeat line is logged every 30 s, with the phase, how far it got and an estimate of the time left. `-v` adds a line per
 phase and project; `-vv` adds debug detail, including the HTTP requests. `--log-file FILE`
 writes the debug detail to a file, whatever the console shows.

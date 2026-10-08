@@ -24,7 +24,7 @@ import os
 import sys
 from pathlib import Path
 
-from .. import __version__
+from .. import __version__, progress
 from ..searchpage import SKETCHES
 from ..state import State, StateError
 from . import calibration, configure, tree, versions
@@ -234,6 +234,11 @@ def main(argv: list[str] | None = None) -> int:
         argv.insert(0, "ingest")  # `cameo-ingest FILE -o OUT` keeps working
     args = ap.parse_args(argv)
     args.argv = argv  # recorded with each run
+    with progress.console():  # on a terminal, the bars pinned below the log (RN-003)
+        return _run(args)
+
+
+def _run(args: argparse.Namespace) -> int:
     setup_logging(args.verbose, args.log_file)
     args.out = tree_of(args.out)
     out: Path = args.out

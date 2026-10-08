@@ -4,17 +4,22 @@ Each phase of a project (parsing, layouts, rendering, LLM requests, writing) rep
 far it got. On a terminal this is a tqdm bar on stderr. Otherwise, and in any log file, a
 heartbeat line is logged every few seconds by a timer thread, so progress keeps showing
 even while a single LLM request is blocking.
+
+On a terminal, the bars stay as its last lines while the log scrolls above them (RN-003):
+while a command runs, stderr is `AboveBars` (`console`), which writes each line with
+`tqdm.write`: the bars are cleared, the line written, and the bars drawn again below it.
 """
 
 from __future__ import annotations
 
+import io
 import logging
 import sys
 import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, TextIO
 
 log = logging.getLogger(__name__)
 
@@ -26,6 +31,71 @@ def _duration(seconds: float) -> str:
     if seconds < 3600:
         return f"{seconds // 60} min {seconds % 60} s"
     return f"{seconds // 3600} h {seconds % 3600 // 60} min"
+
+
+class AboveBars(io.TextIOBase):
+    """Stderr while bars may be shown: each whole line written above the bars (RN-003)."""
+
+    def __init__(self, real: TextIO):
+        self.real = real
+        self._buf = ""
+        self._lock = threading.Lock()
+
+    def writable(self) -> bool:
+        return True
+
+    def write(self, s: str) -> int:
+        from tqdm import tqdm
+
+        with self._lock:
+            self._buf += s
+            *lines, self._buf = self._buf.split("\n")
+            for line in lines:
+                tqdm.write(line, file=self.real)
+        return len(s)
+
+    def flush(self) -> None:
+        self.real.flush()
+
+    def finish(self) -> None:
+        """Write what is left of a line."""
+        with self._lock:
+            if self._buf:
+                self.real.write(self._buf)
+                self._buf = ""
+        self.real.flush()
+
+    def isatty(self) -> bool:
+        return self.real.isatty()
+
+    def fileno(self) -> int:
+        return self.real.fileno()
+
+    @property
+    def encoding(self) -> str:  # type: ignore[override]
+        return getattr(self.real, "encoding", "utf-8")
+
+
+@contextmanager
+def console() -> Iterator[None]:
+    """On a terminal, stderr above the bars for the duration (`AboveBars`); elsewhere, as it is.
+    Set it up before the log's console handler, which then writes through it."""
+    real = sys.stderr
+    if not real.isatty():
+        yield
+        return
+    above = AboveBars(real)
+    sys.stderr = above
+    try:
+        yield
+    finally:
+        above.finish()
+        sys.stderr = real
+
+
+def _terminal() -> TextIO:
+    """Where bars are drawn: the terminal itself, not `AboveBars`."""
+    return getattr(sys.stderr, "real", sys.stderr)
 
 
 class Phase:
@@ -81,7 +151,7 @@ class Progress:
             from tqdm import tqdm
 
             ph._bar = tqdm(total=total, desc=label, unit=unit, unit_scale=unit == "B", leave=False,
-                           file=sys.stderr, dynamic_ncols=True)
+                           file=_terminal(), dynamic_ncols=True)
         # With bars on screen, heartbeats only go to a log file (DEBUG).
         level = logging.DEBUG if self.bars else logging.INFO
         stop = threading.Event()
