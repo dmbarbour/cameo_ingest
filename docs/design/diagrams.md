@@ -112,7 +112,7 @@ A PNG redrawn from the layout for the vision model (ADR-0012):
 - **Validation:** `render_png(drawn=…)` reports each shape's name as drawn, which validation scores
   against (`docs/design/vision-calibration.md`).
 
-**Reading guides** (ADR-0017): `sketch.conventions(graph, focus)` names the drawing conventions a
+**Reading guides** (ADR-0017): `drawing.conventions(graph, focus)` names the drawing conventions a
 sketch uses, around a module's own shapes for a module. Each request then explains just those,
 with the template's sentences (`prompts.GUIDE`):
 - `tags`, `nesting`, `frames`;

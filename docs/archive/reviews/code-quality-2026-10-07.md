@@ -1,13 +1,13 @@
 # Review: code quality, 2026-10-07
 
-- **Status:** Open. Stage 1 done (0.28.1): CQ-001 to CQ-004, CQ-021R1 but the renderers' `ix`.
-  Stage 2 done (0.28.2): CQ-010, CQ-018, CQ-022, CQ-023 (but a browser test of Compare, left to
-  CQ-020), CQ-024R1.
-  Then (0.29.0): CQ-009, CQ-011 to CQ-014, CQ-017, and CQ-025 (the maintainer's: models looked
-  for by name). Then: CQ-005 to CQ-008, CQ-015, CQ-016, CQ-019, CQ-020, CQ-024R3.
-  The maintainer, starting the remediation: work from the easiest to the hardest, skip what needs
+- **Status:** Closed on 2026-10-08 (0.30.0): every finding fixed or weighed and decided, as each
+  says; what is left is in `docs/roadmap.md` (below). Retired to the archive the same day. The
+  maintainer, starting the remediation: work from the easiest to the hardest, skip what needs
   their input, and deliberate architecture (options, pros and cons) before judging, with today's
-  design counted only as the convenient option.
+  design counted only as the convenient option. Stage 1 (0.28.1): CQ-001 to CQ-004, CQ-021.
+  Stage 2 (0.28.2): CQ-010, CQ-018, CQ-022, CQ-023, CQ-024R1. Then (0.29.0): CQ-009, CQ-011 to
+  CQ-014, CQ-017, and CQ-025 (the maintainer's: models looked for by name). Then (0.30.0): CQ-005
+  to CQ-008, CQ-015, CQ-016, CQ-019, CQ-020, CQ-024R2 and R3.
 - **Finding prefix:** `CQ`. Findings are `CQ-001` and so on; remediation steps `CQ-001R1` and so on.
 - **Subject:** cameo-ingest at `edbfc7c` (0.28.0): about 20,000 lines of Python in the package
   (17,000 outside the fiction builders), 1,265 lines of page script (`assets/search.js`), the
@@ -517,6 +517,22 @@
   CQ-019.
 - **R3 done:** `catalog._Catalog`, a method a kind of record (as CQ-014's builder, for the same
   reasons); the sketch tree the same. No function is over 25 now, and no `noqa: C901` is left.
+
+## After
+
+At 0.30.0, measured as before:
+- **Complexity:** mean B (5.6, from 6.1); radon grades 15 functions in the package E or F (from 22):
+  those under "Leave alone" below, and `crossref.project_places`, `drawing.conventions` (a flat
+  list of checks), `groups.find`, `ledger.LedgerWriter.write`, `model_sections.Sections.element`
+  and `members` (moved by CQ-016, not split), `workbook._project_rows`, `shared.differences` and
+  `find`, `validate.sample`, `semantics.relationships` and `cli.interactive.interview`. By ruff's
+  count none is over 25, the guard's limit, which now has no exceptions.
+- **Maintainability:** every module A but `model_sections` (B); `cli.py`'s C went with the file.
+- **Imports:** no cycle at run time; `topics` names `subjects.Family` for type hints alone.
+- **Tests:** 193, in about 160 s (from 188 in 289 s).
+- **Outputs:** unchanged by every structural step, shown byte for byte or by `treediff`; changed on
+  purpose by CQ-001, CQ-002, CQ-004's label, CQ-005 (a family whose newest version isn't written),
+  CQ-018 (where text is cut) and CQ-025 (which files are looked at).
 
 ## Leave alone
 

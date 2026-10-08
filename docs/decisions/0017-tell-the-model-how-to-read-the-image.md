@@ -22,7 +22,7 @@ process an image."
   - dashed dependencies, association classes;
   - pins, item flows, connector circles;
   - fork and join bars, sequence diagrams.
-- **Chosen per sketch:** `sketch.conventions` finds them from the diagram's graph, around a
+- **Chosen per sketch:** `drawing.conventions` finds them from the diagram's graph, around a
   module's own shapes for a module.
 - **Versioned:** the sentences are fragments of the template version (ADR-0009). They are in
   `diagram-description` (v6), `module-description` (v3) and validation's `eye-sketch` (v2).
@@ -39,3 +39,7 @@ On the same 48 sketches:
   says so.
 - **Next case:** embedded images, which could be described with the element that owns them, once
   attachments are linked (roadmap).
+
+## Changes
+
+- 2026-10-08: `sketch.conventions` moved to `drawing.conventions` (review CQ-013). Before: `3c254db`.

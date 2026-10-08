@@ -124,7 +124,7 @@ plans:
   outside the page (module-description v2).
 - **Tell the model how to read the image:** each sketch's request carries a reading guide, one
   sentence per drawing convention the sketch uses (ADR-0017; `prompts.GUIDE`,
-  `sketch.conventions`).
+  `drawing.conventions`).
 - **Inputs are plain text** (`Section.text`), without link targets or trace lines. The prompt, and
   so the stored answer, depends only on the model's content, not on where it was found
   (BASE-022R6, AR-018). Diagram legends and connections are plain too, without Markdown's escapes
@@ -173,7 +173,7 @@ ADR-0010 (`llm.py`, `sqlite_cache.py`).
   PNG. It bypasses the store and the budget, and failure exits 5.
 - **The store,** `ResponseStore` in `llm.sqlite`, per user and shared by every tree
   (`config.store_dir`: `$CAMEO_INGEST_CACHE`, else `~/.cache/cameo-ingest`; plan CF-04, 0.20.3). A
-  tree's own store from before (`OUT/.cache/llm.sqlite`) is copied into it once (`cli.shared_store`,
+  tree's own store from before (`OUT/.cache/llm.sqlite`) is copied into it once (`session.shared_store`,
   the columns both have). Calibrations' answers are in it too, so a model is calibrated for a new
   tree from stored answers:
   - answers keyed by (endpoint, model, request sha256);

@@ -161,6 +161,15 @@ After plan TC (the text model's calibration, a guard; ADR-0024):
 
 ## Known gaps and small fixes
 
+- **From review CQ** (`docs/archive/reviews/code-quality-2026-10-07.md`), left on purpose:
+  - functions radon grades E or F under ruff's guard of 25, to split when they next change: the
+    review's "After" lists them;
+  - the page script in two files, engine and interface, once the interface passes about 1,000
+    lines (about 760 at 0.30.0, CQ-020R4);
+  - the `path!chain` joins of a sighting's path, over two shapes of row (CQ-010);
+  - radon and vulture can't read PEP 695 generics (`plain.pack`, `discovery`): measure with ruff,
+    or a newer radon.
+
 - **Stale proxies:** a stale snapshot could name an element differently from Cameo. Nothing
   checks for this.
 - **`quality`** still cuts an answer out of the rendered page with a regex (AR-012R2, partial by
