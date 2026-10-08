@@ -70,6 +70,20 @@ class Node:
     shown: str = ""  # the name drawn in the shape
 
 
+@dataclass(frozen=True)
+class Flow:
+    """What a connection conveys (item flows' items), and which way: "→" from its source to its
+    target, "←" back, "" not known. Kept apart from its text, so that no reader parses an arrow
+    back out of a display string (CQ-011)."""
+
+    names: str
+    way: str = ""
+
+    @property
+    def text(self) -> str:
+        return f"{self.names} {self.way}".rstrip()
+
+
 @dataclass
 class Link:
     view: View
@@ -78,7 +92,7 @@ class Link:
     directed: bool
     label: str  # «stereotype» name
     verb: str  # how a dependency reads from source to target ("is derived from"); "" for flows
-    items: list[str]  # conveyed items, "Energy →" read from source to target
+    items: list[Flow]  # what it conveys, and which way
     target_at_first_point: bool  # where to draw the arrowhead
     more: list[View] = field(default_factory=list)  # further segments of a flow broken by connector circles
 
@@ -108,6 +122,10 @@ class DiagramGraph:
     # beside it: the shape the flow continues to ("to 12") or comes from ("from 12").
     connectors: list[tuple[View, str]] = field(default_factory=list)
     trees: list[Tree] = field(default_factory=list)
+
+    def node(self, view: View | None) -> Node | None:
+        """The shape a view is drawn as (a pin's: the shape it is on), or None (CQ-012)."""
+        return self.node_of.get(view.view_id or "") if view is not None else None
 
     def trivial(self) -> bool:
         """Too little to describe: fewer than 3 shapes, unless 2 shapes are connected (FU-010)."""
@@ -166,7 +184,7 @@ def build(ix: ModelIndex, layout: Layout, rels: dict[str, Relationship],  # noqa
         that type the parts at a connector's ends)."""
         if view is None:
             return set()
-        node = g.node_of.get(view.view_id or "")
+        node = g.node(view)
         ids = {e for e in (view.element, node.view.element if node else None) if e}
         return ids | {t for e in ids if e in ix.elements for r, t in ix.elements[e].refs if r == "type"}
 
@@ -218,7 +236,7 @@ def build(ix: ModelIndex, layout: Layout, rels: dict[str, Relationship],  # noqa
             v, more = to_target, [from_source]
             for seg, far, arrow in ((from_source, target, "to {}"), (to_target, source, "from {}")):
                 circle = by_id.get((seg.first if connector(seg.first) else seg.second) or "")
-                node = g.node_of.get(far.view_id or "") if far is not None else None
+                node = g.node(far)
                 if circle is not None:
                     g.connectors.append((circle, arrow.format(node.num) if node else ""))
         else:
@@ -237,15 +255,13 @@ def build(ix: ModelIndex, layout: Layout, rels: dict[str, Relationship],  # noqa
         items = []
         for f in flows.get(v.element or "", []):
             names = ", ".join(sem.label(ix, i) for i in f.items) or sem.label(ix, f.id)
-            if f.source in ends(source) or f.target in ends(target):
-                names += " →"
-            elif f.source in ends(target) or f.target in ends(source):
-                names += " ←"
-            items.append(names)
-        if not directed and items and all(i.endswith(" ←") for i in items):
+            forward = f.source in ends(source) or f.target in ends(target)
+            back = not forward and (f.source in ends(target) or f.target in ends(source))
+            items.append(Flow(names, "→" if forward else "←" if back else ""))
+        if not directed and items and all(i.way == "←" for i in items):
             # A connector has no direction of its own: list it the way its items flow.
             source, target, at_first = target, source, not at_first
-            items = [i[:-1] + "→" for i in items]
+            items = [Flow(i.names, "→") for i in items]
         g.links.append(Link(v, source, target, directed, label, verb, items, at_first, more))
     in_tree: dict[str, list[Link]] = {}  # a tree's links, gathered once (CQ-004)
     for lk in g.links:
@@ -260,6 +276,6 @@ def build(ix: ModelIndex, layout: Layout, rels: dict[str, Relationship],  # noqa
         x = base.rect[0] + vx
         parent = g.node_of.get(v.base or "")
         to_parent = parent is not None and all(
-            m.directed and m.target is not None and g.node_of.get(m.target.view_id or "") is parent for m in members)
+            m.directed and m.target is not None and g.node(m.target) is parent for m in members)
         g.trees.append(Tree(v, parent, ((x, vy), (x, hy)), ((left, hy), (right, hy)), members, to_parent))
     return g

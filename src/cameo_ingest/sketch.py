@@ -19,7 +19,6 @@ from PIL import Image, ImageDraw, ImageFont
 
 from .config import IMAGE_PIXELS, SKETCH
 from .diagram_graph import DiagramGraph, Node, drawing_order
-from .layout import View
 from .model import ModelIndex
 from .partition import Partition
 from .text import one_line
@@ -90,11 +89,8 @@ def conventions(g: DiagramGraph, focus: set[int] | None = None) -> set[str]:
     def seen(n: Node | None) -> bool:
         return n is not None and (focus is None or n.num in focus)
 
-    def node(v: View | None) -> Node | None:
-        return g.node_of.get(v.view_id or "") if v is not None else None
-
     nodes = [n for n in g.nodes if seen(n)]
-    links = [lk for lk in g.links if seen(node(lk.source)) or seen(node(lk.target))]
+    links = [lk for lk in g.links if seen(g.node(lk.source)) or seen(g.node(lk.target))]
     found = {"tags"} if nodes else set()
     if any(n.parent is not None for n in nodes):
         found.add("nesting")
@@ -118,9 +114,9 @@ def conventions(g: DiagramGraph, focus: set[int] | None = None) -> set[str]:
         if any(m in links for m in t.members):
             found.add("tree" if t.to_parent else "containment" if any(m.view.cls == "ContainmentLink"
                                                                       for m in t.members) else "open")
-    if any(seen(g.node_of.get(v.view_id or "")) for v in g.pin_views):
+    if any(seen(g.node(v)) for v in g.pin_views):
         found.add("pins")
-    if any({i[-1:] for i in lk.items} in ({"→"}, {"←"}) for lk in links):
+    if any({i.way for i in lk.items} in ({"→"}, {"←"}) for lk in links):
         found.add("flows")
     if g.connectors:
         found.add("breaks")
@@ -178,9 +174,6 @@ def render_png(ix: ModelIndex, g: DiagramGraph, title: str, pixels: int = IMAGE_
     def lit(n: Node | None) -> bool:
         return focus is None or (n is not None and n.num in focus)
 
-    def end_node(view: View | None) -> Node | None:
-        return g.node_of.get(view.view_id or "") if view is not None else None
-
     boxes = []
     for n in drawing_order(g):
         x, y, rw, rh = n.view.rect  # type: ignore[misc]
@@ -198,7 +191,7 @@ def render_png(ix: ModelIndex, g: DiagramGraph, title: str, pixels: int = IMAGE_
     # A tree's bars, and a head at the base when every member points there; the members keep their
     # own heads too, at the bar: the model reads directions better so than from one head (plan SK).
     for t in g.trees:
-        shown = lit(t.parent) or any(lit(end_node(m.source)) or lit(end_node(m.target)) for m in t.members)
+        shown = lit(t.parent) or any(lit(g.node(m.source)) or lit(g.node(m.target)) for m in t.members)
         kinds = {m.view.cls for m in t.members}
         for a, b in (t.vertical, t.horizontal):
             _polyline(d, [P(*a), P(*b)], dashed=bool(kinds & DASHED), fill=None if shown else FADED_LINE,
@@ -210,7 +203,7 @@ def render_png(ix: ModelIndex, g: DiagramGraph, title: str, pixels: int = IMAGE_
         if len(lk.view.points) < 2:
             continue
         pts = [P(*p) for p in lk.view.points]
-        s, t = end_node(lk.source), end_node(lk.target)
+        s, t = g.node(lk.source), g.node(lk.target)
         shown = lit(s) or lit(t)
         _polyline(d, pts, dashed=lk.view.cls in DASHED, fill=None if shown else FADED_LINE, width=style.line_px)
         for seg in lk.more:
@@ -221,7 +214,7 @@ def render_png(ix: ModelIndex, g: DiagramGraph, title: str, pixels: int = IMAGE_
             tip, prev = (pts[0], pts[1]) if lk.target_at_first_point else (pts[-1], pts[-2])
             _arrowhead(d, prev, tip, hollow=lk.view.cls in HOLLOW, fill="black" if shown else FADED_LINE,
                        size=style.arrow_px, stroke=style.head_stroke)
-        dirs = {i[-1:] for i in lk.items}  # "→" source to target, "←" target to source
+        dirs = {i.way for i in lk.items}  # "→" source to target, "←" target to source
         if dirs in ({"→"}, {"←"}):  # all items flow one way: show it halfway along
             # The points run from the path's first end to its second.
             _mid_arrow(d, pts, along=(dirs == {"→"}) != lk.target_at_first_point,
@@ -244,7 +237,7 @@ def render_png(ix: ModelIndex, g: DiagramGraph, title: str, pixels: int = IMAGE_
         if v.rect:
             x, y, rw, rh = v.rect
             cx, cy = P(x + rw / 2, y + rh / 2)
-            dot = INK if lit(g.node_of.get(v.view_id or "")) else FADED
+            dot = INK if lit(g.node(v)) else FADED
             d.ellipse([cx - 2.5, cy - 2.5, cx + 2.5, cy + 2.5], fill=dot)
     tagged: set[int] = set()
     for n, a, c in boxes:  # tags last, so that no line crosses them

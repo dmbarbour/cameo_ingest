@@ -90,8 +90,8 @@ def _truth(g: DiagramGraph, shapes: dict[int, str], ends: set[int]) -> dict[str,
     """The shapes as drawn, and the connections among shapes in `ends` that touch a drawn one."""
     links = []
     for lk in g.links:
-        a = g.node_of.get(lk.source.view_id or "") if lk.source is not None else None
-        b = g.node_of.get(lk.target.view_id or "") if lk.target is not None else None
+        a = g.node(lk.source)
+        b = g.node(lk.target)
         if a is None or b is None or a.num == b.num or {a.num, b.num} - ends or not {a.num, b.num} & set(shapes):
             continue
         links.append([a.num, b.num, lk.directed])

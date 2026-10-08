@@ -48,7 +48,7 @@ class Partition:
     module_of: dict[int, int]  # shape number -> module number
 
     def module_of_end(self, view: View | None) -> int | None:
-        node = self.graph.node_of.get(view.view_id or "") if view is not None else None
+        node = self.graph.node(view)
         return self.module_of.get(node.num) if node else None
 
     def links(self, k: int) -> tuple[list[Link], list[Link]]:
@@ -161,8 +161,8 @@ class _Shapes(_Graph):
         nodes = list(self.rect)
         links = []
         for lk in g.links:
-            a = g.node_of.get(lk.source.view_id or "") if lk.source else None
-            b = g.node_of.get(lk.target.view_id or "") if lk.target else None
+            a = g.node(lk.source)
+            b = g.node(lk.target)
             if a and b and a.num in self.rect and b.num in self.rect:
                 links.append((a.num, b.num))
         super().__init__(nodes, dict.fromkeys(nodes, 1.0),
@@ -255,7 +255,7 @@ def partition(g: DiagramGraph, large: int = MODULES[0], lo: int = MODULES[1], hi
         if up is None:
             votes: dict[int, int] = defaultdict(int)
             for lk in g.links:
-                ends = [g.node_of.get(v.view_id or "") for v in (lk.source, lk.target) if v is not None]
+                ends = [g.node(v) for v in (lk.source, lk.target) if v is not None]
                 if any(e is n for e in ends):
                     for e in ends:
                         if e is not None and e.num in of:
@@ -289,8 +289,8 @@ def partition(g: DiagramGraph, large: int = MODULES[0], lo: int = MODULES[1], hi
     module_of = {k: renum[i] for k, i in of.items()}
     boundary: dict[int, set[int]] = defaultdict(set)
     for lk in g.links:
-        a = g.node_of.get(lk.source.view_id or "") if lk.source else None
-        b = g.node_of.get(lk.target.view_id or "") if lk.target else None
+        a = g.node(lk.source)
+        b = g.node(lk.target)
         if a and b and module_of[a.num] != module_of[b.num]:
             boundary[module_of[a.num]].add(b.num)
             boundary[module_of[b.num]].add(a.num)

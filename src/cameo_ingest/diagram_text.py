@@ -50,7 +50,7 @@ def describe(ix: ModelIndex, g: DiagramGraph, refs: Refs = PLAIN, nodes: list[No
         return refs.esc(n.label) or v.cls
 
     def end(view: View | None) -> str:
-        node = g.node_of.get(view.view_id or "") if view is not None else None
+        node = g.node(view)
         if node is None:
             return "(not shown)"
         pin = g.pins.get(view.view_id or "")
@@ -63,7 +63,7 @@ def describe(ix: ModelIndex, g: DiagramGraph, refs: Refs = PLAIN, nodes: list[No
     for lk in g.links if links is None else links:
         arrow = "→" if lk.directed else "—"
         detail = "; ".join(x for x in (refs.esc(lk.label), lk.verb,
-                                       "carries " + ", ".join(refs.esc(i) for i in lk.items) if lk.items else "")
+                                       "carries " + ", ".join(refs.esc(i.text) for i in lk.items) if lk.items else "")
                            if x)
         lines.append(f"- {end(lk.source)} {arrow}[{lk.view.cls}{': ' + detail if detail else ''}]{arrow} "
                      f"{end(lk.target)}")

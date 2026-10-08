@@ -15,7 +15,6 @@ from xml.sax.saxutils import escape as _escape
 from xml.sax.saxutils import quoteattr as _quoteattr
 
 from .diagram_graph import DiagramGraph, drawing_order
-from .layout import View
 from .model import ModelIndex
 from .sketch import DASHED, HOLLOW, ROUND
 from .text import one_line, xml_safe
@@ -105,8 +104,6 @@ def render_svg(ix: ModelIndex, g: DiagramGraph, title: str) -> str | None:
            (f'<text x="{_n(x0 + MARGIN)}" y="{_n(y0 + 15)}" font-weight="bold">'
             f'{escape(_fit(title, w - 2 * MARGIN))}</text>')]
 
-    def end(view: View | None):
-        return g.node_of.get(view.view_id or "") if view is not None else None
 
     shapes = drawing_order(g)
     for n in shapes:  # outlines first, outer before inner
@@ -144,11 +141,11 @@ def render_svg(ix: ModelIndex, g: DiagramGraph, title: str) -> str | None:
         if lk.directed:
             tip, prev = (pts[0], pts[1]) if lk.target_at_first_point else (pts[-1], pts[-2])
             parts.append(_arrowhead(prev, tip, lk.view.cls in HOLLOW))
-        dirs = {i[-1:] for i in lk.items}
+        dirs = {i.way for i in lk.items}
         if dirs in ({"→"}, {"←"}):
             parts.append(_mid_arrow(pts, along=(dirs == {"→"}) != lk.target_at_first_point))
-        s, t = end(lk.source), end(lk.target)
-        what = "; ".join(x for x in (lk.label, lk.verb, ", ".join(lk.items)) if x)
+        s, t = g.node(lk.source), g.node(lk.target)
+        what = "; ".join(x for x in (lk.label, lk.verb, ", ".join(i.text for i in lk.items)) if x)
         tip_text = f"[{s.num if s else '?'}] {lk.view.cls}{': ' + what if what else ''} [{t.num if t else '?'}]"
         out.append(f"<g><title>{escape(tip_text)}</title>{''.join(parts)}</g>")
     for v, label in g.connectors:

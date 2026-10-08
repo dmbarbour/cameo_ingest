@@ -215,6 +215,12 @@
 - **Cost:** this is AR's theme of rendered text used as an interface: a change of the arrow's
   wording silently breaks the sketches' mid-line arrows and the "flows" reading guide.
 - **CQ-011R1:** the direction as its own field; the arrow added only when writing text.
+- **Weighed:** (a) a `Flow` type, names and way, the arrow added in `text`; (b) a list of
+  directions beside the strings (two lists to keep in step); (c) one direction a link (wrong: a
+  connector's items can flow both ways). (a).
+- **Done:** `diagram_graph.Flow`; `Link.items` are flows; the sketches read `way`, the texts
+  `text`. Every sketch of four samples (257 diagrams: PNG, modules, overview, SVG, conventions)
+  byte for byte the same.
 
 #### CQ-012: a link's ends are views, converted back to shapes 18 times
 
@@ -222,6 +228,10 @@
   `sketch.py:94,121,182,247`, `sketch_svg.py:109`, `pages.py:249`, `diagram_text.py:53`,
   `validate.py:93`, `diagram_graph.py:154,206,249`; five local helpers do the same.
 - **CQ-012R1:** `source_node` and `target_node` worked out once in `build`, kept on `Link`.
+- **Weighed:** (a) one `DiagramGraph.node(view)`, serving the 18 sites, pins' and parents' among
+  them; (b) the ends' nodes stored on `Link` (only the link ends, and a link holding its ends
+  twice). (a).
+- **Done:** `DiagramGraph.node`; the three local helpers gone; the same sketches.
 
 #### CQ-013: the PNG and SVG sketches change together but share almost nothing
 

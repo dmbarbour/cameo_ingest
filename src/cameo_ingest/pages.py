@@ -246,7 +246,7 @@ class PageWriter:
             if isinstance(holder, dg.Node):
                 head: list[sx.Span | str] = [f"[{holder.num}] ", sx.name(holder.label)]
             else:
-                ends = [graph.node_of.get(v.view_id or "") if v is not None else None
+                ends = [graph.node(v)
                         for v in (holder.source, holder.target)]
                 head = [f"{holder.view.cls} " + " → ".join(f"[{n.num}]" if n else "?" for n in ends)]
             groups: dict[str, list[str]] = {}
