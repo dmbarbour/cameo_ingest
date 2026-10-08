@@ -74,6 +74,15 @@ def describe(item: dict[str, Any]) -> str:
     return f"{title} ({item['kind']})" + (f": {about}" if about else "")
 
 
+def pick(recs: list[dict], n: int) -> list[dict]:
+    """The n families to judge: sizes spread from the largest down."""
+    by_size = sorted(recs, key=lambda r: -len(r["items"]))
+    if len(by_size) <= n:
+        return by_size
+    step = len(by_size) / n
+    return [by_size[int(i * step)] for i in range(n)]
+
+
 def intruder_tasks(rec: dict[str, Any], split: str, trials: int = 3) -> list[dict[str, Any]]:
     """E1 tasks for one family's split: `trials` a group of at least 5, each with an intruder from
     another group."""
@@ -128,7 +137,8 @@ def _show_split(rec: dict[str, Any], split: str) -> str:
     return "\n".join(lines)
 
 
-def _number(reply: str, key: str) -> Any:
+def reply_field(reply: str, key: str) -> Any:
+    """A field of a judge's JSON reply, read leniently: from the JSON, else by pattern."""
     m = re.search(r"\{.*\}", reply, re.DOTALL)
     try:
         return json.loads(m.group(0)).get(key) if m else None
@@ -147,19 +157,19 @@ def run(llm: EnrichmentSession, recs: dict[str, dict[str, Any]], tasks: list[dic
         if t["test"] == "E1":
             text = "\n".join(f"{i}. {describe(rec['items'][k])}" for i, k in enumerate(t["keys"], 1))
             res = llm.ask(INTRUDER, {"DIAGRAMS": text}, project="study:subjects", inputs=(t["family"],))
-            got = _number(res[0], "odd") if res else None
+            got = reply_field(res[0], "odd") if res else None
             return {**t, "reply": got, "correct": str(got) == str(t["answer"]) if got is not None else None}
         if t["test"] == "E2":
             labels = rec["splits"][t["split"]]["labels_heldout"]
             subjects = "\n".join(f"{i}. {labels[g]}" for i, g in enumerate(t["order"], 1))
             res = llm.ask(LABEL_FIT, {"SUBJECTS": subjects, "DIAGRAM": describe(rec["items"][t["key"]])},
                           project="study:subjects", inputs=(t["family"],))
-            got = _number(res[0], "subject") if res else None
+            got = reply_field(res[0], "subject") if res else None
             return {**t, "reply": got, "correct": str(got) == str(t["answer"]) if got is not None else None}
         res = llm.ask(PREFERENCE, {"COUNT": str(len(rec["items"])), "MODEL": rec["family"],
                                    "A": _show_split(rec, t["A"]), "B": _show_split(rec, t["B"])},
                       project="study:subjects", inputs=(t["family"],))
-        got = str(_number(res[0], "better") or "").strip().upper() if res else ""
+        got = str(reply_field(res[0], "better") or "").strip().upper() if res else ""
         better = {"A": t["A"], "B": t["B"], "TIE": "tie"}.get(got)
         return {**t, "reply": got or None, "better": better}
 

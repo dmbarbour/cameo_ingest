@@ -10,10 +10,7 @@ const chrome = require("./chrome");
 const [chromeBin, profile, pagePath, doc, key, query] = process.argv.slice(2);
 const page = "file://" + path.resolve(pagePath);
 
-(async () => {
-  const c = await chrome.open(chromeBin, profile, `${page}#q=${encodeURIComponent(query)}`);
-  const timer = setTimeout(() => { console.log(JSON.stringify({ error: "timed out", errors: c.errors })); c.close(); process.exit(1); }, 60000);
-  const out = {};
+chrome.walk(chromeBin, profile, `${page}#q=${encodeURIComponent(query)}`, async (c, out) => {
   out.ready = await c.run("return await wait(() => document.getElementById('ready').textContent);");
   out.search = await c.run("return await wait(() => document.getElementById('count').textContent);");
   out.first = await c.run("return await wait(() => (document.querySelector('.result-name') || {}).textContent);");
@@ -52,9 +49,4 @@ const page = "file://" + path.resolve(pagePath);
     const shot = await c.send("Page.captureScreenshot", { format: "png" });
     require("fs").writeFileSync(process.env.SHOT, Buffer.from(shot.result.data, "base64"));
   }
-  out.errors = c.errors;
-  clearTimeout(timer);
-  console.log(JSON.stringify(out));
-  c.close();
-  process.exit(0);
-})().catch((e) => { console.log(JSON.stringify({ error: String(e) })); process.exit(1); });
+});

@@ -137,7 +137,7 @@ def link_label(stereotypes: list[str], name: str | None, flow: str, drawn: str |
     return f"{label} ({drawn})" if label else drawn
 
 
-def build(ix: ModelIndex, layout: Layout, rels: dict[str, Relationship],
+def build(ix: ModelIndex, layout: Layout, rels: dict[str, Relationship],  # noqa: C901 (CQ-014)
           flows: dict[str, list[ItemFlow]]) -> DiagramGraph:
     g = DiagramGraph()
     by_id = layout.by_view_id()

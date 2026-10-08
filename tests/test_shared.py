@@ -1,26 +1,10 @@
 """The same item in several models, and how its copies differ (plan SH)."""
 
-import pytest
-from helpers import cli
 
 from cameo_ingest import catalog, lineage, shared
-from cameo_ingest.evaluation.fiction.lineage import EDITS, corpus
+from cameo_ingest.evaluation.fiction.lineage import EDITS
 from cameo_ingest.progress import QUIET
 from cameo_ingest.state import State
-
-
-@pytest.fixture(scope="module")
-def bids(tmp_path_factory):
-    root = tmp_path_factory.mktemp("bids")
-    for c in corpus():
-        src = root / "in" / c.path
-        src.parent.mkdir(parents=True, exist_ok=True)
-        src.write_bytes(c.mdzip)
-    out = root / "tree"
-    for key, value in (("llm", "off"), ("render", "off")):
-        assert cli(["config", "-o", str(out), "set", key, value]) == 0
-    assert cli([str(root / "in"), "-o", str(out)]) == 0
-    return out
 
 
 def _find(out):
@@ -35,16 +19,16 @@ def _find(out):
     return links, folder
 
 
-def test_shared_items_and_their_differences(bids):
+def test_shared_items_and_their_differences(lineage_tree):
     """The customer's items are in each bid, matched by element; what a bid changed is told by
     aspect, and nothing else differs (plan SH-01, SH-02)."""
-    links, folder = _find(bids)
+    links, folder = _find(lineage_tree)
     token = {f: t for t, f in folder.items()}
     tender = token["lineage/tender"]
     names = {"prf01": "Design Capacity", "prf02": "Filter Run Length", "llpump": "Low-Lift Pump"}
-    st = State(bids)
+    st = State(lineage_tree)
     try:
-        recs = next(c.records for c in catalog.tree_catalogs(st, bids, [], QUIET) if c.header["token"] == tender)
+        recs = next(c.records for c in catalog.tree_catalogs(st, lineage_tree, [], QUIET) if c.header["token"] == tender)
     finally:
         st.close()
     key = {item: next(r["key"] for r in recs if r.get("name", "").startswith(name) and r["type"] != "diagram")
@@ -60,11 +44,11 @@ def test_shared_items_and_their_differences(bids):
     assert changed == {(where, key[item]) for where, item, _ in EDITS}  # nothing else in the customer's part
 
 
-def test_name_matches_only_between_related_models(bids):
+def test_name_matches_only_between_related_models(lineage_tree):
     """A name matches only between models that lineage relates, and only when it names one item
     in each."""
-    links, _ = _find(bids)
-    st = State(bids)
+    links, _ = _find(lineage_tree)
+    st = State(lineage_tree)
     try:
         related = shared.related_by(lineage.facts(st))
     finally:

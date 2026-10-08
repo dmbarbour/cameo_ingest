@@ -131,6 +131,7 @@ def test_subjects_in_the_page(page):
     assert out["families"] >= 1 and out["hits"] == out["grouped"] and out["groups"] > 1 and out["ordered"]
 
 
+@needs_node
 @pytest.mark.skipif(CHROME is None, reason="no Chrome, Chromium or Edge")
 def test_topics_in_a_browser(page, tmp_path):
     """With several models and no search, the page browses topics across models: a topic opens

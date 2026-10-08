@@ -62,6 +62,10 @@ class Corpus:
         self.chunk = [w.id.split("#w")[0] for w in windows]
         self._normal: list[str] | None = None
 
+    def holds(self, evidence: Evidence, i: int) -> bool:
+        """`holds` for window i, from its text flattened once (CQ-022)."""
+        return _held(_phrases(evidence), self.flat[i])
+
     def normal(self, i: int) -> str:
         if self._normal is None:
             self._normal = [normal(f) for f in self.flat]

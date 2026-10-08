@@ -11,14 +11,13 @@ The same content is written to <project>/LEDGER.md for humans and file-based loa
 
 from __future__ import annotations
 
-import re
 from collections import defaultdict
 from typing import TYPE_CHECKING
 
 from . import plain as pl
 from . import semantics as sem
 from .model import Element
-from .text import front_matter, md_inline, plural, tidy
+from .text import clip, first_sentence, front_matter, md_inline, natural_key, plural, tidy
 
 if TYPE_CHECKING:
     from .files import FilePlan
@@ -31,25 +30,6 @@ TEXT_CHARS = 200
 DOC_CHARS = 120
 
 FILE = "LEDGER.md"
-
-
-def _clip(text: str, n: int) -> str:
-    text = " ".join(tidy(text).split())
-    return text if len(text) <= n else text[: n - 1].rstrip() + "…"
-
-
-def _natural_key(text: str) -> list:
-    """Sort REQ.1.2 before REQ.1.10."""
-    return [(0, int(t), "") if t.isdigit() else (1, 0, t.lower()) for t in re.split(r"(\d+)", text) if t]
-
-
-def _first_sentence(text: str) -> str:
-    text = " ".join(text.split())
-    for end in (". ", "; "):
-        i = text.find(end)
-        if 0 < i < DOC_CHARS:
-            return text[: i + 1]
-    return _clip(text, DOC_CHARS)
 
 
 class LedgerWriter:
@@ -86,7 +66,7 @@ class LedgerWriter:
         # The id once (AR-010R3): an unnamed requirement is linked by its id, since its text follows.
         row = f"- {self.plan.link(el.id, FILE, req.id if req.id and not el.name else None)}"
         if req.text:
-            row += f" — “{_clip(req.text, TEXT_CHARS)}”"
+            row += f" — “{clip(tidy(req.text), TEXT_CHARS)}”"
         links: dict[str, list[str]] = defaultdict(list)
         if req.db_id:
             links["database number"].append(req.db_id)
@@ -108,7 +88,7 @@ class LedgerWriter:
         row = f"- {label} {self.plan.link(el.id, FILE)}"
         doc = sem.documentation(self.ix, el)
         if doc:
-            row += f" — {_first_sentence(doc)}"
+            row += f" — {first_sentence(doc, DOC_CHARS)}"
         return row
 
     # -- groups ----------------------------------------------------------------
@@ -176,7 +156,7 @@ class LedgerWriter:
                         # By requirement ID when every requirement has one; otherwise model order.
                         ids = [sem.requirement(ix, e).id or "" for e in els]
                         if all(ids):
-                            els = [e for _, e in sorted(zip(ids, els, strict=True), key=lambda x: _natural_key(x[0]))]
+                            els = [e for _, e in sorted(zip(ids, els, strict=True), key=lambda x: natural_key(x[0]))]
                         rows = [(e.id, self.requirement_row(e)) for e in els]
                     else:
                         els.sort(key=lambda e: (e.kind, (e.name or "").lower()))

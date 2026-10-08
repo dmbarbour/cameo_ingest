@@ -7,7 +7,7 @@ import hashlib
 import json
 
 from fixture_model import make_mdzip
-from helpers import cli, ingest
+from helpers import cli, ingest, write_inputs
 
 from cameo_ingest.calibrate import SUITE_VERSION, recommend
 from cameo_ingest.config import IMAGE_PIXELS, ProjectOptions, TreeSettings
@@ -294,13 +294,9 @@ def fiction_scanned(tmp_path, settings=None):
     """The fictional projects added and scanned, not built; `settings`: the tree's own."""
     from cameo_ingest.evaluation.fiction import PROJECTS
 
-    for prefix in sorted(PROJECTS):
-        project = PROJECTS[prefix]()
-        src = tmp_path / "in" / project.path
-        src.parent.mkdir(parents=True, exist_ok=True)
-        src.write_bytes(project.mdzip())
+    inputs = write_inputs(tmp_path / "in", *((p.path, p.mdzip()) for p in (PROJECTS[k]() for k in sorted(PROJECTS))))
     out = tmp_path / "out"
-    assert cli(["add", str(tmp_path / "in"), "-o", str(out)]) == 0
+    assert cli(["add", str(inputs), "-o", str(out)]) == 0
     assert cli(["scan", "-o", str(out)]) == 0
     if settings:
         state = State(out)

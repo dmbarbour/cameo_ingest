@@ -37,6 +37,7 @@ from .progress import Progress
 from .runner import Runner
 from .searchpage import SKETCHES
 from .state import State, StateError
+from .treefiles import PROJECTS
 
 log = logging.getLogger("cameo_ingest")
 DEFAULT_TREE = "ingest_tree"  # in the working directory, when neither -o nor $CAMEO_INGEST_TREE says (plan CF)
@@ -412,7 +413,7 @@ def versions_command(out: Path, args: argparse.Namespace) -> int:
             state.lock()
             state.remove(items)
             for sha, _ in items:
-                for d in (out / tree.exports.PROJECTS / sha, out / tree.exports.PROJECTS / tree.WORK / sha):
+                for d in (out / PROJECTS / sha, out / PROJECTS / tree.WORK / sha):
                     if d.exists():
                         shutil.rmtree(d)
             tree.exports.rebuild(state, out)
@@ -711,7 +712,7 @@ def calibrate_vision(out: Path, args: argparse.Namespace) -> int:
     finally:
         state.close()
     if _sizes(settings.calibrated(result.settings)) != _sizes(using):
-        sketches = sum(1 for _ in (out / tree.exports.PROJECTS).glob("*/diagrams/**/*.png"))
+        sketches = sum(1 for _ in (out / PROJECTS).glob("*/diagrams/**/*.png"))
         print(f"the next run with {cfg.vision_model} draws the tree's {sketches:,} sketches again and asks again for "
               "their descriptions; the other LLM answers come from the store")
     return 0

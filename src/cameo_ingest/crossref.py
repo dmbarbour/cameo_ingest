@@ -19,7 +19,6 @@ that a search for the id finds, in one chunk, every model that addresses it.
 
 from __future__ import annotations
 
-import json
 import re
 from collections import defaultdict
 from dataclasses import dataclass
@@ -31,7 +30,8 @@ from . import plain as pl
 from . import semantics as sem
 from .model import Element
 from .provenance import TOOL, ContentInfo, chunk_ref, short_id
-from .text import one_line
+from .text import clip, one_line
+from .treefiles import index_file, read_jsonl
 
 if TYPE_CHECKING:
     from .view import ProjectView
@@ -142,12 +142,9 @@ def places(project_dir: Path, content: ContentInfo) -> dict[str, list[Place]]:
     """Every identifier in one project, with the elements that hold it, as its build recorded them
     (`index/ids.jsonl`)."""
     out: dict[str, list[Place]] = defaultdict(list)
-    path = project_dir / "index" / "ids.jsonl"
-    if path.is_file():
-        for line in path.open(encoding="utf-8"):
-            r = json.loads(line)
-            out[r["term"]].append(Place(content.sha256, content.label, r["element_id"], r["what"], r["how"],
-                                        r["snippet"], r["chunk_id"], r["locator"]))
+    for r in read_jsonl(index_file(project_dir, "ids"), missing_ok=True):
+        out[r["term"]].append(Place(content.sha256, content.label, r["element_id"], r["what"], r["how"],
+                                    r["snippet"], r["chunk_id"], r["locator"]))
     return out
 
 
@@ -252,7 +249,7 @@ def project_threads(view: ProjectView, chunk_of: dict[str, str]) -> list[dict[st
         seen.add(rid)
         el = ix.elements[rid]
         text = one_line(sem.requirement_fields(ix, el).get("Text", "")) if el.name else ""  # an unnamed one's title has it
-        text = text if len(text) <= 120 else text[:119].rsplit(" ", 1)[0] + "…"
+        text = clip(text, 120)
         head = f"- {reqs[rid].title}" + (f": {text}" if text else "")
         plain, refs = [head], [head + ref(rid)]
         by_verb: dict[str, list[tuple[str, str]]] = defaultdict(list)  # verb -> [(shown, element)]

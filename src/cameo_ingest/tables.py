@@ -15,6 +15,7 @@ from . import catalog, crossref
 from . import semantics as sem
 from .files import FilePlan
 from .sink import ChunkSink
+from .treefiles import index_file, write_jsonl
 from .view import ProjectView
 
 
@@ -107,32 +108,17 @@ class TableWriter:
         ix = self.view.ix
         # Derivation trees and type hierarchies, which the tree's chunks include or not (plans RF, TH)
         for name, records in (("threads", threads), ("hierarchies", kinds)):
-            p = self.root / f"index/{name}.jsonl"
-            p.parent.mkdir(parents=True, exist_ok=True)
-            with p.open("w", encoding="utf-8") as f:
-                for t in records:
-                    f.write(json.dumps(t, ensure_ascii=False) + "\n")
-        p = self.root / "index/ids.jsonl"  # identifiers, for the index across models (AR-012R1)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        with p.open("w", encoding="utf-8") as f:
-            for rec in crossref.project_places(self.view, self.sink.main):
-                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-        p = self.root / "index/catalog.jsonl"  # what the exports search (plan KX-02)
-        with p.open("w", encoding="utf-8") as f:
-            for rec in catalog.project_catalog(self.view, self.sink, self.root):
-                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-        p = self.root / "index/elements.jsonl"
-        p.parent.mkdir(parents=True, exist_ok=True)
-        with p.open("w", encoding="utf-8") as f:
-            for el in ix.elements.values():
-                rec = {
-                    "id": el.id, "type": el.type, "role": el.role, "name": el.name, "owner": el.owner,
-                    "qualified_name": ix.qualified_name(el.id), "attrs": el.attrs,
-                    "refs": [[r, t] for r, t in el.refs], "children": el.children,
-                    "stereotypes": [{"name": a.stereotype, "tags": a.tags} for a in ix.applications(el.id)],
-                    "file": self.plan.file_of.get(el.id), "provenance": self.view.trace(el).to_dict(),
-                }
-                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+            write_jsonl(index_file(self.root, name), records)
+        # identifiers, for the index across models (AR-012R1); what the exports search (plan KX-02)
+        write_jsonl(index_file(self.root, "ids"), crossref.project_places(self.view, self.sink.main))
+        write_jsonl(index_file(self.root, "catalog"), catalog.project_catalog(self.view, self.sink, self.root))
+        write_jsonl(index_file(self.root, "elements"), ({
+            "id": el.id, "type": el.type, "role": el.role, "name": el.name, "owner": el.owner,
+            "qualified_name": ix.qualified_name(el.id), "attrs": el.attrs,
+            "refs": [[r, t] for r, t in el.refs], "children": el.children,
+            "stereotypes": [{"name": a.stereotype, "tags": a.tags} for a in ix.applications(el.id)],
+            "file": self.plan.file_of.get(el.id), "provenance": self.view.trace(el).to_dict(),
+        } for el in ix.elements.values()))
 
         def tree(eid: str, seen: set[str]) -> dict[str, Any] | None:
             el = ix.elements.get(eid)
@@ -156,7 +142,4 @@ class TableWriter:
              "roots": [t for r in ix.roots if (t := tree(r, seen))]}
         p = self.root / "index/hierarchy.json"
         p.write_text(json.dumps(h, ensure_ascii=False, indent=1), encoding="utf-8")
-        p = self.root / "index/chunks.jsonl"
-        with p.open("w", encoding="utf-8") as f:
-            for c in self.sink.chunks:
-                f.write(json.dumps(c, ensure_ascii=False) + "\n")
+        write_jsonl(index_file(self.root, "chunks"), self.sink.chunks)

@@ -176,7 +176,7 @@ def test_progress_heartbeats_and_log_file(tmp_path, fake_chat, monkeypatch, caps
     log_file = tmp_path / "run.log"
     # Not a terminal, default verbosity: heartbeat lines still reach the console (BASE-018).
     assert cli([str(src), "-o", str(tmp_path / "out"), "--vision-model", "m", "--heartbeat", "0.05",
-                 "--log-file", str(log_file)]) == 0
+                 "--no-calibrate", "--no-preflight", "--log-file", str(log_file)]) == 0  # not calibration's 92 cards (CQ-022)
     err = capsys.readouterr().err
     assert re.search(r"drone\.mdzip: LLM: \d requests? of 3 requests \(\d+%\)", err)
     assert "drone.mdzip: LLM: 3 requests in" in err and "found 1 project" not in err  # -v lines stay hidden

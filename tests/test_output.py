@@ -245,10 +245,10 @@ def test_ledger(tmp_path):
 
 
 def test_ledger_natural_sort_and_split():
-    from cameo_ingest.ledger import _natural_key
+    from cameo_ingest.text import natural_key
 
     ids = ["REQ.1.10", "REQ.1.2", "REQ.1", "REQ.2"]
-    assert sorted(ids, key=_natural_key) == ["REQ.1", "REQ.1.2", "REQ.1.10", "REQ.2"]
+    assert sorted(ids, key=natural_key) == ["REQ.1", "REQ.1.2", "REQ.1.10", "REQ.2"]
 
 
 def test_treediff(tmp_path, capsys):

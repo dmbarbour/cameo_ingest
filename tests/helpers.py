@@ -54,6 +54,15 @@ def provenance(out: Path) -> dict[str, dict]:
     return {r["token"]: r for r in map(json.loads, (out / "provenance.jsonl").open())}
 
 
+def write_inputs(root: Path, *sources: tuple[str, bytes]) -> Path:
+    """Write each (relative path, bytes) under `root`, folders made; return `root`."""
+    for rel, data in sources:
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+    return root
+
+
 def ingest(tmp_path: Path, *sources: tuple[str, bytes] | Path, args: Sequence[str] = ("--no-llm",),
            out: str = "out", status: int = 0) -> Path:
     """Ingest into `tmp_path/out` and return the tree. Each source is a path, or a (relative
@@ -62,10 +71,8 @@ def ingest(tmp_path: Path, *sources: tuple[str, bytes] | Path, args: Sequence[st
     paths = []
     for s in sources:
         if isinstance(s, tuple):
-            path = tmp_path / s[0]
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(s[1])
-            s = path
+            write_inputs(tmp_path, s)
+            s = tmp_path / s[0]
         paths.append(str(s))
     tree_dir = tmp_path / out
     assert cli([*paths, "-o", str(tree_dir), *args]) == status

@@ -14,26 +14,15 @@ from __future__ import annotations
 
 import argparse
 import json
-from collections import Counter, defaultdict
+from collections import Counter
 from pathlib import Path
 
 from cameo_ingest.cli import load_env
 from cameo_ingest.evaluation import records
-from cameo_ingest.evaluation.judge import kappa
+from cameo_ingest.evaluation.judge import PANEL, both_orders, kappa_lines
 from cameo_ingest.evaluation.provider import chat_config
-from cameo_ingest.evaluation.subject_judges import intruder_tasks, label_tasks, preference_tasks, run
+from cameo_ingest.evaluation.subject_judges import intruder_tasks, label_tasks, pick, preference_tasks, run
 from cameo_ingest.llm import EnrichmentSession, connect
-
-JUDGES = ["deepseek-ai/DeepSeek-V3.2", "Qwen/Qwen3-235B-A22B-Instruct-2507", "openai/gpt-oss-120b"]
-
-
-def pick(recs: list[dict], n: int) -> list[dict]:
-    """The n families to judge: sizes spread from the largest down."""
-    by_size = sorted(recs, key=lambda r: -len(r["items"]))
-    if len(by_size) <= n:
-        return by_size
-    step = len(by_size) / n
-    return [by_size[int(i * step)] for i in range(n)]
 
 
 def main() -> int:
@@ -45,7 +34,7 @@ def main() -> int:
     ap.add_argument("--families", type=int, default=12)
     ap.add_argument("--tests", nargs="+", default=["E1", "E2", "E3"])
     ap.add_argument("--e3-splits", nargs="+", help="the splits E3 pairs (default: --splits)")
-    ap.add_argument("--judges", nargs="+", default=JUDGES)
+    ap.add_argument("--judges", nargs="+", default=PANEL)
     ap.add_argument("--concurrency", type=int, default=8)
     args = ap.parse_args()
     if args.env:
@@ -96,13 +85,7 @@ def summarize(results: list[dict], splits: list[str], judges: list[str]) -> str:
             unread = sum(1 for r in rows if r["split"] == s and r["correct"] is None)
             lines.append(f"| {s} | " + " | ".join(cells) + f" | {_score(every, test)} | {unread} |")
         lines += ["", "Agreement between judges on each task's outcome (kappa):", ""]
-        for i, a in enumerate(judges):
-            for b in judges[i + 1:]:
-                pa = {_key(r): r["correct"] for r in rows if r["judge"] == a and r["correct"] is not None}
-                pb = {_key(r): r["correct"] for r in rows if r["judge"] == b and r["correct"] is not None}
-                common = sorted(set(pa) & set(pb))
-                k = kappa([int(pa[c]) for c in common], [int(pb[c]) for c in common], (0, 1)) if common else float("nan")
-                lines.append(f"- {a.split('/')[-1]} and {b.split('/')[-1]}: {k:.2f} on {len(common)} tasks")
+        lines += kappa_lines(rows, judges, _key)
         lines.append("")
     rows = [r for r in results if r["test"] == "E3"]
     if rows:
@@ -111,11 +94,7 @@ def summarize(results: list[dict], splits: list[str], judges: list[str]) -> str:
                   "|---|---|---|---|---|"]
         for pair in sorted({r["pair"] for r in rows}):
             a, b = pair.split("-")
-            both: dict[tuple, list] = defaultdict(list)
-            for r in rows:
-                if r["pair"] == pair:
-                    both[(r["judge"], r["family"])].append(r["better"])
-            c = Counter(v[0] if len(v) == 2 and v[0] == v[1] and v[0] else "inconsistent" for v in both.values())
+            c = both_orders([r for r in rows if r["pair"] == pair], lambda r: (r["judge"], r["family"]))
             lines.append(f"| {a} vs {b} | {c[a]} | {c[b]} | {c['tie']} | {c['inconsistent']} |")
         first = sum(1 for r in rows if r["better"] == r["A"]) / len(rows)
         lines += ["", f"The split shown first was preferred in {first:.0%} of answers."]

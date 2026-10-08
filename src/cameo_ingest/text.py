@@ -47,6 +47,30 @@ def one_line(text: str) -> str:
     return " ".join(text.split())
 
 
+def clip(text: str, limit: int) -> str:
+    """`text` on one line, at most `limit` characters: cut after a whole word, with "…" (CQ-018)."""
+    text = one_line(text)
+    if len(text) <= limit:
+        return text
+    cut = text[:limit - 1]
+    return (cut.rsplit(" ", 1)[0] if " " in cut else cut).rstrip() + "…"
+
+
+SENTENCE_END = re.compile(r"(?<=[.!?])\s")
+
+
+def first_sentence(text: str, limit: int) -> str:
+    """The first sentence of `text`, on one line, clipped to `limit`."""
+    text = one_line(text)
+    m = SENTENCE_END.search(text)
+    return clip(text[:m.start()] if m else text, limit)
+
+
+def natural_key(text: str) -> list[tuple[int, int | str]]:
+    """A sort key that orders numbers in text as numbers: REQ-2 before REQ-10, REQ.1.2 before REQ.1.10."""
+    return [(0, int(t)) if t.isdigit() else (1, t.lower()) for t in re.split(r"(\d+)", text) if t]
+
+
 def plural(n: int, noun: str) -> str:
     return f"{n:,} {noun}{'' if n == 1 else 's'}"
 

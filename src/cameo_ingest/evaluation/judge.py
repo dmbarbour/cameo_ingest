@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import json
 import re
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any
 
 from ..llm import EnrichmentSession
 from ..plain import plain
@@ -100,3 +102,31 @@ def panel(judgments: list[dict], set_name: str, main: tuple[str, str], tiebreak:
         if s == set_name:
             out.setdefault(qid, {})[unit] = grade
     return out
+
+
+# The panel of plan SB (subjects and topics): three judges from different makers.
+PANEL = ["deepseek-ai/DeepSeek-V3.2", "Qwen/Qwen3-235B-A22B-Instruct-2507", "openai/gpt-oss-120b"]
+
+
+def kappa_lines(rows: list[dict], judges: list[str], key: Any) -> list[str]:
+    """Markdown lines: each pair of judges' kappa on the tasks both answered (`correct` not None),
+    tasks matched by `key(row)`."""
+    lines = []
+    for i, a in enumerate(judges):
+        for b in judges[i + 1:]:
+            pa = {key(r): r["correct"] for r in rows if r["judge"] == a and r["correct"] is not None}
+            pb = {key(r): r["correct"] for r in rows if r["judge"] == b and r["correct"] is not None}
+            common = sorted(set(pa) & set(pb))
+            k = kappa([int(pa[c]) for c in common], [int(pb[c]) for c in common], (0, 1)) if common else float("nan")
+            lines.append(f"- {a.split('/')[-1]} and {b.split('/')[-1]}: {k:.2f} on {len(common)} tasks")
+    return lines
+
+
+def both_orders(rows: list[dict], unit: Any) -> Counter:
+    """Preferences asked in both orders: each unit's (`unit(row)`) verdict when the same both
+    times, else "inconsistent" (a judge that prefers whatever is shown first)."""
+    both: dict[Any, list[Any]] = {}
+    for r in rows:
+        both.setdefault(unit(r), []).append(r["better"])
+    return Counter(v[0] if len(v) == 2 and v[0] == v[1] and v[0] else "inconsistent" for v in both.values())
+

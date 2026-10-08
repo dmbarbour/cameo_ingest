@@ -23,7 +23,7 @@ from . import chunks
 from . import plain as pl
 from . import semantics as sem
 from .provenance import TOOL, ContentInfo, chunk_ref
-from .text import one_line
+from .text import first_sentence, one_line
 
 if TYPE_CHECKING:
     from .view import ProjectView
@@ -35,13 +35,6 @@ DOC_CHARS = 100  # of a kind's documentation, its first sentence
 
 def _anchor(term: str) -> str:
     return re.sub(r"[^a-z0-9-]+", "-", term.lower()).strip("-")
-
-
-def _first_sentence(text: str) -> str:
-    text = one_line(text)
-    m = re.search(r"(?<=[.!?])\s", text)
-    text = text[:m.start()] if m else text
-    return text if len(text) <= DOC_CHARS else text[:DOC_CHARS - 1].rsplit(" ", 1)[0] + "…"
 
 
 def project_hierarchies(view: ProjectView, chunk_of: dict[str, str]) -> list[dict[str, Any]]:
@@ -75,7 +68,7 @@ def project_hierarchies(view: ProjectView, chunk_of: dict[str, str]) -> list[dic
             head = f"- {name(e)}"
             return head, head
         el = ix.elements[e]
-        doc = _first_sentence(sem.documentation(ix, el))
+        doc = first_sentence(sem.documentation(ix, el), DOC_CHARS)
         also = [name(g) for g in generals.get(e, []) if g != under]
         head = f"- {name(e)} ({sem.kind_word(ix, el)})"
         tail = (f": {doc}" if doc else "") + (f"; also a kind of {', '.join(also)}" if also else "")

@@ -90,3 +90,14 @@ def test_pack_and_chunk_records():
         chunks.make(("x",), "T", "text", {**meta, "provenance": {**meta["provenance"], "locator": "elsewhere"}})
     with pytest.raises(ValueError, match="metadata.file"):
         chunks.make(("x",), "T", "text", {k: v for k, v in meta.items() if k != "file"})
+
+
+def test_clip_and_first_sentence():
+    """One rule for cutting text short (CQ-018): on one line, after a whole word, with "…"."""
+    from cameo_ingest.text import clip, first_sentence
+
+    assert clip("a short\nline", 20) == "a short line"
+    assert clip("the pump station houses two pumps", 20) == "the pump station…"
+    assert clip("x" * 30, 10) == "x" * 9 + "…"  # one long word: cut inside it
+    assert first_sentence("It pumps. Then it rests.", 50) == "It pumps."
+    assert first_sentence("Version 1.2 of it; then more", 50) == "Version 1.2 of it; then more"  # no sentence end

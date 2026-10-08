@@ -5,10 +5,7 @@ const path = require("path");
 const chrome = require("./chrome");
 const [chromeBin, profile, pagePath, query] = process.argv.slice(2);
 
-(async () => {
-  const c = await chrome.open(chromeBin, profile, "file://" + path.resolve(pagePath));
-  const timer = setTimeout(() => { console.log(JSON.stringify({ error: "timed out", errors: c.errors })); c.close(); process.exit(1); }, 60000);
-  const out = {};
+chrome.walk(chromeBin, profile, "file://" + path.resolve(pagePath), async (c, out) => {
   out.lead = await c.run("return (await wait(() => document.querySelector('#results .browse-lead'))).textContent;");
   out.topics = await c.run("return document.querySelectorAll('#results .group.topic').length;");
   out.subjects = await c.run(`document.querySelector('#results .group.topic .group-head').click();
@@ -42,9 +39,4 @@ const [chromeBin, profile, pagePath, query] = process.argv.slice(2);
     return document.querySelectorAll('#detail mark').length;`);
   await c.run(openFirst);
   out.marksAfterClear = await c.run("return document.querySelectorAll('#detail mark').length;");
-  out.errors = c.errors;
-  clearTimeout(timer);
-  console.log(JSON.stringify(out));
-  c.close();
-  process.exit(0);
-})().catch((e) => { console.log(JSON.stringify({ error: String(e) })); process.exit(1); });
+});

@@ -37,8 +37,8 @@ from .ledger import MAX_ROWS
 from .provenance import TOOL, ContentInfo, chunk_ref, sha256_bytes, short_id
 from .state import State
 from .text import front_matter, md_inline
+from .treefiles import PROJECTS, index_file, project_dir, read_jsonl
 
-PROJECTS = "by-sha256"
 INDEX = "INDEX.md"
 RAG = "rag"
 _UNSAFE = re.compile(r'[<>:"/\\|?*\x00-\x1f`]+')  # not in file names, on Windows or elsewhere
@@ -182,7 +182,7 @@ def cross_index(tree: Tree) -> list[dict[str, Any]]:
         return []
     merged: dict[str, list[crossref.Place]] = defaultdict(list)
     for sha, p in tree.written.items():
-        for term, ps in crossref.places(tree.out / PROJECTS / sha, ContentInfo(sha, p["name"])).items():
+        for term, ps in crossref.places(project_dir(tree.out, sha), ContentInfo(sha, p["name"])).items():
             merged[term] += ps
     fm = front_matter({"title": "Identifiers across the models in this tree", "kind": "crossref",
                        "provenance": {"tool": TOOL, "derivation": "assembled", "projects": len(tree.written)}})
@@ -197,8 +197,7 @@ def thread_chunks(tree: Tree) -> dict[str, list[dict[str, Any]]]:
         return {}
     out = {}
     for sha, p in tree.written.items():
-        path = tree.out / PROJECTS / sha / "index" / "threads.jsonl"
-        records = [json.loads(line) for line in path.open(encoding="utf-8")] if path.is_file() else []
+        records = read_jsonl(index_file(project_dir(tree.out, sha), "threads"), missing_ok=True)
         out[sha] = crossref.thread_chunks(records, ContentInfo(sha, p["name"]),
                                           refs=tree.assembly.line_refs)
     return out
@@ -211,8 +210,7 @@ def hierarchy_chunks(tree: Tree) -> dict[str, list[dict[str, Any]]]:
         return {}
     out = {}
     for sha, p in tree.written.items():
-        path = tree.out / PROJECTS / sha / "index" / "hierarchies.jsonl"
-        records = [json.loads(line) for line in path.open(encoding="utf-8")] if path.is_file() else []
+        records = read_jsonl(index_file(project_dir(tree.out, sha), "hierarchies"), missing_ok=True)
         out[sha] = hierarchies.hierarchy_chunks(records, ContentInfo(sha, p["name"]), refs=tree.assembly.line_refs)
     return out
 
@@ -222,9 +220,7 @@ def write_chunks(tree: Tree, threads: dict[str, list[dict[str, Any]]], tree_chun
     with (tree.out / "chunks.jsonl").open("w", encoding="utf-8") as f:
         for sha in tree.written:
             meta = _merged_metadata(tree.seen[sha])
-            with (tree.out / PROJECTS / sha / "index" / "chunks.jsonl").open(encoding="utf-8") as src:
-                project_chunks = [json.loads(line) for line in src]
-            for c in project_chunks + threads.get(sha, []):
+            for c in read_jsonl(index_file(project_dir(tree.out, sha), "chunks")) + threads.get(sha, []):
                 c = {**c, "metadata": {**c["metadata"], "file": f"{PROJECTS}/{sha}/{c['metadata']['file']}",
                                        "source_metadata": meta}}
                 f.write(json.dumps(c, ensure_ascii=False) + "\n")
@@ -342,7 +338,7 @@ def write_rag(out: Path, projects: list[RagProject], tree_chunks: list[dict[str,
             shutil.rmtree(old) if old.is_dir() else old.unlink()
     keep, sources = {"_tree", "_sources.json"}, {}
     for p in projects:
-        src = out / PROJECTS / p.sha / "index" / "chunks.jsonl"
+        src = index_file(project_dir(out, p.sha), "chunks")
         extra = (threads or {}).get(p.sha, [])  # the project's threads, when the tree includes them
         stamp = json.dumps([sha256_bytes(src.read_bytes()), p.found_with, p.files, ".txt", form, TOOL,
                             sha256_bytes(json.dumps(extra, sort_keys=True).encode()), list(without)])

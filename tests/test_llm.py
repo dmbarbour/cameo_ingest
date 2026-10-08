@@ -446,8 +446,8 @@ def test_llm_concurrency(tmp_path, fake_chat, monkeypatch):
     for n in (1, 3):
         out = tmp_path / f"out{n}"
         os.environ["CAMEO_INGEST_CACHE"] = str(tmp_path / f"store{n}")
-        assert cli([str(src), "-o", str(out), "--vision-model", "m",
-                     "--llm-concurrency", str(n)]) == 0
+        assert cli([str(src), "-o", str(out), "--vision-model", "m", "--no-calibrate", "--no-preflight",
+                     "--llm-concurrency", str(n)]) == 0  # the project's requests only, not calibration's (CQ-022)
         trees.append(tree(out))
     assert FakeChat.max_inflight >= 2  # requests overlapped (BASE-019R4)...
     assert trees[0] == trees[1]  # ...and the output is the same as a sequential run

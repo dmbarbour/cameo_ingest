@@ -1,4 +1,5 @@
-// The page's engine on a small corpus: queries, prefixes, phrases, filters, snippets.
+// The page's engine on a small corpus: queries, prefixes, phrases, filters, snippets; then an item's
+// "[n]" tags, copies across models shown once, and two models compared.
 const assert = require("assert");
 const Engine = require("../../src/cameo_ingest/assets/search.js");
 
@@ -37,4 +38,38 @@ assert.deepStrictEqual(names(ix.search("focal", { project: 1 })), []);
 assert.deepStrictEqual(Engine.mark("A Valve, a valve", ["valve"]).filter((p) => p.mark).length, 2);
 assert.strictEqual(Engine.snippet("x".repeat(500) + " valve here", ["valve"])[0].text.startsWith("…"), true);
 assert.strictEqual(ix.search("").total, 0);
+// A diagram's "[n]" tags (TR-005): known numbers become links, others stay text.
+assert.deepStrictEqual(Engine.tagPieces("[1] «Block» Pump; [2] Valve; [9] ghost.", { 1: "k1", 2: "k2" }),
+  [{ text: "[1]", tag: "k1" }, { text: " «Block» Pump; " }, { text: "[2]", tag: "k2" }, { text: " Valve; [9] ghost." }]);
+assert.deepStrictEqual(Engine.tagPieces("no tags", undefined), [{ text: "no tags" }]);
+assert.deepStrictEqual(Engine.tagPieces("[1]", { 1: "k" }), [{ text: "[1]", tag: "k" }]);
+// Copies of one element in several models, shown once (plan SH).
+{
+  const items = [
+    { t: "requirement", k: "r1", p: 0, al: [["bbbb", "r1", "e", ""]] },
+    { t: "requirement", k: "r1", p: 1, al: [["aaaa", "r1", "e", ""]] },
+    { t: "requirement", k: "r9", p: 1, al: [["aaaa", "r8", "i", "text"]] }, // another element, the same Id
+    { t: "element", k: "x", p: 0 },
+  ];
+  const got = Engine.collapseShared([{ doc: 1 }, { doc: 0 }, { doc: 2 }, { doc: 3 }], items);
+  assert.deepStrictEqual(got.hits.map((h) => h.doc), [1, 2, 3]);
+  assert.strictEqual(got.copies.get(1), 2);
+}
+// Two models compared (plan SH-05).
+{
+  const items = [
+    { t: "requirement", k: "r1", p: 0, al: [["bbbb", "r1", "e", "text"]] }, // changed
+    { t: "requirement", k: "r2", p: 0, al: [["bbbb", "r2", "e", ""]] }, // the same
+    { t: "element", k: "x", p: 0 }, // only in A
+    { t: "requirement", k: "r1", p: 1, al: [["aaaa", "r1", "e", "text"]] },
+    { t: "requirement", k: "r2", p: 1, al: [["aaaa", "r2", "e", ""]] },
+    { t: "diagram", k: "d9", p: 1 }, // only in B
+    { t: "summary", k: "r1", p: 1 }, // not compared
+  ];
+  const c = Engine.compareModels(items, 0, 1, "aaaa", "bbbb");
+  assert.deepStrictEqual(c.changed, [[0, "r1", "text"]]);
+  assert.strictEqual(c.same, 1);
+  assert.deepStrictEqual(c.onlyA, [2]);
+  assert.deepStrictEqual(c.onlyB, [5]);
+}
 console.log("ok");

@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .model import Element, ModelIndex
-from .text import DOORS_ID, one_line, requirement_title
+from .text import DOORS_ID, clip, requirement_title
 
 # Roles whose targets deserve their own section / chunk. Everything else is described
 # inside its owner's section (attributes, ports, operations, literals, ...).
@@ -311,8 +311,7 @@ def described(ix: ModelIndex, el: Element) -> str:
     represents, an opaque action's body, the event an action accepts, a comment's text, a value
     action's value, a state invariant's constraint. Empty when nothing does."""
     def short(text: str | None) -> str:
-        text = one_line(text or "")
-        return text if len(text) <= 80 else text[:79] + "…"
+        return clip(text or "", 80)
 
     represents = next(iter(refs(el, "represents")), None)
     if represents:

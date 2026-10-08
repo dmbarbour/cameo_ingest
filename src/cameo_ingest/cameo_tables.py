@@ -25,7 +25,7 @@ from lxml import etree
 from . import semantics as sem
 from .model import Element, ModelIndex
 from .richtext import to_text
-from .text import shown_value
+from .text import natural_key, shown_value
 
 NUMBER = "_NUMBER_"
 # Derived properties that read a relationship: (the relationship's kind, the row at its source).
@@ -273,11 +273,6 @@ class Columns:
         return out
 
 
-def _natural(text: str) -> list[tuple[int, int | str]]:
-    """A sort key that orders numbers in text as numbers: REQ-2 before REQ-10."""
-    return [(0, int(t)) if t.isdigit() else (1, t.lower()) for t in re.split(r"(\d+)", text) if t]
-
-
 def text_of(cell: Cell) -> str:
     return "; ".join(v.text for v in cell if v.text)
 
@@ -301,7 +296,7 @@ def build(ix: ModelIndex, columns: Columns, dia_id: str) -> Table | None:
         key = columns.column(cid, els)
         if key.read is not None:
             down = way.lower().startswith("desc")
-            pairs = sorted(zip(rows, els, strict=True), key=lambda p: _natural(text_of(key.read(p[1]))), reverse=down)
+            pairs = sorted(zip(rows, els, strict=True), key=lambda p: natural_key(text_of(key.read(p[1]))), reverse=down)
             rows, els = [p[0] for p in pairs], [p[1] for p in pairs]
             sort = f"{key.header}, {'descending' if down else 'ascending'}"
     cells = [[[Value(str(i))] if c.id == NUMBER else (c.read(el) if c.read else []) for c in cols]

@@ -127,7 +127,7 @@ def conventions(g: DiagramGraph, focus: set[int] | None = None) -> set[str]:
     return found
 
 
-def render_png(ix: ModelIndex, g: DiagramGraph, title: str, pixels: int = IMAGE_PIXELS,
+def render_png(ix: ModelIndex, g: DiagramGraph, title: str, pixels: int = IMAGE_PIXELS,  # noqa: C901 (CQ-013)
                frame: Frame | None = None, style: SketchStyle = STYLE, drawn: dict[int, str] | None = None,
                ) -> bytes | None:
     """A sketch that fills the model's pixel budget (FU-015): shapes tagged with their legend

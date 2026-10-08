@@ -114,7 +114,7 @@ class _Parser:
         return out
 
     # -- events ----------------------------------------------------------------
-    def start(self, node) -> None:
+    def start(self, node) -> None:  # noqa: C901 (CQ-019)
         prefix, local = self.qname(node.tag)
         parent_kind, parent = self.stack[-1] if self.stack else ("none", None)
         xid = self.xattr(node, "id")

@@ -10,7 +10,7 @@ import pytest
 
 def test_families_and_splits(tmp_path):
     pytest.importorskip("numpy")  # the study's word clusters
-    from helpers import cli
+    from helpers import cli, write_inputs
 
     from cameo_ingest.evaluation.fiction import PROJECTS
     from cameo_ingest.evaluation.fiction.versions import VERSIONS
@@ -18,12 +18,9 @@ def test_families_and_splits(tmp_path):
 
     projects = [PROJECTS[p]() for p in ("pct", "kois", "rwt", "hal", "aqu")]
     projects += [VERSIONS[v][1]() for v in ("kestrel-later", "port-calder-fork")]
-    for p in projects:
-        src = tmp_path / "in" / p.path
-        src.parent.mkdir(parents=True, exist_ok=True)
-        src.write_bytes(p.mdzip())
+    inputs = write_inputs(tmp_path / "in", *((p.path, p.mdzip()) for p in projects))
     out = tmp_path / "out"
-    assert cli([str(tmp_path / "in"), "-o", str(out), "--no-llm", "--no-render"]) == 0
+    assert cli([str(inputs), "-o", str(out), "--no-llm", "--no-render"]) == 0
 
     fams = {f.tokens[0]: f for f in families(out)}
     sizes = Counter(len(f.tokens) for f in fams.values())
@@ -71,18 +68,16 @@ class FakeLLM:
 
 @pytest.fixture(scope="module")
 def versions_tree(tmp_path_factory):
-    from helpers import cli
+    from helpers import cli, write_inputs
 
     from cameo_ingest.evaluation.fiction import PROJECTS
     from cameo_ingest.evaluation.fiction.versions import VERSIONS
 
     root = tmp_path_factory.mktemp("versions")
-    for p in (PROJECTS["pct"](), PROJECTS["kois"](), VERSIONS["port-calder-fork"][1]()):
-        src = root / "in" / p.path
-        src.parent.mkdir(parents=True, exist_ok=True)
-        src.write_bytes(p.mdzip())
+    projects = (PROJECTS["pct"](), PROJECTS["kois"](), VERSIONS["port-calder-fork"][1]())
+    inputs = write_inputs(root / "in", *((p.path, p.mdzip()) for p in projects))
     out = root / "out"
-    assert cli([str(root / "in"), "-o", str(out), "--no-llm", "--no-render"]) == 0
+    assert cli([str(inputs), "-o", str(out), "--no-llm", "--no-render"]) == 0
     return out
 
 
@@ -97,6 +92,9 @@ def _update(out, llm=None):
         st.close()
     data = json.loads((out / subjects.FILE).read_text())
     return counts, {r["name"]: r for r in data["families"]}
+
+
+BATCHES = 3  # the fork's 88 diagrams, in batches of up to 30 cut by package
 
 
 def test_subjects_and_their_fallbacks(versions_tree, tmp_path):
@@ -133,8 +131,7 @@ def test_subjects_and_their_fallbacks(versions_tree, tmp_path):
     f = fams[fork]
     assert f["ways"] == "found" and [v["id"] for v in f["views"]] == ["ways-1", "ways-2", "ways-3", "packages"]
     assert f["views"][0]["title"] == "By part" and f["views"][0]["subjects"][0]["label"] == "By part one"
-    assert llm.asked["subjects-propose"] == 1 and llm.asked["subjects-assign"] == 3 * len(subjects.batches(
-        subjects._family(out, fork, f["tokens"])))
+    assert llm.asked["subjects-propose"] == 1 and llm.asked["subjects-assign"] == 3 * BATCHES
 
     again = FakeLLM()
     _, kept = _update(out, again)  # complete and unchanged: nothing asked

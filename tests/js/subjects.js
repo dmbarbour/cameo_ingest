@@ -1,7 +1,7 @@
 // Subjects in the page (plan SB-07c): node subjects.js [PAGE.html QUERY]
 // Without arguments, checks the engine on a made-up family; with a page, groups a search of it
 // and prints {"hits", "grouped", "groups", "families"}.
-const fs = require("fs");
+const pagedata = require("./pagedata");
 const assert = require("assert");
 const Engine = require("../../src/cameo_ingest/assets/search.js");
 
@@ -59,16 +59,9 @@ if (process.argv.length < 4) {
 }
 
 (async () => {
-  const html = fs.readFileSync(process.argv[2], "utf8");
-  const blocks = [...html.matchAll(/<script type="application\/octet-stream" data-project=[^>]*>([^<]*)<\/script>/g)];
-  const ix = new Engine.Index();
-  for (const [i, b] of blocks.entries()) {
-    const data = await Engine.decode(b[1]);
-    for (const it of data.items) { it.p = i; ix.add(it); }
-  }
-  ix.finish();
-  const sbBlock = html.match(/<script type="application\/octet-stream" data-subjects="1">([^<]*)<\/script>/);
-  const sb = new Engine.Subjects(sbBlock ? await Engine.decode(sbBlock[1]) : []);
+  const data = await pagedata.read(process.argv[2]);
+  const ix = pagedata.index(data.projects);
+  const sb = new Engine.Subjects(data.subjects || [], data.topics);
   const res = ix.search(process.argv[3]);
   const groups = sb.group(res.hits, ix.items, (fi) => sb.families[fi].dv);
   const grouped = groups.reduce((n, g) => n + g.docs.length + [...g.versions.values()].reduce((a, v) => a + v - 1, 0), 0);

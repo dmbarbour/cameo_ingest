@@ -1,6 +1,6 @@
 [project]
 name = "cameo-ingest"
-version = "0.28.1"
+version = "0.28.2"
 description = "Convert Cameo / MagicDraw project files (.mdzip, .mdzipx, .rdzip) into provenance-tagged Markdown, CSV and JSON for RAG ingestion"
 readme = "README.md"
 authors = [
@@ -44,6 +44,15 @@ line-length = 120
 # Enrichment and per-stream parsing deliberately catch broad exceptions so one bad
 # stream or LLM call never aborts an ingest.
 ignore = ["BLE001"]
+# A guard on complexity (review CQ-024): functions over 25 by McCabe's count are named in a
+# `noqa` until they are split; the fictional projects' builders are test data, written once.
+extend-select = ["C901"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 25
+
+[tool.ruff.lint.per-file-ignores]
+"src/cameo_ingest/evaluation/fiction/*" = ["C901"]
 
 [tool.pytest.ini_options]
 markers = [

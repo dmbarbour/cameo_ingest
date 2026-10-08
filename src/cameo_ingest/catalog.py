@@ -29,6 +29,7 @@ from . import cameo_tables as ct
 from . import semantics as sem
 from .progress import QUIET, Progress
 from .text import one_line, shown_value
+from .treefiles import index_file, project_dir, read_jsonl
 
 if TYPE_CHECKING:
     from .sink import ChunkSink
@@ -39,7 +40,8 @@ SECTION_KINDS = ("element", "requirement", "package", "diagram")
 OUT_OF_SCOPE = {"Comment"}  # documentation, which its owner's record holds
 
 
-def project_catalog(view: ProjectView, sink: ChunkSink, root: Path | None = None) -> Iterator[dict[str, Any]]:
+def project_catalog(  # noqa: C901 (CQ-024: to be split)
+        view: ProjectView, sink: ChunkSink, root: Path | None = None) -> Iterator[dict[str, Any]]:
     """The project's records; `root`, the project's directory, to find its SVG sketches."""
     ix = view.ix
     chunks_of: dict[str, list[str]] = defaultdict(list)  # element -> its section chunks, main first
@@ -189,11 +191,6 @@ class ProjectCatalog:
         return "; ".join(dict.fromkeys(f"{k}={v}" for s in self.sources for k, v in sorted(s["metadata"].items())))
 
 
-def _jsonl(path: Path) -> list[dict[str, Any]]:
-    with path.open(encoding="utf-8") as f:
-        return [json.loads(line) for line in f if line.strip()]
-
-
 def tree_catalogs(state: State, out: Path, missing: list[str], progress: Progress | None = None,
                   chunks: bool = False) -> Iterator[ProjectCatalog]:
     """The written projects' catalogs, one at a time, with their chunks' text if `chunks`. A
@@ -202,14 +199,14 @@ def tree_catalogs(state: State, out: Path, missing: list[str], progress: Progres
     with (progress or QUIET).phase("projects", len(rows), "project") as ph:
         for row in rows:
             ph.advance()
-            d = out / "by-sha256" / row["content_sha256"]
-            path = d / "index" / "catalog.jsonl"
+            d = project_dir(out, row["content_sha256"])
+            path = index_file(d, "catalog")
             if not path.is_file():
                 missing.append(row["name"])
                 continue
-            recs = _jsonl(path)
-            ids = _jsonl(d / "index" / "ids.jsonl") if (d / "index" / "ids.jsonl").is_file() else []
+            recs = read_jsonl(path)
+            ids = read_jsonl(index_file(d, "ids"), missing_ok=True)
             sources = [{"path": "!".join([s["path"], *json.loads(s["chain"])]), "metadata": json.loads(s["metadata"])}
                        for s in state.sightings(row["content_sha256"]) if s["input_status"] != "missing"]
-            texts = {c["id"]: c["text"] for c in _jsonl(d / "index" / "chunks.jsonl")} if chunks else {}
+            texts = {c["id"]: c["text"] for c in read_jsonl(index_file(d, "chunks"))} if chunks else {}
             yield ProjectCatalog(recs[0], recs[1:], ids, sources, texts, d)

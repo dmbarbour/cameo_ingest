@@ -15,10 +15,9 @@ import argparse
 import json
 from pathlib import Path
 
-from judge_subjects import pick
-
 from cameo_ingest.cli import load_env
 from cameo_ingest.evaluation.provider import chat_config
+from cameo_ingest.evaluation.subject_judges import pick
 from cameo_ingest.evaluation.subject_llm import label_groups, propose
 from cameo_ingest.evaluation.subjects import measures
 from cameo_ingest.llm import EnrichmentSession, connect

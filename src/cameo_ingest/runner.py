@@ -30,6 +30,7 @@ from .progress import Progress
 from .provenance import TOOL, ContentInfo, sha256_bytes, utc_now
 from .sketch import SketchStyle
 from .state import State
+from .treefiles import PROJECTS
 
 log = logging.getLogger(__name__)
 announce = logging.getLogger("cameo_ingest.progress")  # shown at any verbosity, like heartbeats
@@ -45,7 +46,7 @@ class Runner:
         self.opt_hash = options.hash()
         self.prepare = prepare  # after the scan, before building: the options, perhaps calibrated (plan VA)
         self.concurrency = concurrency
-        self.projects_dir = out / exports.PROJECTS
+        self.projects_dir = out / PROJECTS
         self.failed_inputs: list[str] = []
         self.failed_projects: list[str] = []
         self.written: list[str] = []
@@ -330,7 +331,7 @@ def prune(state: State, out: Path, dry_run: bool = False) -> dict[str, Any]:
     orphans = state.orphans()
     if not dry_run:
         state.prune([r["sha256"] for r in orphans])
-        projects = out / exports.PROJECTS
+        projects = out / PROJECTS
         for r in orphans:
             for d in (projects / r["sha256"], projects / WORK / r["sha256"]):
                 if d.exists():

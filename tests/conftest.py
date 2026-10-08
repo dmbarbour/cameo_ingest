@@ -28,19 +28,28 @@ def fake_chat(monkeypatch) -> list[FakeChat]:
 
 
 @pytest.fixture(scope="session")
+def lineage_tree(tmp_path_factory):
+    """The lineage cases (`evaluation.fiction.lineage.corpus`: versions, a copy, a tender with two
+    bids, two models sharing a library) under `in/`, ingested once per session without the LLM or
+    sketches (CQ-022). Read it; don't write to it."""
+    from helpers import ingest
+
+    from cameo_ingest.evaluation.fiction.lineage import corpus
+
+    return ingest(tmp_path_factory.mktemp("lineage"), *((f"in/{c.path}", c.mdzip) for c in corpus()),
+                  args=("--no-llm", "--no-render"), out="tree")
+
+
+@pytest.fixture(scope="session")
 def fiction_tree(tmp_path_factory):
-    """The six fictional projects, in their folders (three share one file name), ingested once
+    """The seven fictional projects, in their folders (three share one file name), ingested once
     per session without the LLM or sketches (plan RA-18c). Read it; don't write to it."""
-    from helpers import cli
+    from helpers import cli, write_inputs
 
     from cameo_ingest.evaluation.fiction import PROJECTS
 
     root = tmp_path_factory.mktemp("fiction")
-    for prefix in sorted(PROJECTS):
-        project = PROJECTS[prefix]()
-        src = root / "in" / project.path
-        src.parent.mkdir(parents=True, exist_ok=True)
-        src.write_bytes(project.mdzip())
+    inputs = write_inputs(root / "in", *((p.path, p.mdzip()) for p in (PROJECTS[k]() for k in sorted(PROJECTS))))
     out = root / "out"
-    assert cli([str(root / "in"), "-o", str(out), "--no-llm", "--no-render"]) == 0
+    assert cli([str(inputs), "-o", str(out), "--no-llm", "--no-render"]) == 0
     return out

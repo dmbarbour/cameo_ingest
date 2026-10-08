@@ -39,6 +39,7 @@ from . import groups as version_groups
 from .llm import ReplayMiss
 from .progress import QUIET, Progress
 from .prompts import SUBJECTS_ASSIGN, SUBJECTS_PROPOSE
+from .treefiles import index_file, project_dir, read_jsonl
 
 log = logging.getLogger(__name__)
 
@@ -113,11 +114,7 @@ class Family:
 
 
 def _catalog(out: Path, token: str) -> list[dict[str, Any]]:
-    path = out / "by-sha256" / token.removeprefix("sha256:") / "index" / "catalog.jsonl"
-    if not path.is_file():
-        return []
-    with path.open(encoding="utf-8") as f:
-        return [json.loads(line) for line in f]
+    return read_jsonl(index_file(project_dir(out, token), "catalog"), missing_ok=True)
 
 
 def families(state: Any, out: Path) -> list[Family]:

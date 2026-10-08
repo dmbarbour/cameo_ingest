@@ -50,6 +50,11 @@ class Subject:
     text: str  # label, holds, titles and about texts: what its words are read from
     elements: set[str] = field(default_factory=set)
 
+    @property
+    def family(self) -> str:
+        """Its family's newest token."""
+        return self.id.rpartition("/")[0]
+
     def describe(self, examples: int = EXAMPLES) -> str:
         holds = self.holds[:HOLDS_CHARS] + ("…" if len(self.holds) > HOLDS_CHARS else "")
         shown = "; ".join(self.titles[:examples])
@@ -87,10 +92,6 @@ def signature(subs: list[Subject]) -> str:
     return h.hexdigest()[:16]
 
 
-def _family(s: Subject) -> str:
-    return s.id.rpartition("/")[0]
-
-
 # -- words and shared elements: the fallback ---------------------------------------------------------
 def similarity(subs: list[Subject]) -> dict[tuple[int, int], float]:
     """Cosine of the subjects' TF-IDF vectors, between subjects of different families: a model's
@@ -102,7 +103,7 @@ def similarity(subs: list[Subject]) -> dict[tuple[int, int], float]:
     spread: dict[str, set[str]] = defaultdict(set)
     for s, d in zip(subs, docs, strict=True):
         for w in d:
-            spread[w].add(_family(s))
+            spread[w].add(s.family)
     idf = {w: math.log(n / c) for w, c in df.items() if c <= max(1, n / 2) and len(spread[w]) > 1}
     vecs = []
     for d in docs:
@@ -117,7 +118,7 @@ def similarity(subs: list[Subject]) -> dict[tuple[int, int], float]:
     for w, ids in sorted(having.items()):
         for x, i in enumerate(ids):
             for j in ids[x + 1:]:
-                if _family(subs[i]) != _family(subs[j]):
+                if subs[i].family != subs[j].family:
                     sim[i, j] += vecs[i][w] * vecs[j][w]
     return dict(sim)
 
@@ -132,7 +133,7 @@ def shared(subs: list[Subject]) -> dict[tuple[int, int], float]:
     for _, ids in sorted(by_element.items()):
         for x, i in enumerate(ids):
             for j in ids[x + 1:]:
-                if _family(subs[i]) != _family(subs[j]):
+                if subs[i].family != subs[j].family:
                     both[i, j] += 1
     return {(i, j): c / min(len(subs[i].elements), len(subs[j].elements)) for (i, j), c in both.items()}
 
@@ -227,7 +228,7 @@ def batches(subs: list[Subject]) -> list[list[int]]:
     """Subjects in batches of `BATCH`, a family's together where it fits."""
     by_family: dict[str, list[int]] = defaultdict(list)
     for i, s in enumerate(subs):
-        by_family[_family(s)].append(i)
+        by_family[s.family].append(i)
     out: list[list[int]] = []
     cur: list[int] = []
     for ids in by_family.values():
@@ -259,7 +260,7 @@ def llm_view(llm: Any, subs: list[Subject], concurrency: int = 1, advance: Any =
             log.debug("topics: %s", e)
             return None
 
-    models = len({_family(s) for s in subs})
+    models = len({s.family for s in subs})
     got = ask(TOPICS_PROPOSE, {"MODELS": str(models), "K": str(target(len(subs))), "SUBJECTS": listing(subs)})
     if advance:
         advance(1)
@@ -302,7 +303,7 @@ def entry(subs: list[Subject], view: dict[str, Any] | None, asked: bool) -> dict
     """The tree's topics record: its views, the default first (as a family's subjects, ADR-0031):
     the LLM's, unless it failed or left more than `UNSORTED_LIMIT` unsorted; then words."""
     rec: dict[str, Any] = {"signature": signature(subs), "subjects": len(subs)}
-    if len({_family(s) for s in subs}) < MIN_FAMILIES:
+    if len({s.family for s in subs}) < MIN_FAMILIES:
         rec.update(views=[], default=None, ways="too few models")
         return rec
     views = [view] if view else []
@@ -326,7 +327,7 @@ def update(fams: list[Family], records: list[dict[str, Any]], before: dict[str, 
     can_ask = llm is not None and getattr(getattr(llm, "cfg", None), "text_model", None)
     if before and before.get("signature") == sig and (before.get("ways") in ("found", "too few models") or not can_ask):
         return before
-    if not can_ask or len({_family(s) for s in subs}) < MIN_FAMILIES:
+    if not can_ask or len({s.family for s in subs}) < MIN_FAMILIES:
         return entry(subs, None, asked=False)
     if progress is not None:
         with progress.phase("topics across models", requests(subs), "request") as ph:

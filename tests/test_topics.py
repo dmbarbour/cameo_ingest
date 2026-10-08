@@ -28,7 +28,7 @@ def corpus():
 def test_words_join_across_models_only():
     subs = corpus()
     sim = topics.similarity(subs)
-    assert sim and all(topics._family(subs[i]) != topics._family(subs[j]) for i, j in sim)
+    assert sim and all(subs[i].family != subs[j].family for i, j in sim)
     # "pumphouse" is two families' word, but no pair within a family is joined by it
     links = topics.shared(subs)
     assert set(links) == {(1, 4)} and links[1, 4] == 1.0

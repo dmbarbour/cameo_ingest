@@ -23,12 +23,10 @@ import random
 from collections import Counter
 from pathlib import Path
 
-from judge_subjects import JUDGES
-
 from cameo_ingest import subjects, topics
 from cameo_ingest.cli import load_env
 from cameo_ingest.evaluation import records
-from cameo_ingest.evaluation.judge import kappa
+from cameo_ingest.evaluation.judge import PANEL, kappa_lines
 from cameo_ingest.evaluation.provider import chat_config
 from cameo_ingest.evaluation.topic_judges import (
     as_split,
@@ -59,10 +57,10 @@ def model_split(subs: list[topics.Subject]) -> dict:
     groups: dict[str, list[str]] = {}
     labels: dict[str, str] = {}
     for s in subs:
-        fam = topics._family(s)
+        fam = s.family
         t = labels.setdefault(fam, str(len(labels)))
         groups.setdefault(t, []).append(s.id)
-    names = {topics._family(s): s.model for s in subs}
+    names = {s.family: s.model for s in subs}
     return {"labels": {t: names[f] for f, t in labels.items()}, "groups": groups, "unsorted": []}
 
 
@@ -74,7 +72,7 @@ def main() -> int:
     ap.add_argument("--model", default="google/gemma-4-31B-it")
     ap.add_argument("--store", type=Path, default=Path("out/sb/llm-splits-store"))
     ap.add_argument("--collections", type=int, default=9)
-    ap.add_argument("--judges", nargs="+", default=JUDGES)
+    ap.add_argument("--judges", nargs="+", default=PANEL)
     ap.add_argument("--no-judges", action="store_true")
     ap.add_argument("--concurrency", type=int, default=8)
     args = ap.parse_args()
@@ -163,14 +161,7 @@ def summarize(results: list[dict], colls: dict, judges: list[str]) -> str:
             every += got
         unread = sum(1 for r in rows if r["split"] == name and r["correct"] is None)
         lines.append(f"| {name} | " + " | ".join(cells) + f" | {_pct(every)} | {unread} |")
-    lines += ["", "Agreement between judges (kappa):", ""]
-    for i, a in enumerate(judges):
-        for b in judges[i + 1:]:
-            pa = {_key(r): r["correct"] for r in rows if r["judge"] == a and r["correct"] is not None}
-            pb = {_key(r): r["correct"] for r in rows if r["judge"] == b and r["correct"] is not None}
-            common = sorted(set(pa) & set(pb))
-            k = kappa([int(pa[c]) for c in common], [int(pb[c]) for c in common], (0, 1)) if common else float("nan")
-            lines.append(f"- {a.split('/')[-1]} and {b.split('/')[-1]}: {k:.2f} on {len(common)} tasks")
+    lines += ["", "Agreement between judges (kappa):", "", *kappa_lines(rows, judges, _key)]
     rows = [r for r in results if r["test"] == "E3"]
     lines += ["", "## E3, preference: verdicts given in both orders, every judge and collection", "",
               "| Pair | First preferred | Second preferred | Tie | Inconsistent |", "|---|---|---|---|---|"]

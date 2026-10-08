@@ -307,7 +307,7 @@ def test_trees_frames_labels_and_association_classes(monkeypatch):
     assert not [h for h in heads if h[2]] and not heads  # containment: no head at all
 
 
-def test_a_tree_below_its_parent():
+def test_a_tree_below_its_parent(monkeypatch):
     """A tree whose parent is below its bar: the head points down, at the parent's upper edge."""
     from cameo_ingest import sketch
     from cameo_ingest.archive import discover
@@ -324,11 +324,9 @@ def test_a_tree_below_its_parent():
     assert tree.vertical == ((250.0, 10.0), (250.0, -30.0))
     heads = []
     arrowhead = sketch._arrowhead
-    sketch._arrowhead = lambda d, p, q, hollow, **kw: heads.append((p, q, hollow)) or arrowhead(d, p, q, hollow, **kw)
-    try:
-        sketch.render_png(ix, view.graph("d1"), "BDD")
-    finally:
-        sketch._arrowhead = arrowhead
+    monkeypatch.setattr(sketch, "_arrowhead",
+                        lambda d, p, q, hollow, **kw: heads.append((p, q, hollow)) or arrowhead(d, p, q, hollow, **kw))
+    sketch.render_png(ix, view.graph("d1"), "BDD")
     hollow = [h for h in heads if h[2]]
     assert len(hollow) == 4 and sum(q[1] > p[1] for p, q, _ in hollow) == 1  # the tree's head points down
 

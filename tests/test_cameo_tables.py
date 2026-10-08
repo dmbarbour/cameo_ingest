@@ -94,9 +94,10 @@ def test_an_instance_table(tmp_path):
 
 def test_headers_order_and_values():
     from cameo_ingest import cameo_tables as ct
+    from cameo_ingest.text import natural_key
 
     assert ct._words("SatisfiedBy") == "Satisfied By" and ct._words("hierarchyId") == "Hierarchy Id"
-    assert ct._natural("REQ-2") < ct._natural("REQ-10") and ct._natural("b") > ct._natural("A")
+    assert natural_key("REQ-2") < natural_key("REQ-10") and natural_key("b") > natural_key("A")
     assert ct._once([ct.Value("Key"), ct.Value("Key")]) == [ct.Value("Key")]  # one tag on two stereotypes
 
 

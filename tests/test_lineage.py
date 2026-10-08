@@ -4,20 +4,12 @@ root and related models, told apart by who made each side's own ids and when."""
 from helpers import cli
 
 from cameo_ingest import lineage
-from cameo_ingest.evaluation.fiction.lineage import TRUTH, corpus
+from cameo_ingest.evaluation.fiction.lineage import TRUTH
 from cameo_ingest.state import State
 
 
-def test_lineage_of_the_synthetic_cases(tmp_path):
-    for c in corpus():
-        src = tmp_path / "in" / c.path
-        src.parent.mkdir(parents=True, exist_ok=True)
-        src.write_bytes(c.mdzip)
-    out = tmp_path / "tree"
-    assert cli(["config", "-o", str(out), "set", "llm", "off"]) == 0
-    assert cli(["add", "-o", str(out), str(tmp_path / "in")]) == 0
-    assert cli(["scan", "-o", str(out)]) == 0  # fingerprints are enough: nothing built
-    st = State(out)
+def test_lineage_of_the_synthetic_cases(lineage_tree):
+    st = State(lineage_tree)
     try:
         pairs = lineage.pairs(st)
         where = {sha: st.sightings(sha)[0]["path"].split("/in/")[1] for p in pairs for sha in (p.a.sha, p.b.sha)}
@@ -35,20 +27,13 @@ def test_lineage_of_the_synthetic_cases(tmp_path):
     assert "rivals on a shared root" in rivals.why and rivals.folder.endswith("lineage/bids")
 
 
-def test_families_keep_rivals_apart(tmp_path, capsys):
+def test_families_keep_rivals_apart(lineage_tree, capsys):
     """Families are chains of versions (ADR-0032): Halvorsen's two versions are one family, while
     the customer's tender and the two bids on it stay apart, each with its own diagrams; `groups`
     lists them as kin, with their folders and evidence."""
     import json
 
-    for c in corpus():
-        src = tmp_path / "in" / c.path
-        src.parent.mkdir(parents=True, exist_ok=True)
-        src.write_bytes(c.mdzip)
-    out = tmp_path / "tree"
-    assert cli(["config", "-o", str(out), "set", "llm", "off"]) == 0
-    assert cli(["config", "-o", str(out), "set", "render", "off"]) == 0
-    assert cli([str(tmp_path / "in"), "-o", str(out)]) == 0
+    out = lineage_tree
     fams = json.loads((out / "subjects.json").read_text())["families"]
     riverbend = sorted(len(f["tokens"]) for f in fams if f["name"] == "Riverbend_Water_Treatment_Works.mdzip")
     assert riverbend == [1, 1, 2]  # the tender, Aquila's bid, Halvorsen's two versions

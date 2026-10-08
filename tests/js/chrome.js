@@ -1,5 +1,6 @@
 // Headless Chrome, driven over the DevTools protocol on --remote-debugging-pipe (no library
-// needed), for the browser tests: `open(CHROME, PROFILE_DIR, URL)` gives {run, send, errors, close}.
+// needed), for the browser tests: `open(CHROME, PROFILE_DIR, URL)` gives {run, send, errors, close};
+// `walk` wraps a test's steps.
 // `run(body)` runs an async function's body in the page and returns its value; `wait(f, ms)` is
 // in scope there, polling until f() is truthy.
 const { spawn } = require("child_process");
@@ -45,4 +46,28 @@ async function open(chromeBin, profile, url) {
   return { run, send, errors, close: () => chrome.kill() };
 }
 
-module.exports = { open };
+// Opens `url`, runs `steps(c, out)`, then prints `out` with the page's script errors as JSON and
+// exits; a step that throws, or a minute's wait, prints {error, errors} and exits with 1.
+async function walk(chromeBin, profile, url, steps) {
+  let c = null;
+  const fail = (error) => {
+    console.log(JSON.stringify({ error, errors: c ? c.errors : [] }));
+    if (c) c.close();
+    process.exit(1);
+  };
+  const timer = setTimeout(() => fail("timed out"), 60000);
+  try {
+    c = await open(chromeBin, profile, url);
+    const out = {};
+    await steps(c, out);
+    out.errors = c.errors;
+    clearTimeout(timer);
+    console.log(JSON.stringify(out));
+    c.close();
+    process.exit(0);
+  } catch (e) {
+    fail(String(e));
+  }
+}
+
+module.exports = { open, walk };

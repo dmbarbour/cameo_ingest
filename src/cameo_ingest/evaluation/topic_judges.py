@@ -27,8 +27,9 @@ from typing import Any
 
 from ..llm import EnrichmentSession
 from ..prompts import Slot, Template
-from ..topics import Subject, _family
-from .subject_judges import _number
+from ..topics import Subject
+from .judge import both_orders
+from .subject_judges import reply_field
 
 SEED = 7
 HOLDS_CHARS = 200
@@ -63,12 +64,12 @@ PREFERENCE = Template(
 
 def collections(subs: list[Subject], n: int = 9, share: float = 0.6) -> list[dict[str, Any]]:
     """The whole collection, then n random subsets of its families, each `share` of them."""
-    fams = sorted({_family(s) for s in subs})
+    fams = sorted({s.family for s in subs})
     out = [{"name": "all", "subjects": list(subs)}]
     for i in range(n):
         rng = random.Random(f"{SEED}:collection:{i}")
         keep = set(rng.sample(fams, max(2, round(share * len(fams)))))
-        out.append({"name": f"subset-{i + 1}", "subjects": [s for s in subs if _family(s) in keep]})
+        out.append({"name": f"subset-{i + 1}", "subjects": [s for s in subs if s.family in keep]})
     return out
 
 
@@ -82,7 +83,7 @@ def as_split(view: dict[str, Any]) -> dict[str, Any]:
 def measures(split: dict[str, Any], by_id: dict[str, Subject]) -> dict[str, Any]:
     sizes = {t: len(ids) for t, ids in split["groups"].items()}
     total = sum(sizes.values()) or 1
-    spans = {t: len({_family(by_id[i]) for i in ids}) for t, ids in split["groups"].items()}
+    spans = {t: len({by_id[i].family for i in ids}) for t, ids in split["groups"].items()}
     return {"topics": len(sizes), "largest": max(sizes.values(), default=0) / total,
             "across": sum(sizes[t] for t in sizes if spans[t] > 1) / total,
             "families_per_topic": sum(spans.values()) / max(1, len(spans)), "unsorted": len(split["unsorted"])}
@@ -124,7 +125,7 @@ def preference_tasks(coll: str, names: list[str]) -> list[dict[str, Any]]:
 def show(split: dict[str, Any], by_id: dict[str, Subject]) -> str:
     lines = []
     for t, ids in sorted(split["groups"].items(), key=lambda kv: -len(kv[1])):
-        models = len({_family(by_id[i]) for i in ids})
+        models = len({by_id[i].family for i in ids})
         examples = "; ".join(f"{by_id[i].label} ({by_id[i].model})" for i in ids[:: max(1, len(ids) // 4)][:4])
         lines.append(f"- {split['labels'][t]} ({len(ids)} subjects, {models} model{'s' if models > 1 else ''}), "
                      f"e.g. {examples}")
@@ -143,13 +144,13 @@ def run(llm: EnrichmentSession, colls: dict[str, dict[str, Any]], tasks: list[di
         if t["test"] == "E1":
             text = "\n".join(f"{n}. {describe(by_id[i])}" for n, i in enumerate(t["ids"], 1))
             res = llm.ask(INTRUDER, {"SUBJECTS": text}, project="study:topics", inputs=(t["collection"],))
-            got = _number(res[0], "odd") if res else None
+            got = reply_field(res[0], "odd") if res else None
             return {**t, "reply": got, "correct": str(got) == str(t["answer"]) if got is not None else None}
-        models = len({_family(s) for s in c["subjects"]})
+        models = len({s.family for s in c["subjects"]})
         res = llm.ask(PREFERENCE, {"COUNT": str(len(c["subjects"])), "MODELS": str(models),
                                    "A": show(c["splits"][t["A"]], by_id), "B": show(c["splits"][t["B"]], by_id)},
                       project="study:topics", inputs=(t["collection"],))
-        got = str(_number(res[0], "better") or "").strip().upper() if res else ""
+        got = str(reply_field(res[0], "better") or "").strip().upper() if res else ""
         return {**t, "reply": got or None, "better": {"A": t["A"], "B": t["B"], "TIE": "tie"}.get(got)}
 
     with ThreadPoolExecutor(concurrency) as pool:
@@ -158,7 +159,4 @@ def run(llm: EnrichmentSession, colls: dict[str, dict[str, Any]], tasks: list[di
 
 def verdicts(rows: list[dict[str, Any]]) -> Counter[str]:
     """E3: each judge and collection's verdict when given in both orders, else "inconsistent"."""
-    both: dict[tuple[str, str, str], list[Any]] = {}
-    for r in rows:
-        both.setdefault((r["judge"], r["collection"], r["pair"]), []).append(r["better"])
-    return Counter(v[0] if len(v) == 2 and v[0] == v[1] and v[0] else "inconsistent" for v in both.values())
+    return both_orders(rows, lambda r: (r["judge"], r["collection"], r["pair"]))

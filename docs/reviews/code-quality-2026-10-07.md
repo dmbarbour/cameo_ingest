@@ -1,8 +1,10 @@
 # Review: code quality, 2026-10-07
 
 - **Status:** Open. Stage 1 done (0.28.1): CQ-001 to CQ-004, CQ-021R1 but the renderers' `ix`.
+  Stage 2 done (0.28.2): CQ-010, CQ-018, CQ-022, CQ-023 (but a browser test of Compare, left to
+  CQ-020), CQ-024R1.
   The maintainer, starting the remediation: work from the easiest to the hardest, skip what needs
-  his input, and deliberate architecture (options, pros and cons) before judging, with today's
+  their input, and deliberate architecture (options, pros and cons) before judging, with today's
   design counted only as the convenient option.
 - **Finding prefix:** `CQ`. Findings are `CQ-001` and so on; remediation steps `CQ-001R1` and so on.
 - **Subject:** cameo-ingest at `edbfc7c` (0.28.0): about 20,000 lines of Python in the package
@@ -181,6 +183,15 @@
   without closing them; the `path!chain` reference joined in four places.
 - **CQ-010R1:** a `ProjectDir(out, sha)` with `catalog()`, `chunks()`, `threads()`; one
   `read_jsonl`; one helper for a sighting's reference.
+- **Weighed:** (a) constants and functions in a new lowest-level module; (b) a `ProjectDir` class,
+  a method a file; (c) keep them in `exports`, where `PROJECTS` was (convenient, but `catalog`
+  and `subjects` would import a high-level module for a folder's name); (d) fix only the leaked
+  handles. (a): callers mostly want a path, and a method a file grows for little.
+- **Done (0.28.2):** `treefiles.py` (`PROJECTS`, `project_dir`, `index_file`, `read_jsonl`,
+  `write_jsonl`), used by `catalog`, `crossref`, `exports`, `subjects`, `tables`, `runner`, `cli`;
+  no file is left open. Left: the `path!chain` joins, over two shapes of sighting (the state's
+  rows, whose chain is JSON text, and the exports' decoded ones), where one helper would need
+  both.
 
 #### CQ-011: a flow's direction is an arrow at the end of a display string
 
@@ -260,6 +271,10 @@
 - **Clipping:** `ledger._clip`, `prompt_values._cut`, `semantics.described.short`, `crossref.py:255`.
 - **Natural sort:** `cameo_tables.py:276`, `ledger.py:42`.
 - **CQ-018R1:** one of each in `text.py`.
+- **Done (0.28.2):** `text.clip`, `text.first_sentence`, `text.natural_key`, by the most careful
+  rules: a cut after a whole word, a sentence ending at `.`, `!` or `?`. Outputs change a little:
+  the ledger's first sentences no longer end at a semicolon, and its clips and the unnamed
+  elements' descriptions end at a word.
 
 #### CQ-019: `xmi._Parser.start` (radon 58) is a state machine with untyped frames
 
@@ -325,6 +340,9 @@
 - The lineage corpus is ingested twice alike (`test_shared.py:12`, `test_lineage.py:38`, 10 s
   each): one session fixture.
 - **CQ-022R1** to **R3,** one a bullet.
+- **Done (0.28.2):** `grading.Corpus.holds` (the test: 50 s to 7 s); the two runs without
+  calibration (39 s to 2 s), still checking overlap and heartbeats; one session `lineage_tree`.
+  The suite: 230 s to 139 s.
 
 #### CQ-023: test and script structure
 
@@ -342,6 +360,13 @@
   word for word and the E1 table; `topic_splits` imports `JUDGES` from another script.
 - `test_diagrams.py:326` patches by hand with `try`/`finally` where `monkeypatch` serves.
 - **CQ-023R1:** these, as one cleanup.
+- **Done (0.28.2):** `@needs_node`; the engine's tests moved to `engine.js`; `tests/js/pagedata.js`
+  reads a page's blocks for `page.js` and `subjects.js`; `chrome.walk` holds the walks' framing;
+  `helpers.write_inputs` for the four setups (keeping the input folder, which outputs depend on);
+  `Subject.family` and `subject_judges.reply_field`, public; the request count written as a
+  number; `judge.PANEL`, `kappa_lines` and `both_orders`, and `subject_judges.pick`, so no script
+  imports another (both study reports regenerate byte for byte); `monkeypatch`. Left to CQ-020: a
+  browser test of Compare and "Also in".
 
 ### Tooling and docs
 
@@ -352,7 +377,9 @@
 - **The doc:** `docs/design/architecture.md`'s module table omits `subjects`, `topics`,
   `lineage`, `shared` and `xlsx_parts`, and says the state's schema is version 3 (it is 5).
 - **CQ-024R1:** `C901` with `max-complexity = 25`, the four named in `noqa` comments until they are
-  split; **R2:** the architecture doc brought up to date as the refactors land.
+  split; **R2:** the architecture doc brought up to date as the refactors land; **R3:**
+  `catalog.project_catalog` (39), the one of the four no other finding splits.
+- **R1 done (0.28.2):** in `pyproject.toml`; the fictional projects' builders exempt (test data).
 
 ## Leave alone
 
