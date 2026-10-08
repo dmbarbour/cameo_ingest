@@ -1,7 +1,7 @@
 # Roadmap: open, deferred and tentative work
 
 Gathered on 2026-10-03 from the retired plans and reviews (`docs/archive/`), whose IDs are given
-so that their history can be found; reviewed on 2026-10-05. Each item is described once, in its
+so that their history can be found; reviewed on 2026-10-05 and 2026-10-07. Each item is described once, in its
 section. When an item becomes a plan, it moves to `docs/plans/`. Done work leaves the roadmap:
 its record is the archived plan, the ADRs and the design documents.
 
@@ -28,14 +28,28 @@ Checked on 2026-10-05, and no longer next:
 Larger, or of less certain reward: better module boundaries (a reading of the descriptions
 first), the judge panel, and TMT-2024x as a test of confusion between versions.
 
+Since 2026-10-05, the maintainer's first trial (`docs/reviews/trial-2026-10-06.md`) came first:
+plans CF, SB, LN, WT and SH, 0.21.1 to 0.28.0. The ranking above still stands; the next trial may
+change it.
+
 ## Waiting on the maintainer
 
-- **The exports' trial** (KX-08, KX-09):
-  - try the workbook and the search page on the fiction, then the samples, and share them through
-    SharePoint;
-  - choose between them, and whether the page carries sketches (WebP or SVG);
-  - check the Find sheet's formula in Excel itself, and the policy on scripts in downloaded HTML;
-  - check how SharePoint search treats hyphenated ids, and whether previews honour `#anchor`.
+- **The trial of 0.22 to 0.28** (TR-002 to TR-007, `docs/reviews/trial-2026-10-06.md`), each open
+  until then:
+  - **subjects and topics across models** (ADR-0031): whether they feel natural on real models,
+    and whether a set of bids for one system gives topics by part of the system (on the study's
+    unrelated models, topics are kinds of engineering work);
+  - **the model chooser and lineage** (plan LN, ADR-0032): whether versions, copies and rivals on
+    a shared root are told apart on real files, the real test of the inference;
+  - **Also in and Compare** (ADR-0033): whether the matches are right; the matching constants are
+    to be adjusted from what the trial shows (the maintainer: "We can make that bit tunable based
+    on future trial feedback"), as defaults, not settings (ADR-0027);
+  - **the workbook as tables** (plan WT): legible as opened, and the columns to filter by;
+  - **links at a diagram's `[n]` tags** (TR-005).
+- **What is left of the exports' first trial** (KX-08, KX-09): sharing the workbook and the page
+  through SharePoint; whether the page carries sketches (WebP or SVG); the policy on scripts in
+  downloaded HTML; how SharePoint search treats hyphenated ids, and whether previews honour
+  `#anchor`. The workbook and the page are outputs of their own, each used without the other.
 - **Exports by group** (KX-11, proposed): `export --group-by meta:KEY|folder`, one page and workbook
   per group, with an index of identifiers across them. Waits until the maintainer's corpus is
   counted (estimated at about 345,000 items: past the page's comfortable 300,000).
@@ -75,6 +89,9 @@ first), the judge panel, and TMT-2024x as a test of confusion between versions.
   and TMT-2024x's `MonteCarloAnalysis` (42 kinds each, one model in two versions) and
   `ValueProperty` (3 each). Whether the maintainer's corpus shares library types across models
   decides this.
+- **Thumbnails of diagrams in the workbook** (plan WT, deferred by the maintainer, 2026-10-07):
+  "Even shapes can be useful, but the inability to zoom or link would be less useful." Slicers
+  were set aside too: a table lets a user add one in two clicks.
 - **Facet lists** (RF-05): TMT's tags run to hundreds of requirements per value, and choosing the
   tags needs heuristics with only one example. Deferred with them: DOORS-like structure for the
   traffic project (RF-04).
