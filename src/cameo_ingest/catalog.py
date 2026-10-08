@@ -32,6 +32,7 @@ from .text import one_line, shown_value
 from .treefiles import index_file, project_dir, read_jsonl
 
 if TYPE_CHECKING:
+    from .model import Element
     from .sink import ChunkSink
     from .state import State
     from .view import ProjectView
@@ -40,20 +41,124 @@ SECTION_KINDS = ("element", "requirement", "package", "diagram")
 OUT_OF_SCOPE = {"Comment"}  # documentation, which its owner's record holds
 
 
-def project_catalog(  # noqa: C901 (CQ-024: to be split)
-        view: ProjectView, sink: ChunkSink, root: Path | None = None) -> Iterator[dict[str, Any]]:
+def project_catalog(view: ProjectView, sink: ChunkSink, root: Path | None = None) -> Iterator[dict[str, Any]]:
     """The project's records; `root`, the project's directory, to find its SVG sketches."""
-    ix = view.ix
-    chunks_of: dict[str, list[str]] = defaultdict(list)  # element -> its section chunks, main first
-    for c in sink.chunks:
-        m = c["metadata"]
-        if m.get("element_id") and m["kind"].split(":")[0] in SECTION_KINDS and not m["kind"].startswith("generated"):
-            chunks_of[m["element_id"]].append(c["id"])
+    return _Catalog(view, sink, root).records()
 
-    def tagged_values(key: str) -> dict[str, str]:
+
+class _Catalog:
+    """`project_catalog`'s steps, sharing the model and each element's chunks (CQ-024R3)."""
+
+    def __init__(self, view: ProjectView, sink: ChunkSink, root: Path | None):
+        self.view, self.ix, self.root = view, view.ix, root
+        self.chunks_of: dict[str, list[str]] = defaultdict(list)  # element -> its section chunks, main first
+        for c in sink.chunks:
+            m = c["metadata"]
+            if m.get("element_id") and m["kind"].split(":")[0] in SECTION_KINDS and not m["kind"].startswith("generated"):
+                self.chunks_of[m["element_id"]].append(c["id"])
+        self.left_out: Counter[str] = Counter()
+        self.tables: Counter[str] = Counter()  # tables, matrices and maps: computed, or why not (plan CT)
+
+    def records(self) -> Iterator[dict[str, Any]]:
+        view = self.view
+        items = [rec for el in self.ix.elements.values() if (rec := self.item(el)) is not None]
+        rels = [{"type": "relationship", "key": r.id, "kind": r.kind, "source": self.ref(r.source),
+                 "target": self.ref(r.target),
+                 "phrase": (w.forward if (w := sem.wording(r.kind, r.metaclass)) else f"{r.kind} →")}
+                for r in view.rels if r.source in self.ix.elements and r.target in self.ix.elements]
+        summaries = self.summaries()
+        counts = Counter(r["type"] for r in items + rels + summaries)
+        yield {"type": "project", "name": view.content.name, "label": view.content.label, "token": view.content.token,
+               "saved_by": self.ix.exporter, "counts": dict(sorted(counts.items())),
+               "left_out": dict(sorted(self.left_out.items())), "tables": dict(sorted(self.tables.items()))}
+        yield from items
+        yield from rels
+        yield from summaries
+
+    def item(self, el: Element) -> dict[str, Any] | None:
+        """An element's record: a diagram, package, requirement or other element worth finding;
+        None for relationships (records of their own), what is out of scope, and what holds nothing
+        to find (counted in `left_out`)."""
+        ix = self.ix
+        if el.kind in sem.RELATIONSHIP_KINDS or el.kind in OUT_OF_SCOPE:
+            return None
+        rq = sem.requirement(ix, el)
+        doc = sem.documentation(ix, el)
+        if el.id in ix.diagrams:
+            rec = self.diagram(el)
+        elif el.kind in sem.PACKAGE_KINDS:
+            rec = {"type": "package", "kind": el.kind}
+        elif rq is not None:
+            rec = {"type": "requirement", "kind": "Requirement", "id": rq.id, "db": rq.db_id, "text": rq.text}
+        elif el.id in self.chunks_of or (el.name or "").strip() or doc:
+            rec = {"type": "element", "kind": sem.kind_word(ix, el)}
+        else:
+            self.left_out[el.kind] += 1
+            return None
+        pkg = self.view.package_of(el)
+        rec = {"key": el.id, **rec, "name": self.label(el.id), "where": ix.qualified_name(el.id),
+               "package": ix.qualified_name(pkg.id) if pkg else "", "stereotypes": ix.stereotype_names(el.id)}
+        if doc:
+            rec["text"] = (rec.get("text", "") + "\n\n" + doc).strip() if rec.get("text") else doc
+        rec["relations"] = self.relations(el.id)
+        if tagged := self.tagged_values(el.id):
+            rec["tagged"] = tagged
+        rec["diagrams"] = [self.ref(d) for d in self.view.diagrams_showing.get(el.id, []) if d != el.id]
+        if el.id in self.chunks_of:
+            rec["chunks"] = self.chunks_of[el.id]
+        elif (owner := self.listed_in(el.id)) is not None:
+            rec["listed_in"] = self.ref(owner)
+            rec["chunks"] = self.chunks_of[owner]
+        return rec
+
+    def diagram(self, el: Element) -> dict[str, Any]:
+        """A diagram's own fields: its kind, owner and shapes; a table's rows, or why not; its number
+        tags (TR-005); its sketches (plan KX-05)."""
+        ix, view = self.ix, self.view
+        d = ix.diagrams[el.id]
+        rec: dict[str, Any] = {"type": "diagram", "kind": d.diagram_type or "Diagram",
+                               "owner": self.ref(d.owner) if d.owner else None, "shapes": len(d.shown)}
+        if (t := view.table(el.id)) is not None:
+            rec["table"] = f"{len(t.rows)} rows"
+            self.tables["computed"] += 1
+        elif el.id not in view.layouts and (why := ct.not_computed(ix, el.id)) is not None:
+            rec["table"] = f"not computed: {why[0]}"
+            self.tables["not computed"] += 1
+        if (g := view.graph(el.id)) is not None:  # its number tags, for links at "[n]" in its text (TR-005)
+            tags = {str(n.num): n.view.element for n in g.nodes if n.view.element}
+            if tags:
+                rec["tags"] = tags
+        for a in (a for a in view.ann.get(el.id, []) if a.image):  # its sketch, and a large diagram's modules
+            if a.module is None:
+                rec["sketch"] = a.image
+                svg = a.image.removesuffix(".png") + ".svg"
+                if self.root is not None and (self.root / svg).is_file():
+                    rec["svg"] = svg
+            else:
+                rec.setdefault("modules", []).append(a.image)
+        return rec
+
+    def summaries(self) -> list[dict[str, Any]]:
+        """The LLM's annotations, each a record: what it is of, its label and text, its model."""
+        out = []
+        for el_id, anns in self.view.ann.items():
+            for a in anns:
+                if a.trace.derivation.method != "llm" or not a.text:
+                    continue
+                rec = {"type": "summary", "key": el_id, "of": self.ref(el_id), "label": a.label, "text": a.text,
+                       "model": a.trace.derivation.model}
+                if a.module is not None:
+                    rec["module"] = a.module
+                if a.parts is not None:
+                    rec["parts"] = list(a.parts)
+                out.append(rec)
+        return out
+
+    def tagged_values(self, key: str) -> dict[str, str]:
         """Its stereotypes' tagged values as people set them (plan SH, D2): "Stereotype.tag" to the
         values, references by their targets' labels. Not DiagramInfo's (authors and dates, which the
         tool keeps), nor a requirement's Id and Text, which are fields of their own."""
+        ix = self.ix
         out = {}
         for app in ix.applications(key):
             if app.name == sem.DIAGRAM_INFO:
@@ -66,105 +171,29 @@ def project_catalog(  # noqa: C901 (CQ-024: to be split)
                     out[f"{app.name}.{tag}"] = "; ".join(shown)
         return out
 
-    def label(key: str) -> str:
-        return one_line(sem.label(ix, key))
+    def label(self, key: str) -> str:
+        return one_line(sem.label(self.ix, key))
 
-    def ref(key: str) -> list[str]:
-        return [key, label(key)]
+    def ref(self, key: str) -> list[str]:
+        return [key, self.label(key)]
 
-    def relations(el_id: str) -> list[list[str]]:
+    def relations(self, el_id: str) -> list[list[str]]:
         out = []
-        for r in view.rels_by_end.get(el_id, []):
+        for r in self.view.rels_by_end.get(el_id, []):
             w = sem.wording(r.kind, r.metaclass)
             if r.source == el_id:
-                out.append([r.id, r.kind, "out", w.forward if w else f"{r.kind} →", *ref(r.target)])
+                out.append([r.id, r.kind, "out", w.forward if w else f"{r.kind} →", *self.ref(r.target)])
             if r.target == el_id:
-                out.append([r.id, r.kind, "in", w.inverse if w else f"{r.kind} ←", *ref(r.source)])
+                out.append([r.id, r.kind, "in", w.inverse if w else f"{r.kind} ←", *self.ref(r.source)])
         return out
 
-    def listed_in(el_id: str) -> str | None:
+    def listed_in(self, el_id: str) -> str | None:
+        """The nearest owner with a section of its own, which lists the element among its members."""
+        ix = self.ix
         owner = ix.elements[el_id].owner
-        while owner and owner not in chunks_of:
+        while owner and owner not in self.chunks_of:
             owner = ix.elements[owner].owner if owner in ix.elements else None
         return owner
-
-    records: list[dict[str, Any]] = []
-    left_out: Counter[str] = Counter()
-    tables: Counter[str] = Counter()  # tables, matrices and maps: computed, or why not (plan CT)
-    for el in ix.elements.values():
-        if el.kind in sem.RELATIONSHIP_KINDS or el.kind in OUT_OF_SCOPE:
-            continue
-        rq = sem.requirement(ix, el)
-        doc = sem.documentation(ix, el)
-        if el.id in ix.diagrams:
-            d = ix.diagrams[el.id]
-            rec: dict[str, Any] = {"type": "diagram", "kind": d.diagram_type or "Diagram",
-                                   "owner": ref(d.owner) if d.owner else None, "shapes": len(d.shown)}
-            if (t := view.table(el.id)) is not None:
-                rec["table"] = f"{len(t.rows)} rows"
-                tables["computed"] += 1
-            elif el.id not in view.layouts and (why := ct.not_computed(ix, el.id)) is not None:
-                rec["table"] = f"not computed: {why[0]}"
-                tables["not computed"] += 1
-            if (g := view.graph(el.id)) is not None:  # its number tags, for links at "[n]" in its text (TR-005)
-                tags = {str(n.num): n.view.element for n in g.nodes if n.view.element}
-                if tags:
-                    rec["tags"] = tags
-            images = [a for a in view.ann.get(el.id, []) if a.image]
-            for a in images:  # its sketch, and a large diagram's modules (plan KX-05)
-                if a.module is None:
-                    rec["sketch"] = a.image
-                    svg = a.image.removesuffix(".png") + ".svg"
-                    if root is not None and (root / svg).is_file():
-                        rec["svg"] = svg
-                else:
-                    rec.setdefault("modules", []).append(a.image)
-        elif el.kind in sem.PACKAGE_KINDS:
-            rec = {"type": "package", "kind": el.kind}
-        elif rq is not None:
-            rec = {"type": "requirement", "kind": "Requirement", "id": rq.id, "db": rq.db_id, "text": rq.text}
-        elif el.id in chunks_of or (el.name or "").strip() or doc:
-            rec = {"type": "element", "kind": sem.kind_word(ix, el)}
-        else:
-            left_out[el.kind] += 1
-            continue
-        pkg = view.package_of(el)
-        rec = {"key": el.id, **rec, "name": label(el.id), "where": ix.qualified_name(el.id),
-               "package": ix.qualified_name(pkg.id) if pkg else "", "stereotypes": ix.stereotype_names(el.id)}
-        if doc:
-            rec["text"] = (rec.get("text", "") + "\n\n" + doc).strip() if rec.get("text") else doc
-        rec["relations"] = relations(el.id)
-        if tagged := tagged_values(el.id):
-            rec["tagged"] = tagged
-        rec["diagrams"] = [ref(d) for d in view.diagrams_showing.get(el.id, []) if d != el.id]
-        if el.id in chunks_of:
-            rec["chunks"] = chunks_of[el.id]
-        elif (owner := listed_in(el.id)) is not None:
-            rec["listed_in"] = ref(owner)
-            rec["chunks"] = chunks_of[owner]
-        records.append(rec)
-    rels = [{"type": "relationship", "key": r.id, "kind": r.kind, "source": ref(r.source), "target": ref(r.target),
-             "phrase": (w.forward if (w := sem.wording(r.kind, r.metaclass)) else f"{r.kind} →")}
-            for r in view.rels if r.source in ix.elements and r.target in ix.elements]
-    summaries = []
-    for el_id, anns in view.ann.items():
-        for a in anns:
-            if a.trace.derivation.method != "llm" or not a.text:
-                continue
-            rec = {"type": "summary", "key": el_id, "of": ref(el_id), "label": a.label, "text": a.text,
-                   "model": a.trace.derivation.model}
-            if a.module is not None:
-                rec["module"] = a.module
-            if a.parts is not None:
-                rec["parts"] = list(a.parts)
-            summaries.append(rec)
-    counts = Counter(r["type"] for r in records + rels + summaries)
-    yield {"type": "project", "name": view.content.name, "label": view.content.label, "token": view.content.token,
-           "saved_by": ix.exporter, "counts": dict(sorted(counts.items())), "left_out": dict(sorted(left_out.items())),
-           "tables": dict(sorted(tables.items()))}
-    yield from records
-    yield from rels
-    yield from summaries
 
 
 # -- reading a tree's catalogs, for the exports ----------------------------------------------------

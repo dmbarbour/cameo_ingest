@@ -501,7 +501,10 @@
   split; **R2:** the architecture doc brought up to date as the refactors land; **R3:**
   `catalog.project_catalog` (39), the one of the four no other finding splits.
 - **R1 done (0.28.2):** in `pyproject.toml`; the fictional projects' builders exempt (test data).
-  `render_png`'s exception went with CQ-013.
+  `render_png`'s exception went with CQ-013, `diagram_graph.build`'s with CQ-014, `xmi`'s with
+  CQ-019.
+- **R3 done:** `catalog._Catalog`, a method a kind of record (as CQ-014's builder, for the same
+  reasons); the sketch tree the same. No function is over 25 now, and no `noqa: C901` is left.
 
 ## Leave alone
 
