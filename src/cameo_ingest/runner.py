@@ -24,7 +24,7 @@ from . import rootfiles, subjects
 from .archive import UnsupportedInput, discover
 from .config import ProjectOptions
 from .fingerprint import fingerprint
-from .llm import EnrichmentSession
+from .llm import GAPS, EnrichmentSession
 from .pipeline import ingest_project
 from .progress import Progress
 from .provenance import TOOL, ContentInfo, sha256_bytes, utc_now
@@ -34,6 +34,7 @@ from .treefiles import PROJECTS
 
 log = logging.getLogger(__name__)
 announce = logging.getLogger("cameo_ingest.progress")  # shown at any verbosity, like heartbeats
+GAP_BUILDS = 3  # builds in a row a project with gaps gets, so that a request failing every time stops (RN-006)
 
 WORK = ".work"
 
@@ -210,7 +211,7 @@ class Runner:
         """Contents without up-to-date output, grouped by an input to read them from:
         {input path: [(content sha256, input sha256)]}."""
         by_input: dict[str, list[tuple[str, str]]] = defaultdict(list)
-        for sha in self.state.stale_contents(TOOL, self.opt_hash):
+        for sha in self.state.stale_contents(TOOL, self.opt_hash, GAP_BUILDS):
             where = next((s for s in self.state.sightings(sha) if s["input_status"] == "done"), None)
             if where is not None:  # otherwise only seen in missing or old inputs: nothing to read
                 by_input[where["path"]].append((sha, where["input_sha256"]))
@@ -220,8 +221,10 @@ class Runner:
         todo = self.todo()
         total = sum(len(items) for items in todo.values())
         resumed = self.state.count_projects("working", TOOL, self.opt_hash)
-        announce.info("%d project(s) to build%s, %d up to date", total, f" ({resumed} resumed)" if resumed else "",
-                      self._current_written())
+        again = self.state.with_gaps(self.opt_hash, GAP_BUILDS)
+        notes = [f"{resumed} resumed"] * bool(resumed) + [f"{again} again, for items the LLM left without text"] * bool(again)
+        announce.info("%d project(s) to build%s, %d up to date", total, f" ({'; '.join(notes)})" if notes else "",
+                      self._current_written() - again)
         if not total:
             return
         with self.progress.phase("projects", total, "project") as ph:
@@ -256,6 +259,7 @@ class Runner:
         if work.exists() and not resumable:
             shutil.rmtree(work)
         self.state.set_project(sha, "working", tool=TOOL, options_hash=self.opt_hash, error=None)
+        asked = len(self.llm.incomplete)
         try:
             result = ingest_project(content, project, work, self.llm, render=self.options.render,
                                     progress=self.progress, concurrency=self.concurrency,
@@ -276,6 +280,10 @@ class Runner:
             final.rename(old)
         work.rename(final)
         self.state.publish(sha, TOOL, self.opt_hash, result.summary, files)
+        gaps = sum(1 for x in self.llm.incomplete[asked:] if x["outcome"] in GAPS)
+        self.state.set_gaps(sha, self.opt_hash, gaps)
+        if gaps:
+            log.info("%s: %d item(s) left without generated text; a later run asks again", content.name, gaps)
         if old.exists():
             shutil.rmtree(old)
         self.written.append(sha)
@@ -311,6 +319,8 @@ def status(state: State) -> dict[str, Any]:
             "recovered": [{"token": f"sha256:{r['content_sha256']}", "name": r["name"], "entries": rec}
                           for r in state.written()
                           if (rec := json.loads(r["summary"] or "{}").get("recovered"))],
+            "gaps": [{"token": f"sha256:{r['content_sha256']}", "name": r["name"], "items": r["items"],
+                      "builds": r["builds"], "again": r["builds"] < GAP_BUILDS} for r in state.gaps()],
         },
         "subjects": subjects.summary(state.out),
         "calibrations": [{"model": r["model"], "kind": r["kind"], "endpoint": r["endpoint"], "created": r["created"],

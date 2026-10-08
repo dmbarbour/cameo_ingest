@@ -197,8 +197,10 @@ ADR-0010 (`llm.py`, `sqlite_cache.py`).
 - **The session,** `EnrichmentSession`:
   - a call budget (the tree's setting `max-calls`, none by default);
   - a breaker that switches enrichment off after 3 consecutive failures;
-  - outcomes (`answered`, `cached`, `replayed`, `skipped_*`, `failed`, `truncated_input`) for
-    `run.json`;
+  - outcomes (`answered`, `cached`, `replayed`, `skipped_*`, `failed`, `empty`, `partial`,
+    `broken_off`, `truncated_input`) for `run.json`; those in `llm.GAPS` leave an item without
+    text, and its project is built again by the next run, up to 3 builds in a row
+    (`runner.GAP_BUILDS`, the tree's `gaps` table; RN-006);
   - the image's place: the call's, then the calibrated, then the template's (ADR-0015).
 
   A replayed answer bypasses the store, the budget and the breaker. A failed write to the store is

@@ -47,6 +47,9 @@ log = logging.getLogger(__name__)
 PREFLIGHT_PROMPT = "Reply with the single word OK."
 MAX_CONSECUTIVE_FAILURES = 3  # then enrichment is switched off for the run (BASE-006)
 STORE_FILE = "llm.sqlite"
+# Outcomes that leave an item without the text a later run may get: its project is built again
+# (RN-006). Not "partial": an answer cut by a limit is kept, as the model's in the time allowed.
+GAPS = frozenset({"failed", "skipped_budget", "skipped_disabled", "empty", "broken_off"})
 
 
 TIMEOUT = 120  # seconds without a word, the first included (RN-004)

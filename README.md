@@ -139,8 +139,9 @@ keyed by endpoint, model and a hash of the request, so re-runs are cheap and rep
 response is committed on its own. A failed request is logged and skipped, and never fails the
 ingest; after 3 consecutive failures, enrichment is switched off for the rest of the run.
 `run.json` reports the calls made and, for every item left without generated text, why
-(failed, budget, switched off, empty answer), plus how many inputs were cut short to fit the
-prompt. Generated text is only reproducible
+(failed, budget, switched off, empty answer, broken off), plus how many inputs were cut short to
+fit the prompt. A project with such items is built again by the next run, which asks only for
+what is missing (the rest is stored), up to 3 builds in a row; `status` lists them. Generated text is only reproducible
 while the store is kept: a fresh store gets fresh answers from the model.
 
 ### Progress, logs and speed

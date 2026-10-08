@@ -20,8 +20,8 @@ from .provenance import utc_now
 
 STATE_FILE = "state.sqlite"
 LOCK_FILE = "state.lock"
-SCHEMA_VERSION = 5  # 2: fingerprints and removed (plan PV); 3: calibrations (plan VA); 4: their kind (plan TC);
-# 5: id_marks, each id's maker and day (plan LN-01)
+SCHEMA_VERSION = 6  # 2: fingerprints and removed (plan PV); 3: calibrations (plan VA); 4: their kind (plan TC);
+# 5: id_marks, each id's maker and day (plan LN-01); 6: gaps (RN-006)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -62,6 +62,15 @@ CREATE TABLE IF NOT EXISTS projects (
     status TEXT NOT NULL CHECK (status IN ('pending', 'working', 'written', 'failed')),
     tool TEXT, options_hash TEXT,                 -- what the output (or work in progress) was made with
     summary TEXT, error TEXT, updated TEXT NOT NULL
+);
+
+-- Projects written with items the LLM left without text (failed, over the budget, switched off,
+-- empty, broken off), so that a later run builds them again and asks for what is missing (RN-006).
+CREATE TABLE IF NOT EXISTS gaps (
+    content_sha256 TEXT PRIMARY KEY REFERENCES projects(content_sha256) ON DELETE CASCADE,
+    options_hash TEXT NOT NULL,                   -- the options of the builds counted
+    items INTEGER NOT NULL,                       -- left without text by the last build
+    builds INTEGER NOT NULL                       -- builds in a row with gaps, under these options
 );
 
 CREATE TABLE IF NOT EXISTS files (
@@ -311,13 +320,38 @@ class State:
         return self.db.execute("SELECT 1 FROM sightings WHERE input_id = ? AND input_sha256 = ? LIMIT 1",
                                (input_id, input_sha256)).fetchone() is not None
 
-    def stale_contents(self, tool: str, options_hash: str) -> list[str]:
-        """Contents whose output is missing, failed or unfinished, or made by another tool or options."""
+    def stale_contents(self, tool: str, options_hash: str, gap_builds: int = 0) -> list[str]:
+        """Contents whose output is missing, failed or unfinished, or made by another tool or
+        options; or, made with these options, with gaps after fewer than `gap_builds` builds."""
         return [r[0] for r in self.db.execute(
             "SELECT c.sha256 FROM contents c LEFT JOIN projects p ON p.content_sha256 = c.sha256 "
-            "WHERE (p.status IS NULL OR p.status != 'written' OR p.tool != ? OR p.options_hash != ?) "
+            "WHERE (p.status IS NULL OR p.status != 'written' OR p.tool != ? OR p.options_hash != ? "
+            "       OR c.sha256 IN (SELECT content_sha256 FROM gaps WHERE options_hash = ? AND builds < ?)) "
             "AND c.sha256 NOT IN (SELECT content_sha256 FROM removed) "
-            "ORDER BY c.name, c.sha256", (tool, options_hash))]
+            "ORDER BY c.name, c.sha256", (tool, options_hash, options_hash, gap_builds))]
+
+    def with_gaps(self, options_hash: str, gap_builds: int) -> int:
+        """Written projects with gaps, made with these options, to be built again."""
+        return self.db.execute("SELECT count(*) FROM gaps g JOIN projects p ON p.content_sha256 = g.content_sha256 "
+                               "WHERE p.status = 'written' AND g.options_hash = ? AND g.options_hash = p.options_hash "
+                               "AND g.builds < ?", (options_hash, gap_builds)).fetchone()[0]
+
+    def gaps(self) -> list[sqlite3.Row]:
+        """Written projects with items the LLM left without text, by name (RN-006)."""
+        return self.db.execute(
+            "SELECT g.*, c.name FROM gaps g JOIN projects p ON p.content_sha256 = g.content_sha256 "
+            "JOIN contents c ON c.sha256 = g.content_sha256 WHERE p.status = 'written' "
+            "AND g.options_hash = p.options_hash ORDER BY c.name, c.sha256").fetchall()
+
+    def set_gaps(self, sha256: str, options_hash: str, items: int) -> None:
+        """A build's gaps: counted in a row under the same options, or cleared when there are none."""
+        if not items:
+            self.db.execute("DELETE FROM gaps WHERE content_sha256 = ?", (sha256,))
+            return
+        self.db.execute("INSERT INTO gaps VALUES (?, ?, ?, 1) ON CONFLICT (content_sha256) DO UPDATE SET "
+                        "items = excluded.items, builds = CASE WHEN options_hash = excluded.options_hash "
+                        "THEN builds + 1 ELSE 1 END, options_hash = excluded.options_hash",
+                        (sha256, options_hash, items))
 
     def count_projects(self, status: str, tool: str, options_hash: str) -> int:
         return self.db.execute("SELECT count(*) FROM projects WHERE status = ? AND tool = ? AND options_hash = ?",

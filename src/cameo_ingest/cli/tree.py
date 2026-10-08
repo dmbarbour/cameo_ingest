@@ -195,6 +195,10 @@ def print_status(state: State, as_json: bool) -> None:
             print(f"  expected quality: {one_line(c['validation'])}")
     for p in s["projects"]["failed"]:
         print(f"  failed: {p['name']} {p['token'][:23]} ({p['error']})")
+    for p in s["projects"]["gaps"]:
+        print(f"  without some generated text: {p['name']} {p['token'][:23]} ({p['items']} item(s); "
+              + ("the next run with the LLM asks again)" if p["again"] else
+                 f"{p['builds']} builds in a row: built again when the options change)"))
     sub = s.get("subjects") or {}
     if sub.get("families"):
         parts = [f"{n} {w}" for w, n in sub.items() if w not in ("families", "topics")]

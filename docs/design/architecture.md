@@ -65,7 +65,7 @@ export ─► catalog.export_inputs (lineage facts, shared items, labels, subjec
 ## State and publishing
 
 `state.sqlite` is the authority (ADR-0002). Its tables are below, with two views: `current_sightings`
-and `project_status`. Schema version 5 is migrated in place, and a newer schema is refused.
+and `project_status`. Schema version 6 is migrated in place, and a newer schema is refused.
 
 | Table | Holds |
 |---|---|
@@ -74,6 +74,7 @@ and `project_status`. Schema version 5 is migrated in place, and a newer schema 
 | `contents` | One row per project content: sha256, the name it was first seen under, kind, size |
 | `sightings` | Where each content was found: input version and archive chain |
 | `projects` | Each project's state: status, tool, options hash, summary |
+| `gaps` | Written projects with items the LLM left without text, and how many builds in a row had them: built again, up to 3 (RN-006). Schema 6 |
 | `files` | Each written project's files, with their sha256 (the manifest's source) |
 | `runs` | Each run's command, times, outcome and LLM report |
 | `settings` | The tree's settings, set by `cameo-ingest config` (only those that differ from the defaults) |

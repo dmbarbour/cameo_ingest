@@ -145,6 +145,11 @@
     are asked; the cost is the project's build. A request that always fails would rebuild its
     project every run: limited to 3 builds with gaps per project and options.
   - Chosen: the second.
+- **Done:** R1. `state.gaps` (schema 6), `State.set_gaps`, `gaps`, `with_gaps`, and
+  `stale_contents(..., gap_builds)`; `runner.GAP_BUILDS` (3) and `llm.GAPS` (the outcomes that
+  count: failed, budget, switched off, empty, broken off); `build` announces the projects built
+  again; `status` lists them. Test: `test_items_left_without_text_are_asked_for_again` (failing
+  three builds, then left; answered on the next, with only the 4 missing requests sent).
 
 ## Remediation plan
 
