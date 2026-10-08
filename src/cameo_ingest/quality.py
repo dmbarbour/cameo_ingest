@@ -63,7 +63,7 @@ def _reference(out: Path, rel: str, model: str, response: str) -> str:
     if not path.is_file():
         return ""
     text = _strip_front_matter(path.read_text(encoding="utf-8"))
-    # Under whatever label it appears (emit.annotation_md): "Summary", "Summary of parts 1 to 3", ...
+    # Under whatever label it appears (model_sections.Sections.annotation): "Summary", "Summary of parts 1 to 3", ...
     answer = re.compile(r"\*\*[^*\n]+\*\* " +
                         re.escape(f"_({generated_by(Derivation('llm', model=model))})_:\n\n{response}\n"))
     return answer.sub("", text)

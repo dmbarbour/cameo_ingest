@@ -29,6 +29,7 @@ from .files import FilePlan
 from .layout import Layout
 from .ledger import LedgerWriter
 from .model import ModelIndex
+from .model_sections import Sections
 from .pages import PageWriter
 from .provenance import ContentInfo
 from .sink import ChunkSink
@@ -46,7 +47,8 @@ class ProjectWriter:
         self.view = ProjectView(content, project, ix, layouts, modules)
         self.plan = FilePlan(self.view)
         self.sink = ChunkSink(self.view)
-        self.pages = PageWriter(self.view, self.plan, self.sink, root)
+        self.sections = Sections(self.view)
+        self.pages = PageWriter(self.view, self.plan, self.sink, root, self.sections)
         self.tables = TableWriter(self.view, self.plan, self.sink, root)
 
     def write_steps(self) -> int:

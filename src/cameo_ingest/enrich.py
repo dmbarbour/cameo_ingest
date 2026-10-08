@@ -26,6 +26,7 @@ from .annotations import Annotation
 from .files import FilePlan
 from .llm import EnrichmentSession
 from .model import Element
+from .model_sections import Sections
 from .partition import Partition, sequence_partition
 from .progress import Progress
 from .prompt_values import Level
@@ -175,6 +176,7 @@ class Enricher:
         self.llm, self.view, self.plan, self.annotations = llm, view, plan, view.ann
         self.ix, self.content, self.root, self.image_pixels = view.ix, view.content, root, image_pixels
         self.part_chars = part_chars  # the largest input of package text (plan TC)
+        self.sections = Sections(view)
         self.images: dict[str, tuple[str, Derivation]] = {}
         self.truncated = 0  # LLM inputs cut short to fit the prompt
         self._first: list[Request] = []
@@ -243,8 +245,8 @@ class Enricher:
                 continue
             # Plain text, without link targets or trace lines (AR-018): the prompt, and so the
             # cached answer, depends only on the model's content, not on where it was found.
-            own = view.section_view(pkg, generated=False).text()
-            texts = [view.section_view(e, generated=False).text() for e in sections]
+            own = self.sections.element(pkg, generated=False).text()
+            texts = [self.sections.element(e, generated=False).text() for e in sections]
             tr = view.trace(pkg)
             text = "\n\n".join([own, *texts])
             ask = partial(llm.ask, project=self.content.token, inputs=(tr.locator(),))

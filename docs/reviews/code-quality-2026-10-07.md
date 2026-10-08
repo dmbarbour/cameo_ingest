@@ -334,6 +334,16 @@
   lines of section building attached.
 - **CQ-016R1:** a sections module building both kinds (and members, tagged values, table
   configuration, annotations); the view keeps its indexes.
+- **Weighed:** (a) a module that builds sections from the model, an element's and a diagram's,
+  the writer only rendering and sending chunks; (b) the view building the diagram's too, beside
+  the element's (consistent the other way, but the view grows towards doing everything); (c) leave
+  it. (a).
+- **Done:** `model_sections.Sections` (`element`, `diagram`, `annotation`, members, tagged values,
+  table configuration, what shapes hold, a table's rows), made by `ProjectWriter` and the enricher;
+  `PageWriter.write_diagram` renders and chunks; one rendering of an annotation, for sections and
+  for pages; the `files` ↔ `view` cycle gone with the view's last import of `files`. The comparison
+  tree with sketches (168) is the same; a slip in the move (an element's generated annotations),
+  which that tree has none of, was caught by the tests.
 
 #### CQ-017: `pipeline.ingest_project` mixes jobs, and works by an aliasing accident
 

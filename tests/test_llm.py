@@ -479,7 +479,7 @@ def test_every_template_filled_by_its_builder():
         pkg = next(e for e in ix.elements.values() if e.kind == "Package" and any(
             c.kind == "InstanceSpecification" for c in w.view.sections_in(e)))
         sections = w.view.sections_in(pkg)
-        own, texts = w.view.section_view(pkg).text(), [w.view.section_view(e).text() for e in sections]
+        own, texts = w.sections.element(pkg).text(), [w.sections.element(e).text() for e in sections]
         filled = {
             "diagram-description": pv.diagram_description(ix, g, d),
             "module-description": pv.module_description(ix, part, 1, d),

@@ -3,32 +3,29 @@ embedded images (plan RA-13, AR-007R1)."""
 
 from __future__ import annotations
 
-import re
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from . import cameo_tables as ct
-from . import diagram_graph as dg
 from . import diagram_text as dt
 from . import hierarchies
-from . import sections as sx
 from . import semantics as sem
 from . import threads as threads_mod
-from .annotations import Annotation
 from .external import library_name
-from .files import FilePlan, relpath
+from .files import FilePlan
 from .model import Element
+from .model_sections import Sections
 from .partition import Partition
 from .provenance import Derivation, Trace, generated_by
 from .sink import ChunkSink, about
-from .text import front_matter, md_inline, plural, tidy
+from .text import front_matter, md_inline, plural
 from .view import ProjectView
 
 
 class PageWriter:
-    def __init__(self, view: ProjectView, plan: FilePlan, sink: ChunkSink, root: Path):
+    def __init__(self, view: ProjectView, plan: FilePlan, sink: ChunkSink, root: Path, sections: Sections | None = None):
         self.view, self.plan, self.sink, self.root = view, plan, sink, root
+        self.sections = sections or Sections(view)
 
     # -- writing ---------------------------------------------------------------
     def write_text(self, rel: str, text: str) -> None:
@@ -41,18 +38,10 @@ class PageWriter:
         """Markdown for one element. `generated=False` omits LLM-derived annotations, so
         chunks of extracted text keep a pure `extracted` provenance. `trace=False` omits the
         trace line, whose locator depends on where the source was found, not on what it says."""
-        lines = self.view.section_view(el, generated, from_file).markdown(level, self.plan.linker(from_file))
+        lines = self.sections.element(el, generated, from_file).markdown(level, self.plan.linker(from_file))
         if trace:
             lines += [f"<sub>trace: `{self.view.trace(el).locator()}`</sub>", ""]
         return "\n".join(lines)
-
-    def annotation_md(self, a: Annotation, from_file: str) -> list[str]:
-        out = []
-        if a.image:
-            out += [f"![{a.label}]({relpath(a.image, from_file)})", ""]
-        if a.text:
-            out += [f"**{a.label}** _({generated_by(a.trace.derivation)})_:", "", tidy(a.text), ""]
-        return out
 
     def write_images(self, images: list[tuple[str, str, Trace]], described: dict[str, tuple[str, Derivation]],
                      base: Trace) -> None:
@@ -91,7 +80,7 @@ class PageWriter:
             body += [f"- {self.plan.link(d.id, rel)}" for d in dias]
             body.append("")
         pkg_trace = self.view.trace(pkg)
-        self.sink.section_chunks("package", pkg, self.view.section_view(pkg, generated=False), rel, pkg_trace,
+        self.sink.section_chunks("package", pkg, self.sections.element(pkg, generated=False), rel, pkg_trace,
                             heading=self.view.heading(pkg, "Package"), extra={"title": f"Package {qn}"})
         self.sink.generated_chunks(pkg, rel, "Package")
         # Every non-package section element whose nearest package is this one.
@@ -99,7 +88,7 @@ class PageWriter:
             body += [f'<a id="{self.plan.anchor(el)}"></a>\n', self.section(el, rel, 2)]
             anchor = f"{rel}#{self.plan.anchor(el)}"
             self.sink.section_chunks("requirement" if sem.is_requirement(ix, el) else "element", el,
-                                self.view.section_view(el, generated=False), anchor, self.view.trace(el))
+                                self.sections.element(el, generated=False), anchor, self.view.trace(el))
             self.sink.generated_chunks(el, anchor)
         fm = front_matter({
             "title": f"Package {qn}",
@@ -133,7 +122,7 @@ class PageWriter:
             else:
                 anchor, title = f"parts-{first}-{last}", f"Parts {first} to {last} of {len(parts)}"
                 lines += [f'<a id="{anchor}"></a>', "", f"**{title}** ({plural(len(ids), 'element')}):", ""]
-            lines += self.annotation_md(a, rel)
+            lines += self.sections.annotation(a, rel).markdown(self.plan.linker(rel))
             if a.trace.derivation.method != "llm" or not a.text:
                 continue
             heading = self.sink.generated_heading(a, pkg, "Package", title[0].lower() + title[1:],
@@ -149,62 +138,9 @@ class PageWriter:
         d = ix.diagrams[dia_id]
         el = ix.elements[dia_id]
         qn = ix.qualified_name(dia_id)
-        fields: list[tuple[str, sx.Line]] = [("Diagram type", sx.line(d.diagram_type or "unknown"))]
-        if d.uml_type and d.uml_type != d.diagram_type:
-            fields.append(("UML diagram kind", sx.line(d.uml_type)))
-        if d.owner:
-            fields.append(("Owner / context", sx.line(self.view.ref(d.owner))))
-        fields.append(("Qualified name", sx.line(sx.Span(qn, "code"))))
-        for app in ix.applications(dia_id, sem.DIAGRAM_INFO):  # author and dates
-            for k, vals in app.tags.items():
-                fields.append((k.replace("_", " "), sx.line(", ".join(vals))))
-        blocks = []
-        doc = sem.documentation(ix, el)
-        if doc:
-            blocks.append(sx.Block("Documentation", [sx.line(tidy(doc))]))
-        layout = self.view.layouts.get(dia_id)
         graph = self.view.graph(dia_id)
         part = self.view.partition(dia_id)
-        if graph is not None:
-            where = (lambda n: f" (M{part.module_of[n.num]})") if part else None
-            nodes, edges = dt.describe(ix, graph, self.plan.refs(rel), where=where)
-            if part:
-                blocks.append(sx.Block("Modules", [sx.line(
-                    "the diagram is large, so its shapes are grouped into modules of connected shapes drawn close "
-                    "together, each drawn and described on its own below. The legend gives each shape's module.")],
-                    label=f"**Modules ({len(part.modules)}):**", form="inline"))
-            shapes = f"Shapes ({len(nodes)}), numbered as in the sketch and indented by nesting"
-            blocks.append(sx.Block(shapes, [sx.markdown_line(n) for n in nodes], form="list"))
-            blocks.append(sx.Block("Connections", [sx.markdown_line(e) for e in edges], form="list",
-                                   label=f"**Connections ({len(edges)}):**"))
-            inside = self.inside_block(dia_id, graph)
-            if inside is not None:
-                blocks.append(inside)
-        tbl = [sx.line(t) for t in self.view.table_config(el)]
-        table = ct.computed_kind(d.diagram_type)  # a table, a matrix or a map
-        computed = self.view.table(dia_id)
-        if computed is not None:  # a table, computed as Cameo shows it (plan CT)
-            blocks += self.table_blocks(computed)
-        elif table:
-            missing = ct.not_computed(ix, dia_id) if layout is None else None
-            relates = ct.describe_matrix(ix, dia_id)  # a matrix: what it relates, in words (ADR-0025)
-            if missing is not None:  # what isn't shown, and why: said, not guessed at (plan CT)
-                follows = " What it relates follows." if relates else " Its configuration follows."
-                blocks.append(sx.Block("Not computed", [sx.line(missing[1] + follows)]))
-            if relates:
-                blocks.append(sx.Block("Matrix", [sx.line(relates)]))
-            else:
-                blocks.append(sx.Block("Table / matrix configuration", tbl, form="list", label=(
-                    "**Table / matrix configuration** (Cameo computes the rows and cells from it when it shows the "
-                    "table):")))
-        else:
-            blocks.append(sx.Block("Stereotypes and tagged values", tbl, form="list"))
-        if d.shown and layout is None and computed is None:
-            shown = f"Elements shown when last saved ({len(d.shown)})" if table else f"Elements shown ({len(d.shown)})"
-            blocks.append(sx.Block("Elements shown", [sx.line(
-                f"- {ix.elements[e].kind} {' '.join(f'«{s}»' for s in ix.stereotype_names(e)) + ' ' if ix.stereotype_names(e) else ''}",
-                self.view.ref(e)) for e in d.shown], form="list", label=f"**{shown}:**"))
-        view = sx.Section(sx.line("Diagram: ", sx.name(d.name or dia_id)), fields, blocks)
+        view = self.sections.diagram(dia_id, self.plan.refs(rel))
         lines = view.markdown(1, self.plan.linker(rel))
         tr = self.view.trace(el)
         trace_line = [f"<sub>trace: `{tr.locator()}`</sub>", ""]
@@ -214,7 +150,7 @@ class PageWriter:
         self.sink.generated_chunks(el, rel, self.view.diagram_kind(dia_id))
         for a in self.view.ann.get(dia_id, []):
             if a.module is None:
-                lines += self.annotation_md(a, rel)
+                lines += self.sections.annotation(a, rel).markdown(self.plan.linker(rel))
         if part is not None and graph is not None:
             lines += self.module_sections(el, part, rel)
         text = "\n".join(lines + trace_line)
@@ -227,63 +163,6 @@ class PageWriter:
             "provenance": self.view.file_provenance(trace=tr.to_dict(), layout_streams=d.streams),
         })
         self.write_text(rel, fm + text)
-
-    def inside_block(self, dia_id: str, graph: dg.DiagramGraph) -> sx.Block | None:
-        """What the diagram shows inside its shapes (plan IS): under each shape's (or line's) legend
-        number, what it holds, by kind; then how many more Cameo lists as used without an owner
-        drawn here, counted, not shown."""
-        ix = self.view.ix
-        inside, unchecked = self.view.inside_shapes(dia_id)
-        if not inside and not unchecked:
-            return None
-
-        def name(e: Element) -> str:
-            if e.kind == "Trigger":
-                return sem.trigger_text(ix, e) or sem.label(ix, e.id)
-            return sem.label(ix, e.id) + ("()" if e.kind == "Operation" else "")
-
-        lines = []
-        for holder, els in inside:
-            if isinstance(holder, dg.Node):
-                head: list[sx.Span | str] = [f"[{holder.num}] ", sx.name(holder.label)]
-            else:
-                ends = [graph.node(v)
-                        for v in (holder.source, holder.target)]
-                head = [f"{holder.view.cls} " + " → ".join(f"[{n.num}]" if n else "?" for n in ends)]
-            groups: dict[str, list[str]] = {}
-            for e in els:
-                groups.setdefault(kinds_word(e.kind), []).append(name(e))
-            spans: list[sx.Span | str] = ["- ", *head, ": "]
-            for k, (kind, names) in enumerate(groups.items()):
-                spans += ["; " if k else "", f"{kind} ", sx.name(", ".join(dict.fromkeys(names)))]
-            lines.append(sx.line(*spans))
-        if unchecked:
-            lines.append(sx.line(f"- and {unchecked} more that Cameo lists as used, whose owners aren't drawn here"))
-        return sx.Block("Shown inside its shapes", lines, form="list", detail=True)
-
-    def table_blocks(self, t: ct.Table) -> list[sx.Block]:
-        """A computed table: what it shows, in a sentence or two, then its rows (plan CT)."""
-        ix = self.view.ix
-        about = [f"Columns: {', '.join(c.header for c in t.columns)}."]
-        if t.sort:
-            about.append(f"Sorted by {t.sort}.")
-        if t.row_types:
-            about.append(f"Row types: {', '.join(t.row_types)}.")
-        if t.scope:
-            about.append(f"Scope: {', '.join(ix.qualified_name(s) for s in t.scope)}.")
-        about.append(f"Rows: {len(t.rows)}, as the table lists them.")
-        if t.not_computed:
-            about.append(f"Not computed here (Cameo computes them): {', '.join(t.not_computed)}.")
-
-        def cell(values: list[ct.Value]) -> sx.Line:
-            spans: list[sx.Span | str] = []
-            for k, v in enumerate(values):
-                spans += (["; "] if k else []) + [sx.ref(v.ref, v.text) if v.ref else sx.name(v.text)]
-            return sx.line(*spans)
-
-        return [sx.Block("Table", [sx.line(" ".join(about))]),
-                sx.Block("Rows", [], label=f"**Rows ({len(t.rows)}):**", form="table", detail=True,
-                         columns=[c.header for c in t.columns], rows=[[cell(c) for c in row] for row in t.cells])]
 
     def module_sections(self, el: Element, part: Partition, rel: str) -> list[str]:
         """A section per module of a large diagram: its sketch, description, legend and
@@ -298,7 +177,7 @@ class PageWriter:
             lines += [f'<a id="{anchor}"></a>', "", f"## {title}", ""]
             anns = [a for a in self.view.ann.get(el.id, []) if a.module == m.num]
             for a in anns:
-                lines += self.annotation_md(a, rel)
+                lines += self.sections.annotation(a, rel).markdown(self.plan.linker(rel))
             legend, inside, edge = dt.module_lists(ix, part, m.num, self.plan.refs(rel))
             lines += [f"**Shapes ({len(legend)}):**"] + legend + [""]
             if inside:
@@ -393,12 +272,3 @@ class PageWriter:
                            "provenance": self.view.file_provenance(trace=tr.to_dict())})
         self.write_text("README.md", fm + text)
 
-
-def kinds_word(kind: str) -> str:
-    """A metaclass as a plural, for a list of them: "Property" → "properties", "ConnectorEnd" →
-    "connector ends"."""
-    words = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", kind).lower().split()
-    last = words[-1]
-    last = last[:-1] + "ies" if last.endswith("y") and last[-2:-1] not in "aeiou" else \
-        last + "es" if last.endswith(("s", "x", "ch")) else last + "s"
-    return " ".join([*words[:-1], last])
