@@ -758,9 +758,10 @@ def print_status(state: State, as_json: bool) -> None:
         print(f"  failed: {p['name']} {p['token'][:23]} ({p['error']})")
     sub = s.get("subjects") or {}
     if sub.get("families"):
-        parts = [f"{n} {w}" for w, n in sub.items() if w != "families"]
+        parts = [f"{n} {w}" for w, n in sub.items() if w not in ("families", "topics")]
         print(f"subjects: {sub['families']} famil{'y' if sub['families'] == 1 else 'ies'} of versions ({', '.join(parts)})"
-              + ("; a run asks again for those failed or incomplete" if sub.get("failed") or sub.get("incomplete") else ""))
+              + ("; a run asks again for those failed or incomplete" if sub.get("failed") or sub.get("incomplete") else "")
+              + (f"; topics across models: {sub['topics']}" if sub.get("topics") else ""))
     for p in s["projects"]["recovered"]:
         n = sum(e["names"] for e in p["entries"].values())
         first = next(iter(p["entries"].values()))["first"]

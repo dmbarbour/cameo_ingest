@@ -629,3 +629,32 @@ SUBJECTS_ASSIGN = Template(
     slots=(Slot("SUBJECTS", "text", "the way's subjects, numbered: label, and what each holds."),
            Slot("DIAGRAMS", "text", "at most 30 diagrams, numbered, cut by package: name, owner, kind, about text.")),
 )
+
+# Topics across models (plan SB CP4): asked at the root after the families' subjects, over every
+# family's subjects in its suggested view. Outside CURRENT, as the subjects' templates are.
+TOPICS_PROPOSE = Template(
+    id="topics-propose", version=1,
+    purpose="Topics that cut across a collection of models, from each model's subjects (plan SB CP4).",
+    text=("Below are the subjects of {{MODELS}} systems engineering models (UML/SysML, authored in Cameo), each "
+          "model's diagrams already organized into a few subjects. A person wants to discover what the collection "
+          "covers, and to find what different models hold on the same thing together. Propose about {{K}} topics "
+          "that cut across the models: each topic should gather subjects of several models where it can, and every "
+          "subject should fit one topic. Give each topic a label of 2 to 5 words and one sentence on what it "
+          "holds.\n\nSubjects (label, model: what it holds):\n{{SUBJECTS}}\n\n"
+          "Reply with JSON only: {\"topics\": [{\"label\": \"...\", \"holds\": \"...\"}, ...]}."),
+    slots=(Slot("MODELS", "text", "how many models (families of versions) the subjects come from."),
+           Slot("K", "text", "about how many topics: the square root of half the subjects, 2 to 15."),
+           Slot("SUBJECTS", "text", "every subject, a line each: label, model, what it holds (cut short); at "
+                                    "most 400, spread over the collection.")),
+)
+
+TOPICS_ASSIGN = Template(
+    id="topics-assign", version=1,
+    purpose="Put each of a batch of models' subjects in one topic across models (plan SB CP4).",
+    text=("Subjects of several systems engineering models are being gathered into these topics:\n{{TOPICS}}\n\n"
+          "Put each subject below in the one topic it fits best.\n\n{{SUBJECTS}}\n\n"
+          "Reply with JSON only, the topic's number for every subject's number: {\"1\": 3, \"2\": 1, ...}."),
+    slots=(Slot("TOPICS", "text", "the topics, numbered: label, and what each holds."),
+           Slot("SUBJECTS", "text", "at most 30 subjects, numbered: label, model, what it holds, and three of "
+                                    "its diagrams.")),
+)

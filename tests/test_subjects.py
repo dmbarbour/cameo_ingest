@@ -57,6 +57,11 @@ class FakeLLM:
             ways = [{"principle": p, "subjects": [{"label": f"{p} one", "holds": "x"}, {"label": f"{p} two", "holds": "y"}]}
                     for p in ("By part", "By activity", "By concern")]
             return (json.dumps({"ways": ways}), None)
+        if template.id == "topics-propose":
+            return (json.dumps({"topics": [{"label": "Topic one", "holds": "x"}, {"label": "Topic two", "holds": "y"}]}), None)
+        if template.id == "topics-assign":
+            n = values["SUBJECTS"].count("\n") + 1
+            return (json.dumps({str(i): 1 + i % 2 for i in range(1, n + 1)}), None)
         self.batch += 1
         if self.fail == self.batch:
             return None
@@ -117,6 +122,11 @@ def test_subjects_and_their_fallbacks(versions_tree, tmp_path):
     assert any(len(versions) == 2 for versions in f["diagrams"].values())
     small = fams["Kestrel_Orchard_Irrigation.mdzip"]
     assert small["ways"] == "too few diagrams" and [v["id"] for v in small["views"]] == ["packages"]
+    topics = subjects.load_topics(out)  # across the two families: by words, with no LLM
+    assert topics["ways"] == "not asked" and [v["id"] for v in topics["views"]] == ["words"]
+    every = sorted(f"{r['tokens'][0]}/{n}" for r in fams.values()
+                   for n, _ in enumerate(next(v for v in r["views"] if v["id"] == r["default"])["subjects"]))
+    assert sorted(i for t in topics["views"][0]["topics"] for i in t["subjects"]) == every
 
     llm = FakeLLM()
     counts, fams = _update(out, llm)
@@ -129,6 +139,10 @@ def test_subjects_and_their_fallbacks(versions_tree, tmp_path):
     again = FakeLLM()
     _, kept = _update(out, again)  # complete and unchanged: nothing asked
     assert kept[fork] == f and not again.asked
+    topics = subjects.load_topics(out)
+    assert topics["ways"] == "found" and [v["id"] for v in topics["views"]] == ["llm", "words"]
+    assert sorted(t["label"] for t in topics["views"][0]["topics"]) == ["Topic one", "Topic two"]
+    assert llm.asked["topics-propose"] == 1
     _, kept = _update(out)  # no session (`remove`, `prune`): kept
     assert kept[fork] == f
 
@@ -180,7 +194,7 @@ def test_a_run_writes_subjects(tmp_path, fake_chat, capsys):
     asked = [m for m in fake_chat[0].requests if "Propose 3 different ways" in json.dumps(m[1])]
     assert len(asked) == 1  # the fake's answer isn't JSON
     run = json.loads((out / "run.json").read_text())
-    assert run["subjects"] == {"families": 1, "failed": 1}
+    assert run["subjects"] == {"families": 1, "failed": 1, "topics": "too few models"}
     [rec] = json.loads((out / "subjects.json").read_text())["families"]
     assert rec["default"] == "shared" and rec["ways"] == "failed"
     capsys.readouterr()

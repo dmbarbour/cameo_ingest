@@ -33,6 +33,11 @@ The families' subjects (`subjects.json`, ADR-0031), when the tree has them, foll
     first   dv the default view's id
     k {diagram key: the page id of the newest project holding it}   vs {diagram key: versions}, if over 1
     v views: [{id, t title, kd kind, s subjects [{l label, h what it holds, d diagram keys}], u unsorted keys}]
+
+The topics across models (plan SB CP4), when the tree has them, follow in `data-topics`, gzipped
+JSON: `{dv the default view's id, v views: [{id, t title, kd kind, s topics [{l label, h what it
+holds, m members [[family, subject]]}], u unsorted members}]}`; a member is a family of
+`data-subjects` (its index) and a subject of that family's default view (its index).
 """
 
 from __future__ import annotations
@@ -155,6 +160,42 @@ def page_subjects(families: list[dict[str, Any]], pids: dict[str, int], labels: 
     return sorted(out, key=lambda f: (f["n"].lower(), f["p"]))
 
 
+def page_topics(topics: dict[str, Any] | None, families: list[dict[str, Any]], page_fams: list[dict[str, Any]],
+                pids: dict[str, int]) -> dict[str, Any] | None:
+    """`subjects.json`'s topics for the page: members as (family, subject) indexes into `page_fams`,
+    those of families not in the page left out; None when there are none."""
+    if not topics or not topics.get("views"):
+        return None
+    fi_of = {f["p"][0]: fi for fi, f in enumerate(page_fams)}
+    where: dict[str, int] = {}
+    for f in families:
+        first = next((pids[t] for t in f["tokens"] if t in pids), None)
+        if first is not None and first in fi_of:
+            where[f["tokens"][0]] = fi_of[first]
+
+    def member(ref: str) -> list[int] | None:
+        token, _, n = ref.rpartition("/")
+        return [where[token], int(n)] if token in where else None
+
+    views = []
+    for v in topics["views"]:
+        ts = []
+        for t in v["topics"]:
+            ms = [m for m in map(member, t["subjects"]) if m]
+            if ms:
+                ts.append({"l": t["label"], **({"h": t["holds"]} if t.get("holds") else {}), "m": ms})
+        view = {"id": v["id"], "t": v["title"], "kd": v["kind"], "s": ts}
+        unsorted = [m for m in map(member, v.get("unsorted") or []) if m]
+        if unsorted:
+            view["u"] = unsorted
+        if ts:
+            views.append(view)
+    if not views:
+        return None
+    dv = topics["default"] if any(v["id"] == topics["default"] for v in views) else views[0]["id"]
+    return {"dv": dv, "v": views}
+
+
 def write_search_page(path: Path, projects: Iterable[ProjectCatalog], version: str,
                       sketches: str = "none", subjects: dict[str, Any] | None = None,
                       facts: dict[str, dict[str, Any]] | None = None,
@@ -196,6 +237,11 @@ def write_search_page(path: Path, projects: Iterable[ProjectCatalog], version: s
         raw = json.dumps(fams, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
         data_html += ('\n<script type="application/octet-stream" data-subjects="1">'
                       + base64.b64encode(gzip.compress(raw, 9, mtime=0)).decode("ascii") + "</script>")
+        tps = page_topics((subjects or {}).get("topics"), (subjects or {}).get("families", []), fams, pids)
+        if tps:
+            raw = json.dumps(tps, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+            data_html += ('\n<script type="application/octet-stream" data-topics="1">'
+                          + base64.b64encode(gzip.compress(raw, 9, mtime=0)).decode("ascii") + "</script>")
     if pictures:
         data_html += "\n" + "\n".join(f'<script type="application/octet-stream" data-sketch="{html.escape(i)}" '
                                        f'data-format="{fmt}">{b64}</script>' for i, fmt, b64 in pictures)

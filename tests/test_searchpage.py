@@ -131,6 +131,20 @@ def test_subjects_in_the_page(page):
     assert out["families"] >= 1 and out["hits"] == out["grouped"] and out["groups"] > 1 and out["ordered"]
 
 
+@pytest.mark.skipif(CHROME is None, reason="no Chrome, Chromium or Edge")
+def test_topics_in_a_browser(page, tmp_path):
+    """With several models and no search, the page browses topics across models: a topic opens
+    its models' subjects, a subject its diagrams; browsing by model is a click away; results group
+    by topic, each topic saying how many models it spans (plan SB CP4)."""
+    assert 'data-topics="1"' in page.read_text(encoding="utf-8")
+    seen = json.loads(node(str(JS / "topics_browser.js"), CHROME, str(tmp_path / "profile"), str(page), "valve"))
+    assert seen["lead"].startswith("Search above, or browse topics across models"), seen
+    assert seen["topics"] >= 2 and seen["subjects"] >= 2 and seen["models"] and seen["diagrams"] >= 1
+    assert seen["byModel"] == 7 and seen["grouping"] == "topic"
+    assert seen["count"] and any(m.startswith("in ") and "model" in m for m in seen["spans"])
+    assert seen["errors"] == []
+
+
 @needs_node
 def test_model_chooser():
     """Models grouped by lineage (versions under the newest, kin together), by folder, by name or

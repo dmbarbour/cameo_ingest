@@ -216,10 +216,20 @@ const Engine = (() => {
   // Subjects (plan SB, ADR-0031): which subject of a family's view an item is in, and search results
   // grouped by subject, groups in the order of their best result, an item held by several versions
   // of a model once.
+  // Topics across models (plan SB CP4) gather the families' subjects, in their default views: an
+  // item's topic is its subject's.
   const UNSORTED = -1;
   class Subjects {
-    constructor(families) {
+    constructor(families, topics) {
       this.families = families || [];
+      this.topics = topics && topics.v && topics.v.length ? topics : null;
+      this.topicOf = new Map(); // topic view id -> Map("family/subject" -> topic)
+      for (const v of this.topics ? this.topics.v : []) {
+        const m = new Map();
+        v.s.forEach((t, ti) => { for (const [fi, si] of t.m) m.set(fi + "/" + si, ti); });
+        for (const [fi, si] of v.u || []) m.set(fi + "/" + si, UNSORTED);
+        this.topicOf.set(v.id, m);
+      }
       this.familyOf = new Map(); // page id of a project -> its family
       this.where = this.families.map(() => new Map()); // per family: view id -> Map(diagram key -> subject)
       this.families.forEach((f, fi) => {
@@ -256,9 +266,31 @@ const Engine = (() => {
       return this.view(fi, vid).s[s].l;
     }
 
+    topicView(tid) {
+      if (!this.topics) return null;
+      return this.topics.v.find((v) => v.id === tid) || this.topics.v.find((v) => v.id === this.topics.dv) || this.topics.v[0];
+    }
+
+    // The topic an item is in: that of its subject in its family's default view. null: on no sorted
+    // diagram; UNSORTED: its subject, or its subject's topic, not sorted yet.
+    topic(it, fi, tid) {
+      const s = this.place(it, fi, this.families[fi].dv);
+      if (s === null || s === UNSORTED) return s;
+      const t = this.topicOf.get(this.topicView(tid).id).get(fi + "/" + s);
+      return t === undefined ? UNSORTED : t;
+    }
+
+    topicLabel(tid, t) {
+      if (t === null) return "Not on a sorted diagram";
+      if (t === UNSORTED) return "Not sorted yet";
+      return this.topicView(tid).s[t].l;
+    }
+
     // hits, best first, as groups: {fi, s, label, holds, docs, versions: Map(doc -> versions)}; an item
-    // outside every family is grouped by its model (fi null, p its page id).
-    group(hits, items, viewOf) {
+    // outside every family is grouped by its model (fi null, p its page id). With `tid`, by topic
+    // across models in that topic view: {topic, label, holds, docs, versions, subject: Map(doc -> its
+    // subject's label), models: Set(family)}.
+    group(hits, items, viewOf, tid) {
       const out = [], byKey = new Map(), first = new Map();
       for (const h of hits) {
         const it = items[h.doc];
@@ -273,6 +305,14 @@ const Engine = (() => {
         if (fi === null) {
           gk = "p" + it.p;
           g = byKey.get(gk) || { fi: null, p: it.p, s: null, label: null, docs: [], versions: new Map() };
+        } else if (tid && this.topics) {
+          const t = this.topic(it, fi, tid), tv = this.topicView(tid);
+          gk = "t/" + t;
+          g = byKey.get(gk) || { fi: null, topic: t, label: this.topicLabel(tid, t), holds: t !== null && t >= 0 ? tv.s[t].h || "" : "",
+                                 docs: [], versions: new Map(), subject: new Map(), models: new Set() };
+          const dv = this.families[fi].dv, s = this.place(it, fi, dv);
+          if (s !== null) g.subject.set(h.doc, this.label(fi, dv, s));
+          g.models.add(fi);
         } else {
           const vid = viewOf(fi), s = this.place(it, fi, vid), v = this.view(fi, vid);
           gk = fi + "/" + v.id + "/" + s;
@@ -467,6 +507,7 @@ if (typeof document !== "undefined") {
 
   const state = { index: new Engine.Index(), projects: [], byKey: new Map(), summaries: new Map(), cancelled: false,
                   subjects: new Engine.Subjects([]), viewOf: new Map(), browse: null, open: new Set(),
+                  topicView: null, browseBy: "topic",
                   selected: null, mode: "lineage", // selected: null for every model, else a Set of page ids
                   compare: null }; // [page id, page id]: two models compared (plan SH-05)
   const SHOWN = 3; // results shown a group before "more"
@@ -581,7 +622,8 @@ if (typeof document !== "undefined") {
     const t = now();
     state.index.finish();
     const sb = document.querySelector('script[type="application/octet-stream"][data-subjects]');
-    if (sb) state.subjects = new Engine.Subjects(await Engine.decode(sb.textContent));
+    const tb = document.querySelector('script[type="application/octet-stream"][data-topics]');
+    if (sb) state.subjects = new Engine.Subjects(await Engine.decode(sb.textContent), tb ? await Engine.decode(tb.textContent) : null);
     P.time("finish", now() - t);
     P.update("finish", 1, 1, "done");
     P.stop();
@@ -607,6 +649,7 @@ if (typeof document !== "undefined") {
     $("type").addEventListener("change", run);
     if (state.subjects.families.length) {
       $("grouping").hidden = false;
+      if (!state.subjects.topics) $("grouped").querySelector('option[value="topic"]').remove();
       $("grouped").addEventListener("change", run);
     }
     window.addEventListener("hashchange", detail);
@@ -640,9 +683,10 @@ if (typeof document !== "undefined") {
       : `Nothing found (${(ms / 1000).toFixed(2)} s)`;
     const shared = Engine.collapseShared(res.hits, state.index.items);
     state.copies = shared.copies;
-    if (state.subjects.families.length && $("grouped").checked) {
-      const groups = state.subjects.group(shared.hits, state.index.items, viewOf);
-      info.textContent += `, in ${count(groups.length, "subject")}`;
+    const by = state.subjects.families.length ? $("grouped").value : "";
+    if (by) {
+      const groups = state.subjects.group(shared.hits, state.index.items, viewOf, by === "topic" ? topicId() : null);
+      info.textContent += `, in ${count(groups.length, by)}`;
       for (const g of groups) list.append(groupBox(g, res.terms));
     } else {
       for (const h of shared.hits) list.append(resultRow(h, res.terms));
@@ -820,6 +864,7 @@ if (typeof document !== "undefined") {
   }
 
   const viewOf = (fi) => state.viewOf.get(fi) || state.subjects.families[fi].dv;
+  const topicId = () => state.subjects.topicView(state.topicView).id;
 
   // A group of results: its subject, its model when the page has several, its best few, and the rest on request.
   function groupBox(g, terms) {
@@ -828,6 +873,7 @@ if (typeof document !== "undefined") {
     const fam = g.fi === null ? null : state.subjects.families[g.fi];
     head.append(el("span", "group-label", g.label || state.projects[g.p].label));
     if (fam && (g.label || "") && state.subjects.families.length > 1) head.append(el("span", "group-model", fam.n));
+    if (g.models) head.append(el("span", "group-model", `in ${count(g.models.size, "model")}`));
     head.append(el("span", "group-count", count(g.docs.length, "result")));
     if (g.holds) head.title = g.holds;
     box.append(head);
@@ -835,6 +881,7 @@ if (typeof document !== "undefined") {
       const r = resultRow({ doc }, terms);
       const n = g.versions.get(doc);
       if (n) r.querySelector(".result-where").append(` · in ${n} versions`);
+      if (g.subject && g.subject.has(doc)) r.querySelector(".result-head").append(el("span", "result-subject", g.subject.get(doc)));
       return r;
     });
     box.append(...rows.slice(0, SHOWN));
@@ -859,7 +906,13 @@ if (typeof document !== "undefined") {
       .filter((fi) => state.selected === null || sb.families[fi].p.some((pid) => state.selected.has(pid)));
     const chosen = shown.length === 1 && state.selected !== null ? shown[0] : state.browse; // narrowed to one: open it
     if (chosen === undefined || chosen === null || !shown.includes(chosen)) {
-      list.append(el("p", "browse-lead", "Search above, or browse a model by subject:"));
+      if (sb.topics && shown.length > 1 && state.browseBy === "topic") {
+        browseTopics(list, shown);
+        return;
+      }
+      const lead = el("p", "browse-lead", "Search above, or browse a model by subject");
+      if (sb.topics && shown.length > 1) lead.append(" (or ", switchTo("topic", "topics across models"), ")");
+      list.append(lead);
       shown.forEach((fi) => {
         const f = sb.families[fi];
         const row = el("a", "result");
@@ -876,7 +929,7 @@ if (typeof document !== "undefined") {
     const f = sb.families[chosen], v = sb.view(chosen, viewOf(chosen));
     const top = el("div", "browse-head");
     if (!(shown.length === 1 && state.selected !== null)) {
-      const back = el("a", null, "All models");
+      const back = el("a", null, sb.topics && shown.length > 1 && state.browseBy === "topic" ? "Topics" : "All models");
       back.href = "#";
       back.addEventListener("click", (e) => { e.preventDefault(); state.browse = null; run(); });
       top.append(back, " › ");
@@ -891,18 +944,76 @@ if (typeof document !== "undefined") {
     const subjects = v.s.map((s, si) => ({ label: s.l, holds: s.h || "", keys: s.d, si }));
     if (v.u && v.u.length) subjects.push({ label: "Not sorted yet", holds: "The LLM gave no answer for these; the next run asks again.",
                                           keys: v.u, si: -1 });
-    for (const s of subjects) {
-      const box = el("section", "group");
+    for (const s of subjects) list.append(subjectBox(f, s.label, s.holds, s.keys, `${chosen}/${v.id}/${s.si}`));
+  }
+
+  // A subject to open: its diagrams, by name. `model`: its model's name, shown beside its label.
+  function subjectBox(f, label, holds, keys, id, model) {
+    const box = el("section", "group");
+    const head = el("a", "group-head");
+    head.href = "#";
+    head.append(el("span", "group-label", label));
+    if (model) head.append(el("span", "group-model", model));
+    head.append(el("span", "group-count", count(keys.length, "diagram")));
+    if (holds) head.title = holds;
+    const body = el("div");
+    const fill = () => {
+      body.replaceChildren(...keys.map((k) => state.byKey.get(f.k[k] + "\u0000" + k)).filter((d) => d !== undefined)
+        .sort((a, b) => (state.index.items[a].n || "").localeCompare(state.index.items[b].n || ""))
+        .map((doc) => resultRow({ doc }, [], aboutOf(doc))));
+    };
+    head.addEventListener("click", (e) => {
+      e.preventDefault();
+      if (state.open.has(id)) { state.open.delete(id); body.replaceChildren(); } else { state.open.add(id); fill(); }
+    });
+    if (state.open.has(id)) fill();
+    box.append(head, body);
+    return box;
+  }
+
+  function switchTo(by, text) {
+    const a = el("a", null, text);
+    a.href = "#";
+    a.addEventListener("click", (e) => { e.preventDefault(); state.browseBy = by; run(); });
+    return a;
+  }
+
+  // With no search and several models: topics across models (plan SB CP4), each opening the
+  // subjects it gathers (a model's subject in its suggested view), each opening its diagrams.
+  function browseTopics(list, shown) {
+    const sb = state.subjects, tv = sb.topicView(state.topicView), keep = new Set(shown);
+    const lead = el("p", "browse-lead", "Search above, or browse topics across models (or ");
+    lead.append(switchTo("model", "a model by subject"), ")");
+    list.append(lead);
+    if (sb.topics.v.length > 1) {
+      const top = el("div", "browse-head");
+      const pick = el("select");
+      pick.setAttribute("aria-label", "Topics");
+      for (const w of sb.topics.v) pick.append(new Option(w.t + (w.id === sb.topics.dv ? " (suggested)" : ""), w.id, false, w.id === tv.id));
+      pick.addEventListener("change", () => { state.topicView = pick.value; run(); });
+      top.append(pick);
+      list.append(top);
+    }
+    const topics = tv.s.map((t, ti) => ({ label: t.l, holds: t.h || "", m: t.m, ti }));
+    if (tv.u && tv.u.length) topics.push({ label: "Not sorted yet", holds: "The LLM gave no answer for these; the next run asks again.",
+                                         m: tv.u, ti: -1 });
+    for (const t of topics) {
+      const members = t.m.filter(([fi]) => keep.has(fi));
+      if (!members.length) continue;
+      const box = el("section", "group topic");
       const head = el("a", "group-head");
       head.href = "#";
-      head.append(el("span", "group-label", s.label), el("span", "group-count", count(s.keys.length, "diagram")));
-      if (s.holds) head.title = s.holds;
-      const id = `${chosen}/${v.id}/${s.si}`;
-      const body = el("div");
+      const models = new Set(members.map(([fi]) => fi)).size;
+      head.append(el("span", "group-label", t.label), el("span", "group-count",
+        `${count(members.length, "subject")} in ${count(models, "model")}`));
+      if (t.holds) head.title = t.holds;
+      const id = `t/${tv.id}/${t.ti}`;
+      const body = el("div", "topic-body");
       const fill = () => {
-        body.replaceChildren(...s.keys.map((k) => state.byKey.get(f.k[k] + "\u0000" + k)).filter((d) => d !== undefined)
-          .sort((a, b) => (state.index.items[a].n || "").localeCompare(state.index.items[b].n || ""))
-          .map((doc) => resultRow({ doc }, [], aboutOf(doc))));
+        body.replaceChildren(...members.map(([fi, si]) => {
+          const f = sb.families[fi], v = sb.view(fi, f.dv), s = v.s[si];
+          return subjectBox(f, s.l, s.h || "", s.d, `${id}/${fi}/${si}`, f.n);
+        }));
       };
       head.addEventListener("click", (e) => {
         e.preventDefault();

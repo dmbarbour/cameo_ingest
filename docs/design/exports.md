@@ -38,8 +38,8 @@ per-project file the exports read (AR-012). The records come in this order:
   Slicers were tried (Excel opened them cleanly) and set aside: a table lets a user add one.
 - **Legible as opened:** text wraps, top-aligned, in rows of `ROW_HEIGHT` (45 points, three lines).
 - **Columns to group and filter by** (WT-04): Newest (by `lineage.facts`), Package 1 to 3, Subject
-  (`subjects.json`'s suggested view; an element's by most of its diagrams), Coverage, Shows,
-  Diagrams.
+  (`subjects.json`'s suggested view; an element's by most of its diagrams), Topic (that subject's
+  topic across models), Coverage, Shows, Diagrams.
 - **Shared items** (plan SH, `shared.py`): `export` matches each item's copies in other models
   (by element id; by requirement Id; by kind and name between related models), with what differs
   among what people edit. The page's items carry them (`al`), shown as "Also in", and copies of
@@ -79,8 +79,9 @@ per-project file the exports read (AR-012). The records come in this order:
   - shape clicks are handled on the sketch's frame (`importNode` drops listeners);
   - Windows' zip preview is detected and the user told to extract.
 - **Sketches,** `--sketches none|webp|svg`, default none: decoded only when a diagram is opened.
-- **Subjects** (`docs/design/subjects.md`): a `data-subjects` block; results grouped by subject, a
-  "Group by subject" switch, and a browse pane when nothing is typed.
+- **Subjects and topics** (`docs/design/subjects.md`): `data-subjects` and `data-topics` blocks;
+  results grouped by topic across models, by subject or not at all, and a browse pane when
+  nothing is typed (topics first, when several models are shown).
 - **The model chooser** (plan LN-07): each project's block carries its facts (`lineage.facts`: save
   time, Cameo version, family and rank, kin, related). `Engine.chooserGroups` groups the models by
   lineage (clusters joined by family and kin, versions indented under the newest), by folder

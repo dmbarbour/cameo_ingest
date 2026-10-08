@@ -496,10 +496,21 @@ def load(out: Path) -> dict[str, dict[str, Any]]:
     return {rec["tokens"][0]: rec for rec in data.get("families", [])}
 
 
+def load_topics(out: Path) -> dict[str, Any] | None:
+    """The last `subjects.json`'s topics across models, if any."""
+    try:
+        data = json.loads((out / FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data.get("topics") if data.get("format") == FORMAT else None
+
+
 def summary(out: Path) -> dict[str, Any]:
-    """For `status`: how many families, and how their ways stand."""
+    """For `status`: how many families, how their ways stand, and how the topics across models do."""
     recs = load(out)
-    return {"families": len(recs), **dict(sorted(Counter(r.get("ways") for r in recs.values()).items()))}
+    topics = load_topics(out) or {}
+    return {"families": len(recs), **dict(sorted(Counter(r.get("ways") for r in recs.values()).items())),
+            **({"topics": topics["ways"]} if topics.get("ways") else {})}
 
 
 def update(state: Any, out: Path, llm: Any = None, concurrency: int = 1, progress: Progress = QUIET) -> dict[str, Any]:
@@ -527,7 +538,10 @@ def update(state: Any, out: Path, llm: Any = None, concurrency: int = 1, progres
             found = ways_for(llm, todo, concurrency, ph.advance)
         asked = {f.tokens[0]: entry(f, found[f.tokens[0]], asked=True) for f in todo}
         records = [r if r is not None else asked[f.tokens[0]] for r, f in zip(records, fams, strict=True)]
-    data = {"format": FORMAT, "families": records}
+    from . import topics
+
+    found = topics.update(fams, records, load_topics(out), llm if can_ask else None, concurrency, progress)
+    data = {"format": FORMAT, "families": records, "topics": found}
     tmp = out / (FILE + ".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1, sort_keys=True), encoding="utf-8")
     tmp.replace(out / FILE)
@@ -536,4 +550,7 @@ def update(state: Any, out: Path, llm: Any = None, concurrency: int = 1, progres
         if r.get("ways") in ("failed", "incomplete"):
             log.warning("subjects of %s: the LLM's ways %s; %s is shown first until a run completes them", r["name"],
                         "failed" if r["ways"] == "failed" else "left diagrams unsorted", r["views"][0]["title"])
-    return {"families": len(records), **dict(sorted((k, v) for k, v in counts.items() if k))}
+    if found.get("ways") in ("failed", "incomplete"):
+        log.warning("topics across models: the LLM's %s; topics by words are shown first until a run completes them",
+                    "failed" if found["ways"] == "failed" else "left subjects unsorted")
+    return {"families": len(records), **dict(sorted((k, v) for k, v in counts.items() if k)), "topics": found["ways"]}

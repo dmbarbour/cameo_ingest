@@ -83,6 +83,11 @@ def test_workbook_from_the_tree(fiction_tree, tmp_path, capsys):
     suggested = {(r["Model"], r["Diagram"]): r["Subject"] for r in subjects if r["View"].endswith("(suggested)")}
     assert any(d.get("Subject") for d in diagrams)
     assert all(d.get("Subject") in {s for (_, n), s in suggested.items() if n == d["Name"]} for d in diagrams if d.get("Subject"))
+    # topics across models (plan SB CP4): a suggested subject's topic, on its rows and its diagrams'
+    topic_of = {(r["Model"], r["Subject"]): r["Topic"] for r in subjects if r["View"].endswith("(suggested)")}
+    assert all(topic_of.values()) and len(set(topic_of.values())) > 1
+    assert all(r.get("Topic") is None for r in subjects if not r["View"].endswith("(suggested)"))
+    assert all(d.get("Topic") in set(topic_of.values()) for d in diagrams if d.get("Subject"))
     req = sheets["Requirements"]
     row = dict(zip(req[0], next(r for r in req if r[0] == "KOIS-R2"), strict=False))
     assert row["Satisfied by"] == "Brine Valve K7" and row["Derived from"] == "Leak Shutdown (KOIS-R5)"

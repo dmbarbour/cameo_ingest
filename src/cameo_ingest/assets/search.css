@@ -94,6 +94,10 @@ a.group-head:hover { background: #e8eef5; }
 .group-model, .group-count { color: var(--muted); font-size: .8rem; }
 .group .more { margin: .3rem 1rem .5rem; padding: .15rem .8rem; }
 .browse-lead { padding: .5rem 1rem 0; color: var(--muted); }
+.result-subject { margin-left: auto; color: var(--muted); font-size: .8rem; white-space: nowrap; }
+.topic-body .group { border-bottom: 1px solid var(--line); }
+.topic-body .group-head { padding-left: 2rem; background: #fafbfc; }
+.topic-body .result { padding-left: 2.5rem; }
 .browse-head { padding: .5rem 1rem; border-bottom: 1px solid var(--line); }
 footer { color: var(--muted); font-size: .75rem; padding: .3rem 1rem; border-top: 1px solid var(--line); }
 @media (max-width: 50rem) { main { grid-template-columns: 1fr; } #results { max-height: 40vh; } }

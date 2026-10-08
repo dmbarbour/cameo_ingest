@@ -30,6 +30,30 @@ if (process.argv.length < 4) {
   assert.strictEqual(groups[0].versions.get(0), 2);
   assert.strictEqual(groups[0].holds, "the pumps");
   assert.strictEqual(groups[4].p, 2);
+
+  // Topics across models (plan SB CP4): two families, each subject of a default view in a topic.
+  const two = [fams[0], { n: "N", p: [2], dv: "ways-1", k: { n1: 2, n2: 2 },
+                          v: [{ id: "ways-1", t: "By part", kd: "llm", s: [{ l: "Pumps too", d: ["n1"] }, { l: "Other", d: ["n2"] }] }] }];
+  const topics = { dv: "llm", v: [{ id: "llm", t: "Topics", kd: "llm", s: [{ l: "Pumping", h: "pumps", m: [[0, 0], [1, 0]] }, { l: "Valving", m: [[0, 1]] }],
+                                    u: [[1, 1]] },
+                                  { id: "words", t: "Words", kd: "words", s: [{ l: "pump, valve", m: [[0, 0], [0, 1], [1, 0], [1, 1]] }] }] };
+  const tp = new Engine.Subjects(two, topics);
+  const its = [{ p: 0, t: "diagram", k: "d1" }, { p: 2, t: "diagram", k: "n1" }, { p: 0, t: "element", k: "e1", d: [["d2", "D2"]] },
+               { p: 2, t: "diagram", k: "n2" }, { p: 0, t: "diagram", k: "d3" }, { p: 0, t: "element", k: "e2", d: [] }];
+  assert.strictEqual(tp.topic(its[0], 0, null), 0);
+  assert.strictEqual(tp.topic(its[1], 1, null), 0);
+  assert.strictEqual(tp.topic(its[2], 0, null), 1); // an element: by its subject
+  assert.strictEqual(tp.topic(its[3], 1, null), -1); // its subject unsorted in the topics
+  assert.strictEqual(tp.topic(its[4], 0, null), -1); // its own diagram unsorted in the family
+  assert.strictEqual(tp.topic(its[5], 0, null), null); // on no diagram
+  assert.strictEqual(tp.topic(its[1], 1, "words"), 0);
+  const tg = tp.group(its.map((_, doc) => ({ doc })), its, (fi) => two[fi].dv, "llm");
+  assert.deepStrictEqual(tg.map((g) => g.label), ["Pumping", "Valving", "Not sorted yet", "Not on a sorted diagram"]);
+  assert.deepStrictEqual(tg[0].docs, [0, 1]);
+  assert.strictEqual(tg[0].models.size, 2);
+  assert.strictEqual(tg[0].subject.get(1), "Pumps too");
+  assert.strictEqual(tg[0].holds, "pumps");
+  assert.strictEqual(new Engine.Subjects(two, null).topics, null);
   console.log("ok");
   return;
 }

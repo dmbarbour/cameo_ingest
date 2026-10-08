@@ -31,27 +31,28 @@ ROW_HEIGHT = 45  # points: three lines of wrapped text a row; a double-click on 
 
 # Columns to group, sort and filter by (plan WT-04): `Newest` (the model's newest version, by
 # lineage), `Package 1` to `3` (a package path's first levels), `Subject` (the suggested view's:
-# a diagram's own, an element's or requirement's where most of its diagrams are), `Coverage` (what
+# a diagram's own, an element's or requirement's where most of its diagrams are), `Topic` (its
+# subject's topic across models, plan SB CP4), `Coverage` (what
 # relates to a requirement), `Shows` (a diagram's shapes) and `Diagrams` (where an element is shown).
 PACKAGES = [("Package 1", 24), ("Package 2", 24), ("Package 3", 24)]
 SHEETS: dict[str, list[tuple[str, int]]] = {  # name -> columns (header, width)
     "Requirements": [("Id", 18), ("Database number", 10), ("Name", 40), ("Text", 80), ("Project", 28),
-                     ("Newest", 9), ("Package", 40), *PACKAGES, ("Subject", 30), ("Coverage", 24),
+                     ("Newest", 9), ("Package", 40), *PACKAGES, ("Subject", 30), ("Topic", 30), ("Coverage", 24),
                      ("Satisfied by", 30), ("Verified by", 30), ("Derived from", 30), ("Derived into", 30),
                      ("Refined by", 30), ("Traces", 30), ("Other relationships", 40), ("Diagrams", 30),
                      ("Also in", 50), ("Source", 40)],
     "Identifiers": [("Id", 18), ("Project", 28), ("Newest", 9), ("Element", 40), ("How", 22), ("Snippet", 80)],
     "Elements": [("Kind", 16), ("Name", 40), ("Where", 50), ("Project", 28), ("Newest", 9), *PACKAGES,
-                 ("Subject", 30), ("Stereotypes", 20), ("Documentation", 80), ("Diagrams", 40), ("Listed in", 30),
+                 ("Subject", 30), ("Topic", 30), ("Stereotypes", 20), ("Documentation", 80), ("Diagrams", 40), ("Listed in", 30),
                  ("Also in", 50)],
     "Relationships": [("Source", 40), ("Relationship", 18), ("Target", 40), ("Kind", 16), ("Project", 28),
                       ("Newest", 9)],
     "Diagrams": [("Name", 40), ("Type", 28), ("Owner", 40), ("Project", 28), ("Newest", 9), *PACKAGES,
-                 ("Subject", 30), ("Elements shown", 10), ("Shows", 60), ("Table", 24),
+                 ("Subject", 30), ("Topic", 30), ("Elements shown", 10), ("Shows", 60), ("Table", 24),
                  ("Description (generated)", 80), ("Also in", 50)],
     "Shared": [("Item", 40), ("Type", 14), ("Project", 28), ("Also in", 28), ("Match", 22), ("Differences", 80)],
-    "Subjects": [("Model", 30), ("View", 30), ("Subject", 34), ("What it holds", 60), ("Diagram", 40),
-                 ("Versions", 9)],
+    "Subjects": [("Model", 30), ("View", 30), ("Subject", 34), ("What it holds", 60), ("Topic", 30),
+                 ("Diagram", 40), ("Versions", 9)],
     "Summaries": [("Of", 40), ("What", 18), ("Project", 28), ("Newest", 9), ("Summary (generated)", 100),
                   ("Model", 24), ("Part", 10)],
     "Projects": [("Project", 30), ("Label", 30), ("Content", 24), ("Source", 60), ("Metadata", 30),
@@ -116,15 +117,17 @@ def write_workbook(path: Path, projects: Iterable[ProjectCatalog], version: str,
                    subjects: dict[str, Any] | None = None, facts: dict[str, dict[str, Any]] | None = None,
                    links: dict[tuple[str, str], list[Any]] | None = None) -> dict[str, int]:
     """Write the workbook; returns the rows per sheet. `subjects`: the tree's `subjects.json`, if any
-    (ADR-0031): the Subjects sheet, and each diagram's subject in the suggested view."""
+    (ADR-0031): the Subjects sheet, and each diagram's subject in the suggested view, with that
+    subject's topic across models (plan SB CP4)."""
     families = (subjects or {}).get("families", [])
-    suggested: dict[tuple[str, str], str] = {}
+    topic = _topics((subjects or {}).get("topics"))
+    suggested: dict[tuple[str, str], tuple[str, str | None]] = {}  # (token, diagram) -> (subject, topic)
     for f in families:
         view = next(v for v in f["views"] if v["id"] == f["default"])
-        for s in view["subjects"]:
+        for n, s in enumerate(view["subjects"]):
             for key in s["diagrams"]:
                 for i in f["diagrams"].get(key, []):
-                    suggested[f["tokens"][i], key] = s["label"]
+                    suggested[f["tokens"][i], key] = (s["label"], topic.get(f"{f['tokens'][0]}/{n}"))
     names: dict[tuple[str, str], str] = {}
     labels: dict[str, str] = {}
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -150,7 +153,7 @@ def write_workbook(path: Path, projects: Iterable[ProjectCatalog], version: str,
                 names[p.header.get("token") or "", r["key"]] = r["name"]
         left_out.update(p.header.get("left_out", {}))
         tables.update(p.header.get("tables", {}))
-    _subject_rows(families, names, labels, sheets["Subjects"])
+    _subject_rows(families, names, labels, topic, sheets["Subjects"])
     for s in sheets.values():
         s.close()
     rows = {name: s.row for name, s in sheets.items()}
@@ -162,19 +165,34 @@ def write_workbook(path: Path, projects: Iterable[ProjectCatalog], version: str,
     return rows
 
 
+def _topics(topics: dict[str, Any] | None) -> dict[str, str]:
+    """Each subject's topic in the suggested topics across models, by "token/n" (a family's newest
+    token and the subject's place in its default view)."""
+    view = next((v for v in (topics or {}).get("views", []) if v["id"] == (topics or {}).get("default")), None)
+    if view is None:
+        return {}
+    out = {ref: "Not sorted yet" for ref in view.get("unsorted", [])}
+    for t in view["topics"]:
+        for ref in t["subjects"]:
+            out[ref] = t["label"]
+    return out
+
+
 def _subject_rows(families: list[dict[str, Any]], names: dict[tuple[str, str], str], labels: dict[str, str],
-                  sheet: _Sheet) -> None:
+                  topic: dict[str, str], sheet: _Sheet) -> None:
     """A row per model (by its newest project's label: rivals often share a file name), view, subject
     and diagram, the suggested view first."""
     for f in sorted(families, key=lambda f: (labels.get(f["tokens"][0], f["name"]).lower(), f["tokens"])):
         model = labels.get(f["tokens"][0], f["name"])
         for v in sorted(f["views"], key=lambda v: v["id"] != f["default"]):
             title = v["title"] + (" (suggested)" if v["id"] == f["default"] else "")
-            subjects = [(s["label"], s.get("holds", ""), s["diagrams"]) for s in v["subjects"]]
+            subjects = [(s["label"], s.get("holds", ""), s["diagrams"],
+                         topic.get(f"{f['tokens'][0]}/{n}") if v["id"] == f["default"] else None)
+                        for n, s in enumerate(v["subjects"])]
             if v.get("unsorted"):
                 subjects.append(("Not sorted yet", "The LLM gave no answer for these; the next run asks again.",
-                                 v["unsorted"]))
-            for label, holds, keys in subjects:
+                                 v["unsorted"], None))
+            for label, holds, keys, topic_label in subjects:
                 rows = []
                 for key in keys:
                     held = f["diagrams"].get(key, [])
@@ -183,7 +201,7 @@ def _subject_rows(families: list[dict[str, Any]], names: dict[tuple[str, str], s
                         rows.append((name, len(held)))
                 for name, n in sorted(rows):
                     sheet.add({"Model": model, "View": title, "Subject": label, "What it holds": holds,
-                               "Diagram": name, "Versions": n}, LIMITS["search"])
+                               "Topic": topic_label, "Diagram": name, "Versions": n}, LIMITS["search"])
 
 
 _HOW = {"derived": "derived by others from", "built-on": "built on by others in", "root": "shares a root with",
@@ -220,7 +238,7 @@ def _also_in(found: list[Any], labels: dict[str, str]) -> str:
                      + ("the same" if not lk.differences else ", ".join(lk.differences)) + ")" for lk in found)
 
 
-def _project_rows(p: ProjectCatalog, sheets: dict[str, _Sheet], suggested: dict[tuple[str, str], str],
+def _project_rows(p: ProjectCatalog, sheets: dict[str, _Sheet], suggested: dict[tuple[str, str], tuple[str, str | None]],
                   facts: dict[str, dict[str, Any]], links: dict[tuple[str, str], list[Any]]) -> None:
     project, source = p.label, p.source_text()
     token = p.header.get("token") or ""
@@ -235,13 +253,15 @@ def _project_rows(p: ProjectCatalog, sheets: dict[str, _Sheet], suggested: dict[
             for d, _ in r.get("diagrams") or []:
                 shows.setdefault(d, []).append(r["name"])
 
-    def subject_of(r: dict[str, Any]) -> str | None:
-        """An item's subject in the suggested view: where most of its diagrams are (the first, on a tie)."""
-        votes: dict[str, int] = {}
+    def placed(r: dict[str, Any]) -> dict[str, str | None]:
+        """An item's subject in the suggested view, where most of its diagrams are (the first, on a
+        tie), and its topic."""
+        votes: dict[tuple[str, str | None], int] = {}
         for d, _ in r.get("diagrams") or []:
             if (lab := suggested.get((token, d))) is not None:
                 votes[lab] = votes.get(lab, 0) + 1
-        return max(votes, key=lambda k: votes[k]) if votes else None
+        best = max(votes, key=lambda k: votes[k]) if votes else (None, None)
+        return {"Subject": best[0], "Topic": best[1]}
 
     for r in p.records:
         t = r["type"]
@@ -262,14 +282,14 @@ def _project_rows(p: ProjectCatalog, sheets: dict[str, _Sheet], suggested: dict[
             sheets["Requirements"].add({"Id": r.get("id"), "Database number": r.get("db"), "Name": r["name"],
                                         "Text": r.get("text"), "Project": project, "Newest": newest,
                                         "Package": r.get("package"), **_packages(r.get("package")),
-                                        "Subject": subject_of(r), "Coverage": ", ".join(covered) or "none",
+                                        **placed(r), "Coverage": ", ".join(covered) or "none",
                                         **{c: "; ".join(v) for c, v in cols.items()},
                                         "Diagrams": "; ".join(d[1] for d in r.get("diagrams", [])),
                                         "Also in": also, "Source": source}, LIMITS["requirements"])
         elif t == "element":
             sheets["Elements"].add({"Kind": r.get("kind"), "Name": r["name"], "Where": r.get("where"),
                                     "Project": project, "Newest": newest, **_packages(r.get("package")),
-                                    "Subject": subject_of(r), "Stereotypes": ", ".join(r.get("stereotypes", [])),
+                                    **placed(r), "Stereotypes": ", ".join(r.get("stereotypes", [])),
                                     "Documentation": r.get("text"),
                                     "Diagrams": "; ".join(d[1] for d in r.get("diagrams", [])),
                                     "Listed in": (r.get("listed_in") or [None, None])[1], "Also in": also},
@@ -278,7 +298,7 @@ def _project_rows(p: ProjectCatalog, sheets: dict[str, _Sheet], suggested: dict[
             owner = (r.get("owner") or [None, None])[1]
             sheets["Diagrams"].add({"Name": r["name"], "Type": r.get("kind"), "Owner": owner,
                                     "Project": project, "Newest": newest, **_packages(r.get("package")),
-                                    "Subject": suggested.get((token, r["key"])), "Elements shown": r.get("shapes"),
+                                    **dict(zip(("Subject", "Topic"), suggested.get((token, r["key"]), (None, None)), strict=True)), "Elements shown": r.get("shapes"),
                                     "Shows": "; ".join(shows.get(r["key"], [])), "Table": r.get("table"),
                                     "Description (generated)": described.get(r["key"]), "Also in": also},
                                    LIMITS["summaries"])
@@ -329,7 +349,7 @@ def _about_sheet(ws, book: xlsxwriter.Workbook, rows: dict[str, int], left_out: 
         ("Group by", ("Newest: yes for the newest version of each model (filter it to see each model once). "
                       "Package 1 to 3: the first levels of an item's package. Subject: a diagram's subject in the "
                       "suggested view (see the Subjects sheet), and an element's or requirement's, where most of the "
-                      "diagrams that show it are. Coverage: what relates to a requirement (satisfied, verified, "
+                      "diagrams that show it are. Topic: that subject's topic across models. Coverage: what relates to a requirement (satisfied, verified, "
                       "refined, derived, traced), or none."), bold),
         ("Read a row", "Rows show three lines; double-click a row's lower border to see all of it.", bold),
         ("Also in", ("The same item in other models: the same element (versions, a model and the bids built on "
@@ -340,8 +360,10 @@ def _about_sheet(ws, book: xlsxwriter.Workbook, rows: dict[str, int], left_out: 
                      "are noted in Also in only."), bold),
         ("Browse by subject", ("The Subjects sheet puts each model's diagrams in subjects, several ways (views): "
                                "filter Model and View, then read down Subject. The suggested view comes first; the "
-                               "Diagrams sheet's Subject column is its subject. Subjects proposed by an LLM are "
-                               "generated, not part of the models."), bold),
+                               "Diagrams sheet's Subject column is its subject. Topic gathers the subjects of every "
+                               "model into topics across models: filter Topic to see what each model holds on one "
+                               "thing. Subjects and topics proposed by an LLM are generated, not part of the "
+                               "models."), bold),
         ("Generated text", ("Summaries and diagram descriptions were written by an LLM, named in the Summaries "
                             "sheet; they are not part of the source models."), bold),
         ("Source", "Where each model was found when it was ingested: its path and the metadata given then.", bold),
