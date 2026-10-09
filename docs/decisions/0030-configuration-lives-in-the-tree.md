@@ -25,8 +25,9 @@
 - **Everything else is the tree's,** in its `state.sqlite`, set only with `cameo-ingest config`:
   - `config set KEY VALUE` and `config unset KEY` (back to the default); `config export` and
     `config import`, the tree's own settings as JSON (0.31.0, RN-005);
-  - ten settings, each reversible: `llm`, `text-model`, `vision-model`, `render`, `rag-files`,
-    `rag-source`, `concurrency`, `max-calls`, and since 0.31.0 `timeout` and `time-limit` (RN-004).
+  - eleven settings, each reversible: `llm`, `text-model`, `vision-model`, `render`, `rag-files`,
+    `rag-source`, `concurrency`, `max-calls`, since 0.31.0 `timeout` and `time-limit` (RN-004),
+    and since 0.31.1 `ask-again` (RN-007).
 - **Runs take only what is about the action:** inputs, `--meta`, `-o`, `-v`, `--log-file`. Four
   flags stay for developers, hidden and never remembered: `--no-calibrate`, `--no-preflight`,
   `--llm-replay`, `--heartbeat`.
@@ -49,5 +50,6 @@
 
 ## Changes
 
+- 2026-10-09: `ask-again` is a setting (RN-007). Before: `dff5a12`.
 - 2026-10-08: `config -i` removed, and `config export` and `import` added (review RN, RN-005). Before: `883c382`.
 - 2026-10-08: `timeout` and `time-limit` are settings (RN-004). Before: `8fb6d2a`.

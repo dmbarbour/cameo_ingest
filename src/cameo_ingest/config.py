@@ -87,6 +87,7 @@ class TreeSettings:
     llm_concurrency: int | None = None
     request_timeout: int | None = None  # seconds without a word; None: `llm.TIMEOUT` (RN-004)
     request_time_limit: int | None = None  # seconds per request; None: `llm.TIME_LIMIT`
+    ask_again: bool = True  # each run asks again for what the LLM left without text (RN-007)
     render: bool = True
     image_pixels: int | None = None
     diagram_modules: str | None = None  # "N:MIN:MAX"
@@ -209,6 +210,8 @@ SETTINGS = (
     Setting("timeout", "request_timeout", "count", "seconds an LLM request may wait for its next words", "120"),
     Setting("time-limit", "request_time_limit", "count",
             "seconds an LLM request may take; a description cut there keeps its whole sentences", "600"),
+    Setting("ask-again", "ask_again", "switch",
+            "each run asks again for what the LLM left without text (failures, the call budget)", "on"),
 )
 BY_KEY = {s.key: s for s in SETTINGS}
 _ON, _OFF = ("on", "true", "yes", "1"), ("off", "false", "no", "0")

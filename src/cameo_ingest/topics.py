@@ -297,14 +297,15 @@ def entry(subs: list[Subject], view: dict[str, Any] | None, asked: bool) -> dict
 
 
 def update(fams: list[Family], records: list[dict[str, Any]], before: dict[str, Any] | None, llm: Any = None,
-           concurrency: int = 1, progress: Any = None) -> dict[str, Any]:
+           concurrency: int = 1, progress: Any = None, ask_again: bool = True) -> dict[str, Any]:
     """The topics record for `subjects.json`, from the families and their records: the last one
-    when its subjects are unchanged and it is complete (or there is no LLM to ask); else asked
-    again, or words alone."""
+    when its subjects are unchanged and it is complete (or there is no LLM to ask, or not
+    `ask_again`); else asked again, or words alone."""
     subs = subjects(fams, {r["tokens"][0]: r for r in records})
     sig = signature(subs)
     can_ask = llm is not None and getattr(getattr(llm, "cfg", None), "text_model", None)
-    if before and before.get("signature") == sig and (before.get("ways") in ("found", "too few models") or not can_ask):
+    if before and before.get("signature") == sig and (before.get("ways") in ("found", "too few models") or not can_ask
+                                                     or not ask_again):
         return before
     if not can_ask or len({s.family for s in subs}) < MIN_FAMILIES:
         return entry(subs, None, asked=False)

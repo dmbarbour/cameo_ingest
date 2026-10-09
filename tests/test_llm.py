@@ -408,8 +408,8 @@ def test_llm_circuit_breaker(tmp_path, fake_chat, monkeypatch):
 
 
 def test_items_left_without_text_are_asked_for_again(tmp_path, fake_chat, monkeypatch, caplog, capsys):
-    """A project written with items the LLM left without text is built again by the next run,
-    which asks only for those; while they keep failing, at most 3 builds in a row (RN-006)."""
+    """A project written with items the LLM left without text is built again by every run, which
+    asks only for those (RN-006); `config set ask-again off` leaves it as it is (RN-007)."""
     src = tmp_path / "drone.mdzip"
     src.write_bytes(make_mdzip())
     out = tmp_path / "out"
@@ -418,33 +418,31 @@ def test_items_left_without_text_are_asked_for_again(tmp_path, fake_chat, monkey
         assert cli([str(src), "-o", str(out), "--text-model", "m", "--no-calibrate", "--no-preflight"]) == 0
         return json.loads((out / "run.json").read_text())
 
+    def status() -> str:
+        capsys.readouterr()
+        assert cli(["status", "-o", str(out)]) == 0
+        return capsys.readouterr().out
+
     monkeypatch.setattr(FakeChat, "fail", True)
     assert run()["llm"]["outcomes"] == {"failed": 3, "skipped_disabled": 1}
-    for builds in (2, 3):  # still failing: built again, twice more
+    for _ in range(4):  # still failing: built again, every run
         caplog.clear()
         assert run()["projects"]["written"] == 1
         assert "1 project(s) to build (1 again, for items the LLM left without text), 0 up to date" in caplog.text
-    assert run()["projects"]["written"] == 0  # three builds in a row with gaps: left as it is
-    capsys.readouterr()
-    assert cli(["status", "-o", str(out)]) == 0
-    assert "without some generated text: drone.mdzip" in capsys.readouterr().out
+    assert "without some generated text: drone.mdzip" in status()
+    assert "after 5 builds in a row; the next run asks again" in status()
 
-    monkeypatch.setattr(FakeChat, "fail", False)
-    assert cli(["run", "-o", str(out), "--text-model", "m", "--no-calibrate", "--no-preflight"]) == 0
-    assert json.loads((out / "run.json").read_text())["projects"]["written"] == 0  # until something changes
-    fresh = tmp_path / "fresh"
-    fresh.mkdir()
-    (fresh / "drone.mdzip").write_bytes(make_mdzip())
-    src, out = fresh / "drone.mdzip", tmp_path / "out2"
-    monkeypatch.setattr(FakeChat, "fail", True)
-    run()
+    assert cli(["config", "-o", str(out), "set", "ask-again", "off"]) == 0
+    assert run()["projects"]["written"] == 0  # left as it is
+    assert "ask-again is off" in status()
+    assert cli(["config", "-o", str(out), "unset", "ask-again"]) == 0
     monkeypatch.setattr(FakeChat, "fail", False)
     sent = sum(len(c.enrichment()) for c in fake_chat)
     report = run()
     assert report["projects"]["written"] == 1 and report["llm"]["outcomes"] == {"answered": 4}
-    assert sum(len(c.enrichment()) for c in fake_chat) - sent == 4
+    assert sum(len(c.enrichment()) for c in fake_chat) - sent == 4  # only what was missing
     assert run()["projects"]["written"] == 0  # no gaps left
-
+    assert "without some generated text" not in status()
 
 REPLAY = Path(__file__).parent / "fixtures" / "llm-replay.sqlite"
 

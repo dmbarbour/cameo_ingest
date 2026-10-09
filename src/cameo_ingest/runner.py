@@ -22,7 +22,7 @@ from typing import Any
 
 from . import rootfiles, subjects
 from .archive import UnsupportedInput, discover
-from .config import ProjectOptions
+from .config import ProjectOptions, tree_settings
 from .fingerprint import fingerprint
 from .llm import GAPS, EnrichmentSession
 from .pipeline import ingest_project
@@ -34,19 +34,19 @@ from .treefiles import PROJECTS
 
 log = logging.getLogger(__name__)
 announce = logging.getLogger("cameo_ingest.progress")  # shown at any verbosity, like heartbeats
-GAP_BUILDS = 3  # builds in a row a project with gaps gets, so that a request failing every time stops (RN-006)
 
 WORK = ".work"
 
 
 class Runner:
     def __init__(self, state: State, out: Path, llm: EnrichmentSession, options: ProjectOptions, progress: Progress,
-                 concurrency: int = 1, prepare: Callable[[], ProjectOptions] | None = None):
+                 concurrency: int = 1, prepare: Callable[[], ProjectOptions] | None = None, ask_again: bool = True):
         self.state, self.out, self.llm, self.progress = state, out, llm, progress
         self.options = options
         self.opt_hash = options.hash()
         self.prepare = prepare  # after the scan, before building: the options, perhaps calibrated (plan VA)
         self.concurrency = concurrency
+        self.ask_again = ask_again  # build again the projects with gaps, and ask again for subjects (RN-007)
         self.projects_dir = out / PROJECTS
         self.failed_inputs: list[str] = []
         self.failed_projects: list[str] = []
@@ -67,7 +67,8 @@ class Runner:
                 self.opt_hash = self.options.hash()
             self.build()
             # The families' subjects (ADR-0031): asked of the LLM where missing, changed or incomplete.
-            self.subjects = subjects.update(self.state, self.out, self.llm, self.concurrency, self.progress)
+            self.subjects = subjects.update(self.state, self.out, self.llm, self.concurrency, self.progress,
+                                           ask_again=self.ask_again)
             outcome = "finished"
         except KeyboardInterrupt:
             outcome = "interrupted"
@@ -211,7 +212,7 @@ class Runner:
         """Contents without up-to-date output, grouped by an input to read them from:
         {input path: [(content sha256, input sha256)]}."""
         by_input: dict[str, list[tuple[str, str]]] = defaultdict(list)
-        for sha in self.state.stale_contents(TOOL, self.opt_hash, GAP_BUILDS):
+        for sha in self.state.stale_contents(TOOL, self.opt_hash, self.ask_again):
             where = next((s for s in self.state.sightings(sha) if s["input_status"] == "done"), None)
             if where is not None:  # otherwise only seen in missing or old inputs: nothing to read
                 by_input[where["path"]].append((sha, where["input_sha256"]))
@@ -221,7 +222,7 @@ class Runner:
         todo = self.todo()
         total = sum(len(items) for items in todo.values())
         resumed = self.state.count_projects("working", TOOL, self.opt_hash)
-        again = self.state.with_gaps(self.opt_hash, GAP_BUILDS)
+        again = self.state.with_gaps(self.opt_hash) if self.ask_again else 0
         notes = [f"{resumed} resumed"] * bool(resumed) + [f"{again} again, for items the LLM left without text"] * bool(again)
         announce.info("%d project(s) to build%s, %d up to date", total, f" ({'; '.join(notes)})" if notes else "",
                       self._current_written() - again)
@@ -283,7 +284,8 @@ class Runner:
         gaps = sum(1 for x in self.llm.incomplete[asked:] if x["outcome"] in GAPS)
         self.state.set_gaps(sha, self.opt_hash, gaps)
         if gaps:
-            log.info("%s: %d item(s) left without generated text; a later run asks again", content.name, gaps)
+            log.info("%s: %d item(s) left without generated text; %s", content.name, gaps,
+                     "the next run asks again" if self.ask_again else "ask-again is off")
         if old.exists():
             shutil.rmtree(old)
         self.written.append(sha)
@@ -306,7 +308,9 @@ class Runner:
 def status(state: State) -> dict[str, Any]:
     """What an output tree holds, for `status` (reads only: works while a run is going)."""
     run = state.latest_run()
+    again = tree_settings(state.settings(), quiet=True).ask_again
     return {
+        "ask_again": again,
         "inputs": {
             "counts": state.counts("inputs"),
             "problems": [{"path": r["path"], "status": r["status"], "error": r["error"]}
@@ -320,7 +324,7 @@ def status(state: State) -> dict[str, Any]:
                           for r in state.written()
                           if (rec := json.loads(r["summary"] or "{}").get("recovered"))],
             "gaps": [{"token": f"sha256:{r['content_sha256']}", "name": r["name"], "items": r["items"],
-                      "builds": r["builds"], "again": r["builds"] < GAP_BUILDS} for r in state.gaps()],
+                      "builds": r["builds"], "again": again} for r in state.gaps()],
         },
         "subjects": subjects.summary(state.out),
         "calibrations": [{"model": r["model"], "kind": r["kind"], "endpoint": r["endpoint"], "created": r["created"],

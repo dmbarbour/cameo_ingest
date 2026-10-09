@@ -1,7 +1,7 @@
 # Review: running a tree, from the maintainer's trial of 2026-10-08
 
-- **Status:** Open until the maintainer's trial. Every remedy shipped in 0.31.0: RN-001 to RN-006
-  done (the plan below).
+- **Status:** Open until the maintainer's trial. RN-001 to RN-006 done in 0.31.0; RN-007, from the
+  maintainer's reading of RN-006, done in 0.31.1 (the plan below).
 - **Prefix:** `RN`. Findings are `RN-001` and so on; remediation steps are `RN-001R1` and so on.
 - **Subject:** 0.30.0, run by the maintainer on their own models: calibration, LLM requests,
   progress on a terminal, and `config`.
@@ -21,6 +21,7 @@
 | RN-004 | The timeout can't be set | Feature | Medium; with RN-002 |
 | RN-005 | `config -i` is documented but doesn't work; settings can't be exported or imported | Feature | Low, quick |
 | RN-006 | An item left without text by a failed request is never asked for again | Bug | Medium: RN-002's losses stay |
+| RN-007 | RN-006's cap of 3 builds changes what a run does on a count nobody sees | Design | Medium |
 
 ## Findings
 
@@ -151,6 +152,34 @@
   count: failed, budget, switched off, empty, broken off); `build` announces the projects built
   again; `status` lists them. Test: `test_items_left_without_text_are_asked_for_again` (failing
   three builds, then left; answered on the next, with only the 4 missing requests sent).
+  Superseded by RN-007: no cap.
+
+### RN-007: a hidden cap on asking again
+
+> "I think we need a configuration option to re-ask for errors. In any case, I think the
+> "3 builds" would be non-intuitive - things would suddenly stop working the same way, and only
+> someone who knows some arcane inner-state of the tool would know why."
+
+- **Where:** RN-006's `runner.GAP_BUILDS`: after 3 builds in a row with gaps, a project is left
+  as it is, on a count kept in `state.sqlite` and shown only by `status`.
+- **Weighed:**
+  - *The cap (as in 0.31.0):* bounds the cost of a request that always fails; convenient. But a
+    run then behaves differently from the run before for a reason the user can't see.
+  - *Every run, no setting:* predictable; but a request that always fails costs its project's
+    build and its timeouts every run, with no way out but changing the options.
+  - *A flag on `run`:* a one-off choice; but ADR-0030 keeps run flags to the action, and a flag
+    off by default leaves gaps that the user must know to ask for.
+  - *Every run, with a setting `ask-again` (on by default):* predictable, and the cost is the
+    user's choice, which they can judge (not a heuristic, ADR-0027). It covers the subjects too,
+    which already asked again every run for failed or incomplete ways.
+  - Chosen: the last.
+- **Done:** R1. `TreeSettings.ask_again` and the setting `ask-again`; `Runner(ask_again=)`,
+  `State.stale_contents(..., gaps)` and `with_gaps` without a cap; `subjects.update` and
+  `topics.update` keep an unchanged family's or the topics' failed record when it is off; `status`
+  says how many builds in a row a project has had gaps, and whether the next run asks again;
+  `runner.GAP_BUILDS` removed (the `gaps` table keeps its count, for `status`). Tests:
+  `test_items_left_without_text_are_asked_for_again` (five builds while failing; none with
+  `ask-again off`; then only the 4 missing requests), `test_subjects_and_their_fallbacks`.
 
 ## Remediation plan
 
@@ -175,4 +204,6 @@ Easiest first. Each step: tests, `uv run pytest`, lint, a commit naming its IDs.
   while bars are shown, for the log handler and for `sys.stderr`; check in the emulator.
 - **RN-006R1:** projects record their LLM gaps and builds with gaps; `stale_contents` includes
   those with gaps and fewer than 3 such builds, when the LLM is on. Tests.
+- **RN-007R1:** the setting `ask-again`; no cap; subjects and topics follow it; `status`; docs,
+  ADR-0030. Release 0.31.1.
 - **Close:** design/llm-enrichment, design/vision-calibration, README, roadmap; release.

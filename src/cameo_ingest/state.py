@@ -320,21 +320,21 @@ class State:
         return self.db.execute("SELECT 1 FROM sightings WHERE input_id = ? AND input_sha256 = ? LIMIT 1",
                                (input_id, input_sha256)).fetchone() is not None
 
-    def stale_contents(self, tool: str, options_hash: str, gap_builds: int = 0) -> list[str]:
+    def stale_contents(self, tool: str, options_hash: str, gaps: bool = False) -> list[str]:
         """Contents whose output is missing, failed or unfinished, or made by another tool or
-        options; or, made with these options, with gaps after fewer than `gap_builds` builds."""
+        options; and, with `gaps`, those made with these options with gaps (RN-006, RN-007)."""
         return [r[0] for r in self.db.execute(
             "SELECT c.sha256 FROM contents c LEFT JOIN projects p ON p.content_sha256 = c.sha256 "
             "WHERE (p.status IS NULL OR p.status != 'written' OR p.tool != ? OR p.options_hash != ? "
-            "       OR c.sha256 IN (SELECT content_sha256 FROM gaps WHERE options_hash = ? AND builds < ?)) "
+            "       OR (? AND c.sha256 IN (SELECT content_sha256 FROM gaps WHERE options_hash = ?))) "
             "AND c.sha256 NOT IN (SELECT content_sha256 FROM removed) "
-            "ORDER BY c.name, c.sha256", (tool, options_hash, options_hash, gap_builds))]
+            "ORDER BY c.name, c.sha256", (tool, options_hash, gaps, options_hash))]
 
-    def with_gaps(self, options_hash: str, gap_builds: int) -> int:
-        """Written projects with gaps, made with these options, to be built again."""
+    def with_gaps(self, options_hash: str) -> int:
+        """Written projects with gaps, made with these options."""
         return self.db.execute("SELECT count(*) FROM gaps g JOIN projects p ON p.content_sha256 = g.content_sha256 "
-                               "WHERE p.status = 'written' AND g.options_hash = ? AND g.options_hash = p.options_hash "
-                               "AND g.builds < ?", (options_hash, gap_builds)).fetchone()[0]
+                               "WHERE p.status = 'written' AND g.options_hash = ? AND g.options_hash = p.options_hash",
+                               (options_hash,)).fetchone()[0]
 
     def gaps(self) -> list[sqlite3.Row]:
         """Written projects with items the LLM left without text, by name (RN-006)."""

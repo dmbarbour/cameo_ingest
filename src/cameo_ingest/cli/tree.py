@@ -147,7 +147,8 @@ def run(out: Path, args: argparse.Namespace) -> int:
             return options
 
         runner = Runner(state, out, llm, ProjectOptions.of(settings, cfg.text_model, cfg.vision_model, cfg.max_calls),
-                        progress, concurrency=settings.llm_concurrency or 1, prepare=prepare)
+                        progress, concurrency=settings.llm_concurrency or 1, prepare=prepare,
+                        ask_again=settings.ask_again)
         previous = signal.signal(signal.SIGTERM, _interrupt)
         try:
             code = runner.run(args.argv)
@@ -196,14 +197,15 @@ def print_status(state: State, as_json: bool) -> None:
     for p in s["projects"]["failed"]:
         print(f"  failed: {p['name']} {p['token'][:23]} ({p['error']})")
     for p in s["projects"]["gaps"]:
-        print(f"  without some generated text: {p['name']} {p['token'][:23]} ({p['items']} item(s); "
-              + ("the next run with the LLM asks again)" if p["again"] else
-                 f"{p['builds']} builds in a row: built again when the options change)"))
+        print(f"  without some generated text: {p['name']} {p['token'][:23]} ({p['items']} item(s), "
+              + (f"after {p['builds']} builds in a row; " if p["builds"] > 1 else "")
+              + ("the next run asks again)" if p["again"] else "ask-again is off)"))
     sub = s.get("subjects") or {}
     if sub.get("families"):
         parts = [f"{n} {w}" for w, n in sub.items() if w not in ("families", "topics")]
         print(f"subjects: {sub['families']} famil{'y' if sub['families'] == 1 else 'ies'} of versions ({', '.join(parts)})"
-              + ("; a run asks again for those failed or incomplete" if sub.get("failed") or sub.get("incomplete") else "")
+              + (("; a run asks again for those failed or incomplete" if s["ask_again"] else "; ask-again is off")
+                 if sub.get("failed") or sub.get("incomplete") else "")
               + (f"; topics across models: {sub['topics']}" if sub.get("topics") else ""))
     for p in s["projects"]["recovered"]:
         n = sum(e["names"] for e in p["entries"].values())

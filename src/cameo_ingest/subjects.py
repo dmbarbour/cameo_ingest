@@ -432,10 +432,12 @@ def summary(out: Path) -> dict[str, Any]:
             **({"topics": topics["ways"]} if topics.get("ways") else {})}
 
 
-def update(state: Any, out: Path, llm: Any = None, concurrency: int = 1, progress: Progress = QUIET) -> dict[str, Any]:
+def update(state: Any, out: Path, llm: Any = None, concurrency: int = 1, progress: Progress = QUIET,
+           ask_again: bool = True) -> dict[str, Any]:
     """Write `subjects.json`. With a session that has a text model, ask for the ways of each family
     that lacks complete ones; without, keep each unchanged family's record and give others the
-    fallback. Returns counts for the run's record."""
+    fallback. Without `ask_again` (the setting, RN-007), an unchanged family's failed or incomplete
+    ways are kept too. Returns counts for the run's record."""
     fams = [f for f in families(state, out) if f.items]
     before = load(out)
     can_ask = llm is not None and getattr(llm.cfg, "text_model", None)
@@ -444,7 +446,7 @@ def update(state: Any, out: Path, llm: Any = None, concurrency: int = 1, progres
     for f in fams:
         old = before.get(f.tokens[0])
         same = old is not None and old.get("signature") == f.signature and old.get("tokens") == f.tokens
-        if same and (old.get("ways") in ("found", "too few diagrams") or not can_ask):
+        if same and (old.get("ways") in ("found", "too few diagrams") or not can_ask or not ask_again):
             records.append(old)
         elif can_ask and len(f.items) >= MIN_ITEMS:
             todo.append(f)
@@ -457,14 +459,16 @@ def update(state: Any, out: Path, llm: Any = None, concurrency: int = 1, progres
             found = ways_for(llm, todo, concurrency, ph.advance)
         asked = {f.tokens[0]: entry(f, found[f.tokens[0]], asked=True) for f in todo}
         records = [r if r is not None else asked[f.tokens[0]] for r, f in zip(records, fams, strict=True)]
-    found = topics.update(fams, records, load_topics(out), llm if can_ask else None, concurrency, progress)
+    found = topics.update(fams, records, load_topics(out), llm if can_ask else None, concurrency, progress,
+                          ask_again)
     write(out, records, found)
     counts = Counter(r.get("ways") for r in records)
+    until = "until a run completes them" if ask_again else "(ask-again is off)"
     for r in records:
         if r.get("ways") in ("failed", "incomplete"):
-            log.warning("subjects of %s: the LLM's ways %s; %s is shown first until a run completes them", r["name"],
-                        "failed" if r["ways"] == "failed" else "left diagrams unsorted", r["views"][0]["title"])
+            log.warning("subjects of %s: the LLM's ways %s; %s is shown first %s", r["name"],
+                        "failed" if r["ways"] == "failed" else "left diagrams unsorted", r["views"][0]["title"], until)
     if found.get("ways") in ("failed", "incomplete"):
-        log.warning("topics across models: the LLM's %s; topics by words are shown first until a run completes them",
-                    "failed" if found["ways"] == "failed" else "left subjects unsorted")
+        log.warning("topics across models: the LLM's %s; topics by words are shown first %s",
+                    "failed" if found["ways"] == "failed" else "left subjects unsorted", until)
     return {"families": len(records), **dict(sorted((k, v) for k, v in counts.items() if k)), "topics": found["ways"]}

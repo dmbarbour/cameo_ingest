@@ -1,3 +1,3 @@
 """Cameo / MagicDraw model ingestion for RAG."""
 
-__version__ = "0.31.0"
+__version__ = "0.31.1"

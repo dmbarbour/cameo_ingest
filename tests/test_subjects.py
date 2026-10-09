@@ -83,13 +83,13 @@ def versions_tree(tmp_path_factory):
     return out
 
 
-def _update(out, llm=None):
+def _update(out, llm=None, ask_again=True):
     from cameo_ingest import subjects
     from cameo_ingest.state import State
 
     st = State(out)
     try:
-        counts = subjects.update(st, out, llm)
+        counts = subjects.update(st, out, llm, ask_again=ask_again)
     finally:
         st.close()
     data = json.loads((out / discovery.FILE).read_text())
@@ -155,6 +155,9 @@ def test_subjects_and_their_fallbacks(versions_tree, tmp_path):
     unsorted = f["views"][1]["unsorted"]
     assert f["ways"] == "incomplete" and f["default"] == "shared" and unsorted  # over 5% unsorted
     assert all(k not in s["diagrams"] for s in f["views"][1]["subjects"] for k in unsorted)  # never a guess
+    held = FakeLLM()
+    _, fams = _update(out, held, ask_again=False)  # `config set ask-again off`: kept as it is (RN-007)
+    assert fams[fork]["ways"] == "incomplete" and not held.asked
     retry = FakeLLM()
     _, fams = _update(out, retry)  # an incomplete family is asked again
     assert fams[fork]["ways"] == "found" and retry.asked["subjects-assign"]
