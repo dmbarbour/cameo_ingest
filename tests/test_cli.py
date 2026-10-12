@@ -179,7 +179,7 @@ def test_preflight(tmp_path, capsys, caplog):
     assert "shell-model" in err and "127.0.0.1:9" in err and "config test" in err
     assert "sk-secret-123" not in err + caplog.text
     assert not (out / "manifest.json").exists()
-    assert logging.getLogger("httpx").getEffectiveLevel() == logging.WARNING  # quiet below -vv (BASE-018)
+    assert logging.getLogger("httpx2").getEffectiveLevel() == logging.WARNING  # quiet below -vv (BASE-018)
 
 
 def test_progress_heartbeats_and_log_file(tmp_path, fake_chat, monkeypatch, capsys):
@@ -384,3 +384,25 @@ def test_config_export_and_import(tmp_path, capsys):
     file.write_text("{not json")
     assert cli(["config", "-o", str(two), "import", str(file)]) == 2
     assert settings(two) == before
+
+
+def test_help_and_config_show_name_the_environment(tmp_path, capsys, monkeypatch):
+    """`--help`, `config --help`, `run --help` and `ingest --help` list the environment variables;
+    `config show` says what each is now, and of the key only whether it is set."""
+    from cameo_ingest.config import ENVIRONMENT
+
+    names = [name for name, _ in ENVIRONMENT]
+    for argv in (["--help"], ["config", "--help"], ["run", "--help"], ["ingest", "--help"]):
+        with pytest.raises(SystemExit):
+            cli(argv)
+        text = capsys.readouterr().out
+        assert "environment variables:" in text and all(f"\n  {n}  " in text for n in names), argv
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-secret")
+    monkeypatch.setenv("CAMEO_INGEST_CACHE", str(tmp_path / "store"))
+    monkeypatch.delenv("CAMEO_INGEST_TREE", raising=False)
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    assert cli(["config", "-o", str(tmp_path / "out")]) == 0
+    text = capsys.readouterr().out
+    assert "sk-secret" not in text and re.search(r"OPENAI_API_KEY +set\n", text)
+    assert re.search(r"OPENAI_BASE_URL +not set: OpenAI\n", text)
+    assert f"CAMEO_INGEST_CACHE  {tmp_path / 'store'}\n" in text

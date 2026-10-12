@@ -1,7 +1,8 @@
 # Review: running a tree, from the maintainer's trial of 2026-10-08
 
 - **Status:** Open until the maintainer's trial. RN-001 to RN-006 done in 0.31.0; RN-007, from the
-  maintainer's reading of RN-006, done in 0.31.1 (the plan below).
+  maintainer's reading of RN-006, done in 0.31.1; RN-008 and RN-002's import fix in 0.31.2 (the
+  plan below).
 - **Prefix:** `RN`. Findings are `RN-001` and so on; remediation steps are `RN-001R1` and so on.
 - **Subject:** 0.30.0, run by the maintainer on their own models: calibration, LLM requests,
   progress on a terminal, and `config`.
@@ -22,6 +23,7 @@
 | RN-005 | `config -i` is documented but doesn't work; settings can't be exported or imported | Feature | Low, quick |
 | RN-006 | An item left without text by a failed request is never asked for again | Bug | Medium: RN-002's losses stay |
 | RN-007 | RN-006's cap of 3 builds changes what a run does on a count nobody sees | Design | Medium |
+| RN-008 | The environment variables are buried: not in `--help`, late in the README | Docs | Medium |
 
 ## Findings
 
@@ -84,6 +86,11 @@
   (a fake stream: slow and steady is whole; a stall is retried, then fails; a broken reply, the
   time limit and the output limit say what they held; the session's three cases). The live tests
   pass on DeepInfra, streamed.
+- **Fixed in 0.31.2:** `complete` imported `httpx`, which openai 3 no longer depends on (its
+  transport is `httpx2`): a plain install failed with "No module named 'httpx'". The checkout had
+  `httpx` only through the `eval` extra. openai 3 wraps its transport's errors in a stream as
+  `APIConnectionError`, so that is all `complete` catches now. Checked from a fresh venv without
+  extras: the suite (the evaluation's tests skip without numpy), and the live tests.
 
 ### RN-003: a log line breaks the progress bars
 
@@ -181,6 +188,17 @@
   `test_items_left_without_text_are_asked_for_again` (five builds while failing; none with
   `ask-again off`; then only the 4 missing requests), `test_subjects_and_their_fallbacks`.
 
+### RN-008: the environment variables are buried
+
+> "We should ensure the help page describes the environment vars. That info is quite buried in
+> both help and readme at the moment. Even `cameo-ingest config --help` doesn't mention the
+> cache."
+
+- **Where:** `--help` named none; `config --help` named the endpoint's two; the README listed the
+  four in a sentence after the settings, and the quick start set none.
+- **Done:** R1, below. One list, `config.ENVIRONMENT`, so that help, `config show` and the README
+  can't drift apart in what they name.
+
 ## Remediation plan
 
 Easiest first. Each step: tests, `uv run pytest`, lint, a commit naming its IDs.
@@ -204,6 +222,10 @@ Easiest first. Each step: tests, `uv run pytest`, lint, a commit naming its IDs.
   while bars are shown, for the log handler and for `sys.stderr`; check in the emulator.
 - **RN-006R1:** projects record their LLM gaps and builds with gaps; `stale_contents` includes
   those with gaps and fewer than 3 such builds, when the LLM is on. Tests.
+- **RN-008R1:** `config.ENVIRONMENT`, listed by `--help`, `config`, `run` and `ingest --help`
+  (`cli.Formatter` keeps an epilog's lines) and by `config show` with each one's value (the key
+  only set or not); the README's Configuration opens with a table of them, and the quick start
+  sets the endpoint. Test: `test_help_and_config_show_name_the_environment`. Release 0.31.2.
 - **RN-007R1:** the setting `ask-again`; no cap; subjects and topics follow it; `status`; docs,
   ADR-0030. Release 0.31.1.
 - **Close:** design/llm-enrichment, design/vision-calibration, README, roadmap; release.

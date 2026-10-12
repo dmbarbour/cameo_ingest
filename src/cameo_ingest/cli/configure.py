@@ -10,7 +10,18 @@ import sys
 from pathlib import Path
 
 from .. import session
-from ..config import BY_KEY, SETTINGS, exported, imported, parse_setting, shown, stored_settings, tree_settings
+from ..config import (
+    BY_KEY,
+    ENVIRONMENT,
+    SETTINGS,
+    exported,
+    imported,
+    parse_setting,
+    shown,
+    store_dir,
+    stored_settings,
+    tree_settings,
+)
 from ..state import State
 from .common import open_tree
 
@@ -38,8 +49,10 @@ def configure(out: Path, args: argparse.Namespace) -> int:
         for s in SETTINGS:
             value, own = shown(s.key, stored)
             print(f"  {s.key:<{width}}  {value:<18} {'' if own else '(default)':<10} {s.about}")
-        print("endpoint: $OPENAI_BASE_URL " + ("set" if os.environ.get("OPENAI_BASE_URL") else "not set (OpenAI)")
-              + "; key: $OPENAI_API_KEY " + ("set" if os.environ.get("OPENAI_API_KEY") else "not set"))
+        print("environment variables (not the tree's):")
+        width = max(len(name) for name, _ in ENVIRONMENT)
+        for name, value in environment():
+            print(f"  {name:<{width}}  {value}")
         return 0
     try:
         value = parse_setting(args.key, args.value) if action == "set" else None
@@ -59,6 +72,18 @@ def configure(out: Path, args: argparse.Namespace) -> int:
         state.save_settings(tree_settings(stored).stored())  # retired settings go, with a notice
         print(f"{args.key} = {shown(args.key, state.settings())[0]}")
     return 0
+
+
+def environment() -> list[tuple[str, str]]:
+    """Each variable `config show` lists, with what it is now: its value, or what is used without
+    it; never the key, only whether it is set."""
+    def value(name: str, unset: str) -> str:
+        return os.environ[name] if os.environ.get(name) else f"not set: {unset}"
+
+    return [("OPENAI_BASE_URL", value("OPENAI_BASE_URL", "OpenAI")),
+            ("OPENAI_API_KEY", "set" if os.environ.get("OPENAI_API_KEY") else "not set"),
+            ("CAMEO_INGEST_TREE", value("CAMEO_INGEST_TREE", "./ingest_tree, without -o")),
+            ("CAMEO_INGEST_CACHE", value("CAMEO_INGEST_CACHE", str(store_dir())))]
 
 
 def import_settings(out: Path, file: Path) -> int:

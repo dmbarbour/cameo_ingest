@@ -6,7 +6,7 @@ from __future__ import annotations
 import time
 from types import SimpleNamespace
 
-import httpx
+import httpx2  # openai's transport (openai 3); not httpx
 import openai
 import pytest
 
@@ -39,7 +39,7 @@ class Stream:
 
 
 def timeout() -> openai.APITimeoutError:
-    return openai.APITimeoutError(request=httpx.Request("POST", "https://example.invalid/v1/chat/completions"))
+    return openai.APITimeoutError(request=httpx2.Request("POST", "https://example.invalid/v1/chat/completions"))
 
 
 def client(streams, time_limit=600.0, retries=2) -> tuple[OpenAIChat, list[dict]]:

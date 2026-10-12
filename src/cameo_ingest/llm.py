@@ -223,14 +223,13 @@ class OpenAIChat:
         from openai import OpenAI
 
         # The client reads OPENAI_API_KEY itself; local servers often need no key. Its timeout is
-        # httpx's, per wait: streamed, the longest wait for the next words.
+        # its transport's, per wait: streamed, the longest wait for the next words.
         self._client = OpenAI(base_url=cfg.base_url, api_key=os.environ.get("OPENAI_API_KEY") or "unused",
                               timeout=cfg.timeout, max_retries=cfg.retries)
         self.retries, self.time_limit = cfg.retries, cfg.time_limit
 
     def complete(self, model: str, messages: list[dict], temperature: float) -> str:
         """The reply, whole; `Partial` when it was cut short."""
-        import httpx
         import openai
 
         deadline = time.monotonic() + self.time_limit
@@ -248,7 +247,7 @@ class OpenAIChat:
                         if time.monotonic() > deadline:
                             raise Partial("".join(words).strip(), f"cut at the time limit ({self.time_limit:g} s)",
                                           "time")
-            except (openai.APIConnectionError, httpx.TransportError) as e:  # a timeout among them
+            except openai.APIConnectionError as e:  # a timeout among them; the SDK wraps its transport's errors
                 said = "".join(words).strip()
                 if said:
                     raise Partial(said, f"the answer broke off ({type(e).__name__})", "broken") from e

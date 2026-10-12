@@ -21,10 +21,13 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import re
 import sys
+import textwrap
 from pathlib import Path
 
 from .. import __version__, progress
+from ..config import ENVIRONMENT
 from ..searchpage import SKETCHES
 from ..state import State, StateError
 from . import calibration, configure, tree, versions
@@ -42,7 +45,7 @@ _handlers: list[logging.Handler] = []  # ours, replaced when main() runs again (
 def setup_logging(verbose: int, log_file: Path | None) -> None:
     """Console at WARNING, INFO (-v) or DEBUG (-vv), plus progress lines at any level;
     `log_file` gets DEBUG whatever the console shows. Third-party libraries (openai,
-    httpx) stay at WARNING below -vv."""
+    httpx2) stay at WARNING below -vv."""
     root = logging.getLogger()
     for h in _handlers:
         root.removeHandler(h)
@@ -83,16 +86,32 @@ def load_env(path: Path) -> None:
 
 
 
+class Formatter(argparse.HelpFormatter):
+    """argparse's, but a description or epilog keeps its lines: each is wrapped on its own, a line
+    "  NAME  text" with its text's column as the indent."""
+
+    def _fill_text(self, text: str, width: int, indent: str) -> str:
+        lines = []
+        for line in text.splitlines():
+            hang = re.match(r"\s+\S+\s{2,}", line)
+            lines.append(textwrap.fill(line, width, initial_indent=indent, drop_whitespace=True,
+                                       subsequent_indent=indent + " " * (hang.end() if hang else 0)) if line else "")
+        return "\n".join(lines)
+
+
+ENV_HELP = "environment variables:\n" + "\n".join(f"  {name:<20}{about}" for name, about in ENVIRONMENT)
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
-        prog="cameo-ingest",
+        prog="cameo-ingest", formatter_class=Formatter,
         description="Convert Cameo/MagicDraw projects (.mdzip, .mdzipx, .mdxml, or bundles such as .rdzip "
                     "containing them) into provenance-tagged Markdown, CSV and JSON for RAG ingestion. Output "
                     "goes to an output tree with a task list of inputs; runs can be stopped and continued.",
         epilog="Without a command, `ingest` is assumed: `cameo-ingest FILE -o OUT`. "
                "Exit status: 0 success; 2 usage or configuration error; 3 an input had no readable model; "
                "4 some projects failed (the others are written); 5 the LLM endpoint check failed; "
-               "130 interrupted (run again to continue).",
+               "130 interrupted (run again to continue).\n\n" + ENV_HELP,
     )
     ap.add_argument("--version", action="version", version=f"cameo-ingest {__version__}")
     common = argparse.ArgumentParser(add_help=False)
@@ -118,14 +137,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub = ap.add_subparsers(dest="command", required=True, metavar="COMMAND")
     sub.add_parser("add", parents=[common, inputs], help="add inputs to the task list").set_defaults(func=tree.add)
-    sub.add_parser("run", parents=[common, running], help="process pending inputs and unfinished projects"
-                   ).set_defaults(func=tree.run, needs_tree=True)
-    sub.add_parser("ingest", parents=[common, inputs, running], help="add inputs, then run (the default)"
-                   ).set_defaults(func=tree.run)
-    cf = sub.add_parser("config", parents=[common], help="show or change the tree's settings (plan CF)",
+    sub.add_parser("run", parents=[common, running], help="process pending inputs and unfinished projects",
+                   formatter_class=Formatter, epilog=ENV_HELP).set_defaults(func=tree.run, needs_tree=True)
+    sub.add_parser("ingest", parents=[common, inputs, running], help="add inputs, then run (the default)",
+                   formatter_class=Formatter, epilog=ENV_HELP).set_defaults(func=tree.run)
+    cf = sub.add_parser("config", parents=[common], help="show or change the tree's settings",
+                        formatter_class=Formatter, epilog=ENV_HELP,
                         description="The tree's settings: show them, set one, or unset one (back to its default); "
-                                    "export them to JSON, or import them from it. The LLM endpoint and key are "
-                                    "$OPENAI_BASE_URL and $OPENAI_API_KEY.")
+                                    "export them to JSON, or import them from it. `config show` lists them with "
+                                    "the environment variables below, which are not the tree's.")
     cf.set_defaults(func=configure.configure)
     cfs = cf.add_subparsers(dest="action", metavar="ACTION")
     cfs.add_parser("show", help="each setting, its value, and whether it is the tree's own or the default")

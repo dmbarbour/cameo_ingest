@@ -7,7 +7,8 @@ MagicDraw 18.x through Cameo 2026x, and it has been checked against 14 public sa
 
 ```sh
 uv sync
-uv run cameo-ingest config set text-model NAME       # choose the model (see "Configuration")
+export OPENAI_BASE_URL=URL OPENAI_API_KEY=KEY        # the LLM endpoint (see "Configuration" for all four variables)
+uv run cameo-ingest config set text-model NAME       # choose the model
 uv run cameo-ingest config test                      # check the endpoint, the key and the models
 uv run cameo-ingest MODEL.mdzip [--meta program=XYZ] [-v]   # ingest files or directories into ./ingest_tree
 
@@ -75,8 +76,16 @@ many files, bundles or names it turns up under.
 
 ## Configuration
 
-The LLM endpoint and its key are the OpenAI clients' own variables; everything else is the
-tree's, set with `cameo-ingest config`:
+Four environment variables, all optional; everything else is the tree's, set with
+`cameo-ingest config`. `cameo-ingest --help` and `config --help` list them too, and `config show`
+says what each is now:
+
+| Variable | Without it | Purpose |
+|---|---|---|
+| `OPENAI_BASE_URL` | OpenAI | The LLM endpoint: any OpenAI-compatible one. |
+| `OPENAI_API_KEY` | no key (local servers often need none) | The endpoint's key. Never written to the outputs or the logs. |
+| `CAMEO_INGEST_TREE` | `./ingest_tree` | The tree a command works on without `-o`. |
+| `CAMEO_INGEST_CACHE` | `$XDG_CACHE_HOME/cameo-ingest`, else `~/.cache/cameo-ingest` | The store of the LLM's answers, shared by every tree (below). |
 
 ```sh
 export OPENAI_BASE_URL=https://api.deepinfra.com/v1/openai   # any OpenAI-compatible endpoint; unset for OpenAI
@@ -95,7 +104,7 @@ calibrates to the models (see "Calibrating sketches to the vision model").
 - **Without the LLM:** `cameo-ingest config set llm off` (and `on` again). A tree needs one or
   the other, a model or `llm off`; with neither, a run stops at once and says how to set one.
 - **The settings:** `config show`; `config set KEY VALUE`; `config unset KEY`, back to the
-  default; `config export [FILE]` writes the tree's own settings as JSON (to the screen without
+  default (`config show` also lists the environment variables); `config export [FILE]` writes the tree's own settings as JSON (to the screen without
   FILE), and `config import FILE` sets those in a file, `null` unsetting one, in another tree, say.
   A wrong key or value in the file changes nothing:
 
@@ -120,8 +129,7 @@ calibrates to the models (see "Calibrating sketches to the vision model").
   version hash. A tree notes the creation time the endpoint reports for each model, and warns
   when it changes.
 
-These four variables are all there is: `OPENAI_BASE_URL`, `OPENAI_API_KEY`,
-`CAMEO_INGEST_TREE`, `CAMEO_INGEST_CACHE`. Requests are streamed: one times out when the model
+Requests are streamed: one times out when the model
 sends nothing for `timeout` seconds (120), and is retried twice. An answer still coming at
 `time-limit` (600 s) is cut there: a description or summary keeps its whole sentences, and is
 asked again only by a run with a longer limit; an answer that must be whole (JSON) fails. An
@@ -133,7 +141,7 @@ variables are gone; a tree that remembers one of its old settings is told it is 
 key is never written to the outputs or the logs.
 
 LLM responses are kept in an SQLite store, `llm.sqlite` in `$CAMEO_INGEST_CACHE` or else
-`~/.cache/cameo-ingest/` (0.20.3), shared by every tree: a second tree reuses the answers the first
+`$XDG_CACHE_HOME/cameo-ingest/` or `~/.cache/cameo-ingest/` (0.20.3), shared by every tree: a second tree reuses the answers the first
 paid for, and calibrates a model already calibrated from stored answers. A tree's own store from
 before (`OUT/.cache/llm.sqlite`) is copied into it once. Answers are
 keyed by endpoint, model and a hash of the request, so re-runs are cheap and repeatable; each

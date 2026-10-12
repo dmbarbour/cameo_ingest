@@ -198,6 +198,7 @@ def test_embedder_batches_counts_and_caches(tmp_path):
 
 
 def test_reranker_scores_through_its_cache(tmp_path):
+    pytest.importorskip("numpy")  # the eval extra
     from cameo_ingest.evaluation.provider import INFERENCE_API
     from cameo_ingest.evaluation.rerank import Reranker
 
@@ -295,6 +296,7 @@ def test_judge_reads_replies():
 def test_run_record(tmp_path, fiction_tree):
     """A run's record says which units it cut windows from, so that the judges read the same
     text (AR-020R2)."""
+    pytest.importorskip("numpy")  # the eval extra
     from cameo_ingest.evaluation.records import Run
 
     run = Run(str(fiction_tree), "questions.jsonl", rag=True, project="_abk_", window=256, overlap=32)
@@ -319,6 +321,7 @@ def test_run_record(tmp_path, fiction_tree):
 
 def test_a_class_joins_the_kind():
     """A generated unit's class (plan GS) joins its kind, so that a glob can leave a class out."""
+    pytest.importorskip("numpy")  # the eval extra
     from cameo_ingest.evaluation.harness import classed
 
     assert classed({"kind": "generated:summary", "about_class": "register"}) == "generated:summary#register"
@@ -328,6 +331,7 @@ def test_a_class_joins_the_kind():
 def test_page_units(fiction_tree):
     """The pages as a stack pointed at the tree reads them (plan RM-05): each file cut into windows
     across its sections, each window credited to the element whose section it starts in."""
+    pytest.importorskip("numpy")  # the eval extra
     from cameo_ingest.evaluation.records import Run
 
     units = Run(str(fiction_tree), "q", pages=True, window=128, overlap=16).units()

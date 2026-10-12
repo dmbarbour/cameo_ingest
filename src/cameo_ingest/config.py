@@ -292,6 +292,16 @@ def imported(data: Any) -> dict[str, Any]:
     return out
 
 
+# The environment variables the tool reads, for `--help` and `config show`: everything else is the tree's.
+ENVIRONMENT = (
+    ("OPENAI_BASE_URL", "the LLM endpoint, any OpenAI-compatible one (unset: OpenAI's)"),
+    ("OPENAI_API_KEY", "the endpoint's key (never written to the outputs or the logs)"),
+    ("CAMEO_INGEST_TREE", "the tree a command works on without -o (unset: ./ingest_tree)"),
+    ("CAMEO_INGEST_CACHE", ("where the LLM's answers are stored, shared by every tree (unset: "
+                            "$XDG_CACHE_HOME/cameo-ingest, else ~/.cache/cameo-ingest)")),
+)
+
+
 def store_dir() -> Path:
     """Where the LLM's answers, their request log and so the calibrations' answers live (plan
     CF-04): per user and shared by every tree, so that a second tree reuses what the first paid
