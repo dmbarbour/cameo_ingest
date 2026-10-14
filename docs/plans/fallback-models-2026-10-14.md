@@ -1,6 +1,6 @@
 # Plan: fallback models, and subjects robust to a failed request
 
-- **Status:** CP1 done (0.31.4), CP2 (0.31.5), CP3; CP4 under way.
+- **Status:** CP1 done (0.31.4), CP2 (0.31.5), CP3, CP4; CP5 under way.
 - **Prefix:** `FM`. Steps are `FM-01` and so on.
 - **From:** the maintainer, 2026-10-14:
 
@@ -184,6 +184,13 @@ changes, the requests follow the new list.
 - **FM-11:** tests with fake models: two vision models, each calibrated once; the run's sizes are
   the first's; the warning.
 - Commit.
+- **Done:** `calibration_for_run` returns the first models' settings and the vision fallbacks'
+  image orders, calibrating each model under `only`; a fallback's validation reads the first's
+  sizes in its own order (`vision_calibration_for_run(drawn=)`); the warnings; an incomplete
+  fallback calibration says it gets the image first. `calibrate-text --model`,
+  `calibrate-vision --model` (a fallback's record says whose sketches or parts it reads). Tests:
+  `test_a_fallback_is_calibrated_and_reads_the_firsts_sketches`,
+  `test_a_text_fallback_is_calibrated_and_cut_for_the_first`.
 
 ### CP5: close
 

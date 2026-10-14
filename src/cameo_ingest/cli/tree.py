@@ -140,10 +140,9 @@ def run(out: Path, args: argparse.Namespace) -> int:
         progress = Progress(heartbeat=args.heartbeat)
 
         def prepare() -> ProjectOptions:  # after the scan: the models calibrated, if they aren't yet
-            options = ProjectOptions.of(settings, cfg.text_model, cfg.vision_model, cfg.max_calls,
-                                        calibration_for_run(out, state, llm, settings, progress,
-                                                            calibrate=not args.no_calibrate),
-                                        **fallbacks(cfg))
+            found, orders = calibration_for_run(out, state, llm, settings, progress, calibrate=not args.no_calibrate)
+            options = ProjectOptions.of(settings, cfg.text_model, cfg.vision_model, cfg.max_calls, found,
+                                        **fallbacks(cfg, orders))
             llm.image_first = options.image_order()
             return options
 

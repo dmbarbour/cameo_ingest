@@ -159,3 +159,36 @@ def test_a_few_unanswered_requests_are_allowed():
     assert tc.problem(results(set())) is None
     assert tc.problem(results({0})) is None
     assert "2 of 30 requests went unanswered (1 may)" in tc.problem(results({0, 11}))
+
+
+def test_a_text_fallback_is_calibrated_and_cut_for_the_first(tmp_path, monkeypatch, capsys, caplog):
+    """With "good, short" as the text models, each is calibrated; the parts are cut for good, and
+    a warning says short reads best with smaller ones (plan FM, FM-10). `calibrate-text --model`
+    calibrates the fallback on demand."""
+    import json
+
+    from fixture_model import make_mdzip
+    from helpers import cli, ingest
+
+    reading(monkeypatch, 10**9)
+    real = TextReader.complete
+
+    def complete(self, model, messages, temperature):  # short reads the first 9,000 characters
+        if model != "short":
+            return real(self, model, messages, temperature)
+        twin = TextReader(9_000)
+        answer = real(twin, model, messages, temperature)
+        self.cards += twin.cards
+        return answer
+
+    monkeypatch.setattr(TextReader, "complete", complete)
+    out = ingest(tmp_path, ("m.mdzip", make_mdzip()),
+                 args=("--text-model", "good, short", "--no-render", "--no-preflight"))
+    err = capsys.readouterr().err
+    assert "calibrated to good: part_chars 12,000" in err and "calibrated to short: part_chars 6,000" in err
+    options = json.loads((out / "run.json").read_text())["options"]
+    assert options["part_chars"] == 12_000 and options["text_fallbacks"] == ["short"]
+    assert "the text fallback short reads parts of up to 6,000 characters evenly" in caplog.text
+    assert cli(["calibrate-text", "-o", str(out), "--model", "short", "--no-preflight"]) == 0
+    assert "recorded: short is a fallback; the tree's parts are cut for good" in capsys.readouterr().out
+    assert cli(["calibrate-text", "-o", str(out), "--model", "other", "--no-preflight"]) == 2

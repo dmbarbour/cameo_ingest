@@ -210,6 +210,7 @@ def build_parser() -> argparse.ArgumentParser:
     cv = sub.add_parser("calibrate-vision", parents=[common, running], help=about, description=about)
     cv.set_defaults(func=calibration.calibrate_vision, needs_tree=True)
     c = cv.add_argument_group("calibration")
+    c.add_argument("--model", metavar="NAME", help="one of the vision models to calibrate (default: the first)")
     c.add_argument("--suite", choices=("quick", "standard"), default="standard",
                    help="quick: 11 eye charts, to check a model; standard: 80, and a trial of the image's place, to "
                         "calibrate it (the default)")
@@ -217,8 +218,9 @@ def build_parser() -> argparse.ArgumentParser:
              "reading cards of 6,000 to 24,000 characters, 30 requests (see README, Calibrating the part size to the "
              "text model). It only lowers the part size, for a model that reads 12,000 characters unevenly. The "
              "calibration is recorded in the tree, and runs with that model use it")
-    sub.add_parser("calibrate-text", parents=[common, running], help=about, description=about
-                   ).set_defaults(func=calibration.calibrate_text, needs_tree=True)
+    ct = sub.add_parser("calibrate-text", parents=[common, running], help=about, description=about)
+    ct.set_defaults(func=calibration.calibrate_text, needs_tree=True)
+    ct.add_argument("--model", metavar="NAME", help="one of the text models to calibrate (default: the first)")
     q = sub.add_parser("quality", help="measure the quality of LLM enrichment (see docs/design/llm-enrichment.md)")
     qs = q.add_subparsers(dest="action", required=True, metavar="ACTION")
     qsample = qs.add_parser("sample", parents=[common], help="draw a spot-check set of requests and answers")

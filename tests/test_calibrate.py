@@ -532,3 +532,47 @@ def test_the_comparison_script(tmp_path):
     assert "| first | all |" in table and "| second | all | " in table
     second_all = next(line for line in table.splitlines() if line.startswith("| second | all |"))
     assert "| 100% | 100% |" in second_all
+
+
+def test_a_fallback_is_calibrated_and_reads_the_firsts_sketches(tmp_path, monkeypatch, capsys, caplog):
+    """With "A, B" as the vision models, each is calibrated, alone; the sketches are drawn for A;
+    B keeps its own image order (the image first: its trial found no difference), is validated on
+    A's sketches, and a warning says it reads best with larger ones (plan FM, FM-10, FM-D3).
+    `calibrate-vision --model` calibrates either."""
+    big = "acme/big-vl"
+    real = EyeReader.complete
+    twins: dict[int, EyeReader] = {}
+
+    def needs_13_px(card, drawn):  # B reads text of 13 px or more, and arrows perfectly
+        if card.family == "read" and card.font_px < 13:
+            return {"lines": ["?" for _ in drawn.truth["lines"]]}
+        return perfect(drawn)
+
+    def complete(self, model, messages, temperature):  # B: larger text
+        if model == big:
+            twin = twins.setdefault(id(self), EyeReader(needs_13_px, False, read_sketch, self.truths))
+            return real(twin, model, messages, temperature)
+        return real(self, model, messages, temperature)
+
+    monkeypatch.setattr(EyeReader, "complete", complete)
+    out = ingest(tmp_path, ("m.mdzip", make_mdzip()))
+    readers = reader(monkeypatch, lambda card, drawn: perfect(drawn))  # A reads every size
+    models = f"{MODEL}, {big}"
+    assert run_with_model(out, "--vision-model", models) == 0
+    state = State(out)
+    rows = {r["model"]: r for r in state.calibrations()}
+    state.close()
+    assert set(rows) == {MODEL, big} and all(r["validation"] for r in rows.values())
+    font = json.loads(rows[big]["settings"])["sketch_font_px"]
+    assert font > 13  # what B reads, with the calibration's margin
+    opts = options(out)
+    assert opts["sketch"][0] == 8 and opts["vision_fallbacks"] == [[big, True]]  # A's sizes; B's own order
+    assert f"the vision fallback {big} reads sketches best with text of {font} px" in caplog.text
+    sent = sum(r.requests for r in readers)
+    assert run_with_model(out, "--vision-model", models) == 0  # nothing asked again
+    assert sum(r.requests for r in readers) == sent
+
+    capsys.readouterr()
+    assert calibrate(out, "--vision-model", models, "--model", big, suite="standard") == 0
+    assert f"{big} is a fallback; it reads the sketches drawn for {MODEL}" in capsys.readouterr().out
+    assert calibrate(out, "--vision-model", models, "--model", "acme/nope") == 2
