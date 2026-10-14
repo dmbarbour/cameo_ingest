@@ -1,6 +1,8 @@
 # Plan: fallback models, and subjects robust to a failed request
 
-- **Status:** CP1 done (0.31.4), CP2 (0.31.5), CP3, CP4; CP5 under way.
+- **Status:** Done, 2026-10-14: CP1 (0.31.4), CP2 (0.31.5), CP3 to CP5 (0.32.0). Archived; its decisions are
+  ADR-0034 (and ADR-0031, ADR-0030), its design in design/llm-enrichment, design/vision-calibration
+  and design/subjects, and its open item in the roadmap.
 - **Prefix:** `FM`. Steps are `FM-01` and so on.
 - **From:** the maintainer, 2026-10-14:
 

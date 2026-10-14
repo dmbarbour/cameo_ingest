@@ -32,8 +32,13 @@ In the runner's `prepare` hook, after the scan and before the build (`cli.calibr
   density, a way round in the trial), more than half the replies were unreadable, or no font size
   was read (`calibrate.problem`). Unanswered cards are left out of every measure (RN-001); before
   0.31.0, one unanswered card made a calibration incomplete, and counted as misread.
-- **Calibrating on demand:** `cameo-ingest calibrate-vision -o OUT [--suite quick|standard]`. The
-  quick suite (11 cards) checks a model and is never recorded.
+- **Fallback models** (ADR-0034, plan FM): every model of the list is calibrated and validated,
+  each alone (`EnrichmentSession.only`). The first's calibration sets the sizes; a fallback keeps
+  its image order, is validated on the sketches drawn for the first, and gets a warning when it
+  reads best with larger ones. The same for text models and the part size.
+- **Calibrating on demand:** `cameo-ingest calibrate-vision -o OUT [--suite quick|standard]
+  [--model NAME]` (a fallback, by name). The quick suite (11 cards) checks a model and is never
+  recorded.
 - **Recorded:** a record is keyed by endpoint (`''` for the OpenAI default), model and
   `calibrate.SUITE_VERSION`. A new suite version calibrates again. Answers are stored, so a rerun
   asks nothing.

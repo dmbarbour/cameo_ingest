@@ -178,8 +178,8 @@ ADR-0010 (`llm.py`, `sqlite_cache.py`).
   why and the time limit in the store's `partial` table, and asked again only under a longer
   limit; one broken off is used and not stored. The derivation says why (`Derivation.partial`);
   `run.json` counts `partial` and `broken_off`.
-- **Checks:** `checks.run_checks` serves `config test`: the endpoint lists its models, the text
-  model answers "ready", the vision model reads a drawn 731. A tree notes each model's creation time from
+- **Checks:** `checks.run_checks` serves `config test`: the endpoint lists its models, each text
+  model answers "ready", each vision model reads a drawn 731 (every model of each list, FM-08). A tree notes each model's creation time from
   `/models` in its `meta` table, and warns when it changes (`cli.note_models`).
 - **The preflight:** "Reply with the single word OK.", and the vision check sends a 32 × 32 white
   PNG. It bypasses the store and the budget, and failure exits 5.
@@ -196,16 +196,25 @@ ADR-0010 (`llm.py`, `sqlite_cache.py`).
   git. Replay matches on model and hash only.
 - **The session,** `EnrichmentSession`:
   - a call budget (the tree's setting `max-calls`, none by default);
-  - a breaker per model that switches it off after 3 consecutive failures, plus one for each
-    other request in flight (`concurrency - 1`; FM-04): a few hold-outs failing together don't
-    turn off a run's descriptions, and a model's failures don't turn off another model;
+  - a breaker per model and kind of request ("m (text)", "m (vision)") that switches it off
+    after 3 consecutive failures, plus one for each other request in flight (`concurrency - 1`;
+    FM-04): a few hold-outs failing together don't turn off a run's descriptions, and a model's
+    failures on images don't turn off its text, or another model;
   - outcomes (`answered`, `cached`, `replayed`, `skipped_*`, `failed`, `empty`, `partial`,
     `broken_off`, `truncated_input`) for `run.json`; those in `llm.GAPS` leave an item without
     text, and its project is built again by every run while the setting `ask-again` is on, the
     default (the tree's `gaps` table; RN-006, RN-007);
-  - the image's place: the call's, then the calibrated, then the template's (ADR-0015).
+  - the image's place: the call's, then the model's calibrated one, then the template's
+    (ADR-0015; per model, `image_first` a dict, FM-06);
+  - fallback models (ADR-0034, plan FM): each kind's models in order (`LLMConfig.text_models`,
+    `vision_models`, from the settings' lists). `ask` takes a stored answer along the list first,
+    then asks each model, until one answers with what `accept` takes (subjects' and topics' JSON
+    it can read, `discovery.asker`); a model that misses returns a `Miss`, and the item's outcome
+    is recorded once: answered (`fallback` counted when not by the first), or failed with each
+    model's error. `only(model, kind)` restricts a session to one model, for calibrations.
 
-  A replayed answer bypasses the store, the budget and the breaker. A failed write to the store is
+  A replayed answer asks the first model only, as recorded, and bypasses the store, the budget
+  and the breaker. A failed write to the store is
   logged, and the answer kept.
 - **Concurrency:** the tree's setting `concurrency`, default 1. Results attach in submission order, so the
   output is byte-identical to a sequential run.

@@ -111,8 +111,8 @@ calibrates to the models (see "Calibrating sketches to the vision model").
   | Setting | Default | Purpose |
   |---|---|---|
   | `llm` | `on` | `on` or `off`: generated text, package summaries and diagram and image descriptions. |
-  | `text-model` | | The model for package summaries. |
-  | `vision-model` | the text model | The model for diagram and image descriptions. |
+  | `text-model` | | The model for package summaries; or a list, `"A, B"`: B answers what A can't (below). |
+  | `vision-model` | the text model(s) | The model for diagram and image descriptions; or a list, as for `text-model`. |
   | `render` | `on` | Sketches of diagrams, for people and the vision model. |
   | `rag-files` | `on` | The `rag/` directory (see "Using the output for RAG"). |
   | `rag-source` | `trace` | The form of `rag/` files' source line, `trace` or `id`. |
@@ -146,9 +146,19 @@ paid for, and calibrates a model already calibrated from stored answers. A tree'
 before (`OUT/.cache/llm.sqlite`) is copied into it once. Answers are
 keyed by endpoint, model and a hash of the request, so re-runs are cheap and repeatable; each
 response is committed on its own. A failed request is logged and skipped, and never fails the
-ingest. A model that fails 3 requests in a row is switched off for the rest of the run, one more
-for each other request sent at once (`concurrency` 8: 10), since requests in flight together
-fail together when the endpoint does; another model goes on.
+ingest. A model that fails 3 requests in a row is switched off for the rest of the run, for that
+kind of request (text or images), one more for each other request sent at once (`concurrency`
+8: 10), since requests in flight together fail together when the endpoint does.
+
+**Fallback models.** A model may fail a few requests every time it is asked. `config set
+text-model "A, B"` (and `vision-model` likewise) makes B the fallback: a request goes to A, and
+to B only when A fails, answers nothing, or answers what can't be used (the subjects' JSON).
+B's answers are stored as B's, and a later build uses them without asking A again. The item's
+provenance names the model that answered; `run.json` counts `fallback` answers. Each model of
+each list is calibrated, alone, the first time it is used, but the sketches are drawn and the
+parts cut for the first: a fallback that reads best with larger sketches, or smaller parts, gets
+a warning. `calibrate-vision --model B` and `calibrate-text --model B` calibrate a fallback on
+demand. `config test` checks every model.
 `run.json` reports the calls made and, for every item left without generated text, why
 (failed, budget, switched off, empty answer, broken off), plus how many inputs were cut short to
 fit the prompt. A project with such items is built again by every run, which asks only for

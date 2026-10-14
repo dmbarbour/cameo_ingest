@@ -41,3 +41,4 @@ date, what changed, and a commit that holds the text before (conventions in `doc
 | [0031](0031-subjects-for-discovery.md) | Subjects for discovery: the LLM proposes ways, shared elements are the fallback |
 | [0032](0032-lineage-by-makers-and-times.md) | Lineage of models, told by who made their ids and when |
 | [0033](0033-the-same-item-across-models.md) | The same item across models, and comparing two models, in the exports |
+| [0034](0034-fallback-models.md) | Fallback models: each kind's models in order, the first's calibration draws |

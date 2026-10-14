@@ -170,6 +170,10 @@ After plan TC (the text model's calibration, a guard; ADR-0024):
   - radon and vulture can't read PEP 695 generics (`plain.pack`, `discovery`): measure with ruff,
     or a newer radon.
 
+- **A changed family whose proposal fails** gets shared elements first until a run answers,
+  though its last LLM ways would still sort most of its diagrams. Keeping them, with the new
+  diagrams unsorted, would spare the family one bad run (plan FM weighed it; fallback models,
+  ADR-0034, make it rarer).
 - **Stale proxies:** a stale snapshot could name an element differently from Cameo. Nothing
   checks for this.
 - **`quality`** still cuts an answer out of the rendered page with a regex (AR-012R2, partial by
