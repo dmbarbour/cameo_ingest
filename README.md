@@ -146,7 +146,9 @@ paid for, and calibrates a model already calibrated from stored answers. A tree'
 before (`OUT/.cache/llm.sqlite`) is copied into it once. Answers are
 keyed by endpoint, model and a hash of the request, so re-runs are cheap and repeatable; each
 response is committed on its own. A failed request is logged and skipped, and never fails the
-ingest; after 3 consecutive failures, enrichment is switched off for the rest of the run.
+ingest. A model that fails 3 requests in a row is switched off for the rest of the run, one more
+for each other request sent at once (`concurrency` 8: 10), since requests in flight together
+fail together when the endpoint does; another model goes on.
 `run.json` reports the calls made and, for every item left without generated text, why
 (failed, budget, switched off, empty answer, broken off), plus how many inputs were cut short to
 fit the prompt. A project with such items is built again by every run, which asks only for

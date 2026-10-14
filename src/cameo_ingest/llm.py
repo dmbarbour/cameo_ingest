@@ -19,7 +19,7 @@ of the request, so re-runs are cheap and reproducible. The same file serves as a
 fixture: in replay mode, requests are answered only from a recorded store, matching on
 model and request hash, and a request with no recorded answer is an error. Failures are
 logged and skipped, so enrichment never breaks ingestion; after a few consecutive
-failures, enrichment is switched off for the rest of the run.
+failures, a model is switched off for the rest of the run (more with requests in flight).
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ from .text import whole_sentences
 log = logging.getLogger(__name__)
 
 PREFLIGHT_PROMPT = "Reply with the single word OK."
-MAX_CONSECUTIVE_FAILURES = 3  # then enrichment is switched off for the run (BASE-006)
+MAX_CONSECUTIVE_FAILURES = 3  # a model's, then it is off for the run (BASE-006); more with concurrency (FM-04)
 STORE_FILE = "llm.sqlite"
 # Outcomes that leave an item without the text a later run may get: its project is built again
 # (RN-006). Not "partial": an answer cut by a limit is kept, as the model's in the time allowed.
@@ -66,15 +66,16 @@ class LLMConfig:
     retries: int = RETRIES
     max_calls: int | None = None  # no budget unless one is asked for (BASE-019)
     time_limit: float = TIME_LIMIT
+    concurrency: int = 1  # requests at once; those in flight together share a fate (FM-04)
 
     @classmethod
     def from_env(cls, text_model: str | None = None, vision_model: str | None = None, *,
                  max_calls: int | None = None, timeout: float | None = None,
-                 time_limit: float | None = None) -> LLMConfig:
+                 time_limit: float | None = None, concurrency: int | None = None) -> LLMConfig:
         """The tree's models (the vision model defaults to the text model) at $OPENAI_BASE_URL."""
         return cls(text_model=text_model or None, vision_model=vision_model or text_model or None,
                    base_url=os.environ.get("OPENAI_BASE_URL"), timeout=timeout or TIMEOUT, retries=RETRIES,
-                   max_calls=max_calls, time_limit=time_limit or TIME_LIMIT)
+                   max_calls=max_calls, time_limit=time_limit or TIME_LIMIT, concurrency=concurrency or 1)
 
     @property
     def enabled(self) -> bool:
@@ -298,20 +299,20 @@ def connect(cfg: LLMConfig, replay: Path | None = None) -> ChatClient | None:
 
 
 class EnrichmentSession:
-    """A run's requests: answers kept in the store, a budget of calls, a breaker that switches
-    enrichment off after consecutive failures, and a record of the outcomes."""
+    """A run's requests: answers kept in the store, a budget of calls, a breaker per model that
+    switches it off after consecutive failures, and a record of the outcomes."""
 
     def __init__(self, cfg: LLMConfig, cache_dir: Path, client: ChatClient | None,
                  max_failures: int | None = MAX_CONSECUTIVE_FAILURES):
         self.cfg = cfg
         self.client = client
-        self.max_failures = max_failures  # consecutive failures before switching off; None never does
+        self.max_failures = max_failures  # a model's consecutive failures before it is off; None never
         self.cache_dir = cache_dir
         self.calls = 0  # requests sent to the endpoint
         self.outcomes: Counter[str] = Counter()
         self.incomplete: list[dict[str, str]] = []  # items left without generated text, or cut short (RN-002), and why
-        self.disabled = False
-        self._failures = 0  # consecutive
+        self.off: set[str] = set()  # models switched off for the rest of the run (FM-04)
+        self._failures: Counter[str] = Counter()  # consecutive, per model
         self._budget_warned = False
         self._lock = threading.Lock()
         self._store: ResponseStore | None = None
@@ -356,7 +357,7 @@ class EnrichmentSession:
     def report(self) -> dict[str, Any]:
         """What enrichment did in this run, for run.json."""
         return {"calls": self.calls, "outcomes": dict(sorted(self.outcomes.items())),
-                "disabled_after_failures": self.disabled, "incomplete": self.incomplete}
+                "disabled_after_failures": sorted(self.off), "incomplete": self.incomplete}
 
     def truncated(self, item: str, what: str) -> None:
         """Note that an item's input was cut short to fit the prompt (BASE-019)."""
@@ -395,7 +396,7 @@ class EnrichmentSession:
                 self.outcomes["cached"] += 1
             return stored[0], key, stored[1]
         with self._lock:
-            if self.disabled:
+            if model in self.off:
                 self._skip(item, "skipped_disabled")
                 return None
             if self.cfg.max_calls is not None and self.calls >= self.cfg.max_calls:
@@ -421,7 +422,7 @@ class EnrichmentSession:
         log.debug("LLM %s answered for %s in %.1f s%s", model, item, time.monotonic() - started,
                   f" ({cut.why})" if cut else "")
         with self._lock:
-            self._failures = 0
+            self._failures[model] = 0
             if not text:
                 self._skip(item, "empty")  # not stored, so a re-run asks again
                 return None
@@ -454,16 +455,22 @@ class EnrichmentSession:
         kept = whole_sentences(text) if partial else ""
         return (kept, why) if kept else None
 
+    @property
+    def breaker(self) -> int | None:
+        """A model's consecutive failures that switch it off: `max_failures`, and one more for each
+        other request in flight, since those fail together when the endpoint does (FM-04)."""
+        return None if self.max_failures is None else self.max_failures + max(1, self.cfg.concurrency) - 1
+
     def _failed(self, model: str, item: str, e: Exception) -> None:
-        """A request that failed: noted, and counted towards switching enrichment off."""
+        """A request that failed: noted, and counted towards switching its model off."""
         log.warning("LLM request failed (%s, %s): %s", model, item, e)
         with self._lock:
             self._skip(item, "failed", f"{type(e).__name__}: {e}")
-            self._failures += 1
-            if self.max_failures is not None and self._failures >= self.max_failures and not self.disabled:
-                self.disabled = True
-                log.error("LLM enrichment switched off for the rest of this run after %d consecutive "
-                          "failures; the last was: %s", self._failures, e)
+            self._failures[model] += 1
+            if self.breaker is not None and self._failures[model] >= self.breaker and model not in self.off:
+                self.off.add(model)
+                log.error("%s switched off for the rest of this run after %d consecutive failures; the last "
+                          "was: %s", model, self._failures[model], e)
 
     def ask(self, template: Template, values: dict[str, str], *, image: bytes | None = None,
             mime: str = "image/png", image_path: str | None = None, project: str = "",

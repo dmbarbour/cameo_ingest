@@ -196,7 +196,9 @@ ADR-0010 (`llm.py`, `sqlite_cache.py`).
   git. Replay matches on model and hash only.
 - **The session,** `EnrichmentSession`:
   - a call budget (the tree's setting `max-calls`, none by default);
-  - a breaker that switches enrichment off after 3 consecutive failures;
+  - a breaker per model that switches it off after 3 consecutive failures, plus one for each
+    other request in flight (`concurrency - 1`; FM-04): a few hold-outs failing together don't
+    turn off a run's descriptions, and a model's failures don't turn off another model;
   - outcomes (`answered`, `cached`, `replayed`, `skipped_*`, `failed`, `empty`, `partial`,
     `broken_off`, `truncated_input`) for `run.json`; those in `llm.GAPS` leave an item without
     text, and its project is built again by every run while the setting `ask-again` is on, the

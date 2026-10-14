@@ -1,6 +1,6 @@
 # Plan: fallback models, and subjects robust to a failed request
 
-- **Status:** CP1 done (0.31.4); CP2 under way.
+- **Status:** CP1 done (0.31.4), CP2 (0.31.5); CP3 under way.
 - **Prefix:** `FM`. Steps are `FM-01` and so on.
 - **From:** the maintainer, 2026-10-14:
 
@@ -135,6 +135,10 @@ changes, the requests follow the new list.
   `concurrency` reaches the session from the runner. Check: tests at concurrency 1 (unchanged:
   3) and 8 (10); a success resets the count.
 - Commit.
+- **Done:** `EnrichmentSession.off`, `_failures` per model, `breaker`; `LLMConfig.concurrency`
+  from the setting (`session.llm_config`), rather than from the runner, so calibrations count
+  the same way. `run.json`'s `disabled_after_failures` lists the models. Test:
+  `test_the_breaker_is_per_model_and_counts_requests_in_flight`.
 
 ### CP3: fallback models (FM-05 to FM-09)
 

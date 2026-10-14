@@ -629,3 +629,40 @@ def test_a_trees_own_store_joins_the_shared_store(tmp_path, fake_chat, monkeypat
     st = State(out)
     assert st.meta("store_adopted") == str(tmp_path / "new-store")
     st.close()
+
+
+def test_the_breaker_is_per_model_and_counts_requests_in_flight(tmp_path):
+    """A model is off after 3 consecutive failures, and one more per other request in flight at
+    once; a success starts the count again; another model goes on answering (FM-04)."""
+    from cameo_ingest.llm import EnrichmentSession, LLMConfig
+
+    class Chat:
+        replays = False
+
+        def __init__(self, failing):
+            self.failing = failing  # the items whose requests fail
+
+        def complete(self, model, messages, temperature):
+            if model == "t" and messages[0]["content"] in self.failing:
+                raise TimeoutError("no word for 120 s")
+            return f"{model} answers"
+
+    def session(concurrency, failing):
+        cfg = LLMConfig(text_model="t", vision_model="v", base_url=None, concurrency=concurrency)
+        return EnrichmentSession(cfg, tmp_path / f"store{concurrency}", Chat(failing))
+
+    def ask(llm, model, item):
+        return llm._complete(model, [{"role": "user", "content": item}], item)
+
+    llm = session(1, {"a", "b", "d", "e", "f"})
+    assert [ask(llm, "t", x) is None for x in "abcdef"] == [True, True, False, True, True, True]  # c resets the count
+    assert llm.off == {"t"} and ask(llm, "t", "g") is None and llm.outcomes["skipped_disabled"] == 1
+    assert ask(llm, "v", "h")[0] == "v answers"  # the other model goes on
+    assert llm.report()["disabled_after_failures"] == ["t"]
+
+    llm = session(8, set("abcdefghijk"))
+    for x in "abcdefghi":
+        ask(llm, "t", x)
+    assert not llm.off and llm.breaker == 10  # 8 in flight together can fail together
+    ask(llm, "t", "j")
+    assert llm.off == {"t"}
