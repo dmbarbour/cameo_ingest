@@ -149,6 +149,19 @@ def test_topics_in_a_browser(page, tmp_path):
 
 @needs_node
 @pytest.mark.skipif(CHROME is None, reason="no Chrome, Chromium or Edge")
+def test_loading_panel_holds_still(page, tmp_path):
+    """The loading panel's lines keep their height whatever a model's name or a count, so the
+    bars don't jump while models load; a phone's width doesn't scroll sideways; and the search,
+    hidden until the page is ready, isn't shown below the panel."""
+    seen = json.loads(node(str(JS / "loading_browser.js"), CHROME, str(tmp_path / "profile"), str(page)))
+    for width in ("desktop", "phone"):
+        assert seen[width]["short"] == seen[width]["long"], (width, seen)
+        assert not seen[width]["sideways"] and not seen[width]["appShown"], (width, seen)
+    assert seen["errors"] == []
+
+
+@needs_node
+@pytest.mark.skipif(CHROME is None, reason="no Chrome, Chromium or Edge")
 def test_also_in_and_compare_in_a_browser(page, tmp_path):
     """An item held by other models lists them under "Also in", each a link with how it matches;
     two models chosen in the chooser compare, by kind, each kind opening its items (plan SH)."""

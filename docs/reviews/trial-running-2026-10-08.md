@@ -1,8 +1,8 @@
 # Review: running a tree, from the maintainer's trial of 2026-10-08
 
 - **Status:** Open until the maintainer's trial. RN-001 to RN-006 done in 0.31.0; RN-007, from the
-  maintainer's reading of RN-006, done in 0.31.1; RN-008 and RN-002's import fix in 0.31.2 (the
-  plan below).
+  maintainer's reading of RN-006, done in 0.31.1; RN-008 and RN-002's import fix in 0.31.2; RN-009 in
+  0.31.3 (the plan below).
 - **Prefix:** `RN`. Findings are `RN-001` and so on; remediation steps are `RN-001R1` and so on.
 - **Subject:** 0.30.0, run by the maintainer on their own models: calibration, LLM requests,
   progress on a terminal, and `config`.
@@ -24,6 +24,7 @@
 | RN-006 | An item left without text by a failed request is never asked for again | Bug | Medium: RN-002's losses stay |
 | RN-007 | RN-006's cap of 3 builds changes what a run does on a count nobody sees | Design | Medium |
 | RN-008 | The environment variables are buried: not in `--help`, late in the README | Docs | Medium |
+| RN-009 | The search page's loading bars jump when a model's name takes two lines | Display | Low |
 
 ## Findings
 
@@ -199,6 +200,25 @@
 - **Done:** R1, below. One list, `config.ENVIRONMENT`, so that help, `config show` and the README
   can't drift apart in what they name.
 
+### RN-009: the loading bars jump
+
+> "When loading, the initial progress bars are very bouncy based on text sometimes taking two
+> lines instead of one."
+
+- **Where:** the search page's loading panel (`search.js`, `phases` and `load`): the Unpacking
+  bar's note held the model's name in an 18rem column, so a long name took two lines or three,
+  and every bar below moved with each model. Reproduced in headless Chrome: rows of 22 px grew to
+  76 px.
+- **Also found:** `#app`'s `display: flex` overrode its `hidden` attribute, so the empty search
+  showed below the panel while it loaded, and at a phone's width scrolled the page sideways (the
+  model chooser had had the same fault, fixed for it alone in 0.24.1).
+- **Done:** R1. The model's name goes on the spinner's line ("Unpacking NAME…", "Indexing
+  NAME…"), and the bars' notes hold counts and times only; every line of the panel is one line,
+  cut with "…" (the full text as a tooltip), its digits of one width; at a phone's width each bar
+  goes under its name. `[hidden]` hides whatever a rule's display says, for every element. Test:
+  `test_loading_panel_holds_still` (`tests/js/loading_browser.js`: a short and a very long name,
+  at 1280 and 360 px; it fails on 0.31.2).
+
 ## Remediation plan
 
 Easiest first. Each step: tests, `uv run pytest`, lint, a commit naming its IDs.
@@ -226,6 +246,7 @@ Easiest first. Each step: tests, `uv run pytest`, lint, a commit naming its IDs.
   (`cli.Formatter` keeps an epilog's lines) and by `config show` with each one's value (the key
   only set or not); the README's Configuration opens with a table of them, and the quick start
   sets the endpoint. Test: `test_help_and_config_show_name_the_environment`. Release 0.31.2.
+- **RN-009R1:** the loading panel's lines, one each; `[hidden]` for every element. Release 0.31.3.
 - **RN-007R1:** the setting `ask-again`; no cap; subjects and topics follow it; `status`; docs,
   ADR-0030. Release 0.31.1.
 - **Close:** design/llm-enrichment, design/vision-calibration, README, roadmap; release.

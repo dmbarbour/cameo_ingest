@@ -675,8 +675,16 @@ if (typeof document !== "undefined") {
     };
   }
 
+  // What the loading is working on, beside the spinner: one line, cut short with its full text as
+  // a tooltip, so that a long model name never moves the bars below.
+  function doing(text) {
+    const r = $("reading");
+    r.textContent = text;
+    r.title = text;
+  }
+
   async function load() {
-    $("reading").textContent = "Read the file.";
+    doing("Read the file.");
     const blocks = [...document.querySelectorAll('script[type="application/octet-stream"][data-project]')];
     const totalItems = blocks.reduce((s, b) => s + Number(b.dataset.items || 0), 0);
     const P = phases([["unpack", "Unpacking"], ["index", "Indexing items"], ["finish", "Finishing the index"]]);
@@ -685,7 +693,8 @@ if (typeof document !== "undefined") {
     for (let i = 0; i < blocks.length; i++) {
       if (state.cancelled) return;
       const b = blocks[i], name = b.dataset.project;
-      P.update("unpack", i, blocks.length, `${name} (${i + 1} of ${blocks.length})`);
+      P.update("unpack", i, blocks.length, `${i} of ${blocks.length}`);
+      doing(`Unpacking ${name}…`);
       await pause();
       const t = now();
       const data = await Engine.decode(b.textContent);
@@ -693,7 +702,8 @@ if (typeof document !== "undefined") {
       b.textContent = ""; // the block's text is no longer needed
       const pid = state.projects.length;
       state.projects.push(data.project);
-      P.update("unpack", i + 1, blocks.length, name);
+      P.update("unpack", i + 1, blocks.length, `${i + 1} of ${blocks.length}`);
+      doing(`Indexing ${name}…`);
       let sliceStart = now();
       for (const item of data.items) {
         item.p = pid;
@@ -711,6 +721,7 @@ if (typeof document !== "undefined") {
       P.update("index", items, totalItems, `${fmt(items)} of ${fmt(totalItems)}`);
     }
     P.update("finish", 0, 1, "compacting");
+    doing("Finishing the index…");
     await pause();
     const t = now();
     state.index.finish();
