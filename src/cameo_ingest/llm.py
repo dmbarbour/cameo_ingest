@@ -33,7 +33,9 @@ import sqlite3
 import threading
 import time
 from collections import Counter
-from dataclasses import dataclass
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -57,9 +59,14 @@ TIME_LIMIT = 600  # seconds per request in all; then what was said is all there 
 RETRIES = 2  # retries per request: by the OpenAI client before the answer starts, by us while no word came
 
 
+def model_list(spec: str | None) -> tuple[str, ...]:
+    """A setting's models, "A, B": the first, then its fallbacks in order (FM-05)."""
+    return tuple(dict.fromkeys(m.strip() for m in (spec or "").split(",") if m.strip()))
+
+
 @dataclass
 class LLMConfig:
-    text_model: str | None
+    text_model: str | None  # the first of each kind's list
     vision_model: str | None
     base_url: str | None
     timeout: float = TIMEOUT
@@ -67,19 +74,43 @@ class LLMConfig:
     max_calls: int | None = None  # no budget unless one is asked for (BASE-019)
     time_limit: float = TIME_LIMIT
     concurrency: int = 1  # requests at once; those in flight together share a fate (FM-04)
+    text_fallbacks: tuple[str, ...] = ()  # asked in turn when the first model gives no usable answer (FM-05)
+    vision_fallbacks: tuple[str, ...] = ()
 
     @classmethod
     def from_env(cls, text_model: str | None = None, vision_model: str | None = None, *,
                  max_calls: int | None = None, timeout: float | None = None,
                  time_limit: float | None = None, concurrency: int | None = None) -> LLMConfig:
-        """The tree's models (the vision model defaults to the text model) at $OPENAI_BASE_URL."""
-        return cls(text_model=text_model or None, vision_model=vision_model or text_model or None,
+        """The tree's models at $OPENAI_BASE_URL: each kind's a list, "A, B", the first asked first
+        (FM-05); the vision models default to the text models."""
+        text = model_list(text_model)
+        vision = model_list(vision_model) or text
+        return cls(text_model=text[0] if text else None, vision_model=vision[0] if vision else None,
                    base_url=os.environ.get("OPENAI_BASE_URL"), timeout=timeout or TIMEOUT, retries=RETRIES,
-                   max_calls=max_calls, time_limit=time_limit or TIME_LIMIT, concurrency=concurrency or 1)
+                   max_calls=max_calls, time_limit=time_limit or TIME_LIMIT, concurrency=concurrency or 1,
+                   text_fallbacks=text[1:], vision_fallbacks=vision[1:])
 
     @property
     def enabled(self) -> bool:
         return bool(self.text_model or self.vision_model)
+
+    @property
+    def text_models(self) -> tuple[str, ...]:
+        """The text models, in the order they are asked; none without a first."""
+        return (self.text_model, *self.text_fallbacks) if self.text_model else ()
+
+    @property
+    def vision_models(self) -> tuple[str, ...]:
+        return (self.vision_model, *self.vision_fallbacks) if self.vision_model else ()
+
+
+@dataclass(frozen=True)
+class Miss:
+    """A model that gave no answer to a request: `outcome` as `run.json` counts it, and what it
+    said, for the item's record when no other model answers either (FM-06)."""
+
+    outcome: str
+    detail: str = ""
 
 
 class ReplayMiss(Exception):
@@ -311,12 +342,14 @@ class EnrichmentSession:
         self.calls = 0  # requests sent to the endpoint
         self.outcomes: Counter[str] = Counter()
         self.incomplete: list[dict[str, str]] = []  # items left without generated text, or cut short (RN-002), and why
-        self.off: set[str] = set()  # models switched off for the rest of the run (FM-04)
-        self._failures: Counter[str] = Counter()  # consecutive, per model
+        # Models switched off for the rest of the run, each for text or for images, as "m (text)":
+        # one that fails on images may still read text (FM-04).
+        self.off: set[str] = set()
+        self._failures: Counter[str] = Counter()  # consecutive, likewise
         self._budget_warned = False
         self._lock = threading.Lock()
         self._store: ResponseStore | None = None
-        self.image_first: bool | None = None  # the vision model's order (plan VA); None: each template's
+        self.image_first: dict[str, bool] = {}  # each vision model's calibrated order (plan VA, FM-06); else the template's
 
     def close(self) -> None:
         """Stop requests in flight (used when a run is interrupted)."""
@@ -337,16 +370,17 @@ class EnrichmentSession:
         if self.client is None or self.client.replays:
             return None
         checks = []
-        if self.cfg.vision_model:
+        if self.cfg.vision_models:
             png = io.BytesIO()
             from PIL import Image
 
             Image.new("RGB", (32, 32), "white").save(png, "PNG")
             url = f"data:image/png;base64,{base64.b64encode(png.getvalue()).decode()}"
-            checks.append((self.cfg.vision_model, [{"role": "user", "content": [
-                {"type": "text", "text": PREFLIGHT_PROMPT}, {"type": "image_url", "image_url": {"url": url}}]}]))
-        if self.cfg.text_model and self.cfg.text_model != self.cfg.vision_model:
-            checks.append((self.cfg.text_model, [{"role": "user", "content": PREFLIGHT_PROMPT}]))
+            checks += [(m, [{"role": "user", "content": [{"type": "text", "text": PREFLIGHT_PROMPT},
+                                                         {"type": "image_url", "image_url": {"url": url}}]}])
+                       for m in self.cfg.vision_models]
+        checks += [(m, [{"role": "user", "content": PREFLIGHT_PROMPT}])
+                   for m in self.cfg.text_models if m not in self.cfg.vision_models]
         for model, messages in checks:
             try:
                 self.client.complete(model, messages, temperature=0)
@@ -375,10 +409,12 @@ class EnrichmentSession:
         self.outcomes[outcome] += 1
         self.incomplete.append({"item": item, "outcome": outcome, **({"detail": detail} if detail else {})})
 
-    def _complete(self, model: str, messages: list[dict], item: str,
-                  partial: bool = False) -> tuple[str, str, str | None] | None:
-        """(text, request hash, why it was cut short or None), or None when the item gets no
-        generated text. `partial`: a reply cut short serves, to its whole sentences (RN-002)."""
+    def _complete(self, model: str, messages: list[dict], item: str, partial: bool = False,
+                  kind: str = "text") -> tuple[str, str, str | None] | Miss:
+        """One model's answer: (text, request hash, why it was cut short or None); or a `Miss`,
+        which the caller records once it knows whether another model answered (FM-06). The store
+        is looked in first (`_stored`) by the caller. `partial`: a reply cut short serves, to its
+        whole sentences (RN-002)."""
         key = request_key(messages)
         assert self.client is not None, "a session with a model needs a client"
         if self.client.replays:
@@ -390,22 +426,16 @@ class EnrichmentSession:
                 self.outcomes["replayed"] += 1
             return text, key, None
         endpoint = self.cfg.base_url or ""
-        stored = self._stored(endpoint, model, key, partial)
-        if stored is not None:
-            with self._lock:
-                self.outcomes["cached"] += 1
-            return stored[0], key, stored[1]
+        line = f"{model} ({kind})"  # the breaker's count (FM-04)
         with self._lock:
-            if model in self.off:
-                self._skip(item, "skipped_disabled")
-                return None
+            if line in self.off:
+                return Miss("skipped_disabled")
             if self.cfg.max_calls is not None and self.calls >= self.cfg.max_calls:
                 if not self._budget_warned:
                     log.warning("LLM call budget (%d) reached; remaining items get no generated text",
                                 self.cfg.max_calls)
                     self._budget_warned = True
-                self._skip(item, "skipped_budget")
-                return None
+                return Miss("skipped_budget")
             self.calls += 1
         started = time.monotonic()
         cut: Partial | None = None
@@ -414,18 +444,15 @@ class EnrichmentSession:
         except Partial as e:
             text, cut = e.text, e
             if not (partial and whole_sentences(text)):
-                self._failed(model, item, e)
-                return None
+                return self._failed(model, item, e, line)
         except Exception as e:  # network, auth, unsupported modality...
-            self._failed(model, item, e)
-            return None
+            return self._failed(model, item, e, line)
         log.debug("LLM %s answered for %s in %.1f s%s", model, item, time.monotonic() - started,
                   f" ({cut.why})" if cut else "")
         with self._lock:
-            self._failures[model] = 0
+            self._failures[line] = 0
             if not text:
-                self._skip(item, "empty")  # not stored, so a re-run asks again
-                return None
+                return Miss("empty", f"{model}: an empty answer")  # not stored, so a re-run asks again
             if cut is None:
                 self.outcomes["answered"] += 1
             else:  # what a limit cut is kept, as the model's answer in the time allowed; a broken one isn't
@@ -461,48 +488,124 @@ class EnrichmentSession:
         other request in flight, since those fail together when the endpoint does (FM-04)."""
         return None if self.max_failures is None else self.max_failures + max(1, self.cfg.concurrency) - 1
 
-    def _failed(self, model: str, item: str, e: Exception) -> None:
-        """A request that failed: noted, and counted towards switching its model off."""
+    def _failed(self, model: str, item: str, e: Exception, line: str) -> Miss:
+        """A request that failed: noted, and counted towards switching its model off, for its
+        kind of request (`line`)."""
         log.warning("LLM request failed (%s, %s): %s", model, item, e)
         with self._lock:
-            self._skip(item, "failed", f"{type(e).__name__}: {e}")
-            self._failures[model] += 1
-            if self.breaker is not None and self._failures[model] >= self.breaker and model not in self.off:
-                self.off.add(model)
+            self._failures[line] += 1
+            if self.breaker is not None and self._failures[line] >= self.breaker and line not in self.off:
+                self.off.add(line)
                 log.error("%s switched off for the rest of this run after %d consecutive failures; the last "
-                          "was: %s", model, self._failures[model], e)
+                          "was: %s", line, self._failures[line], e)
+        return Miss("failed", f"{model}: {type(e).__name__}: {e}")
 
     def ask(self, template: Template, values: dict[str, str], *, image: bytes | None = None,
             mime: str = "image/png", image_path: str | None = None, project: str = "",
             inputs: tuple[str, ...] = (), notes: dict[str, Any] | None = None,
-            image_first: bool | None = None) -> tuple[str, Derivation] | None:
+            image_first: bool | None = None,
+            accept: Callable[[str], bool] | None = None) -> tuple[str, Derivation] | None:
         """Send one request built from `template`; `inputs` are the locators of what it is
         about (the first one names the item). Returns the answer with its derivation, or
-        None when the item gets no generated text."""
-        model = self.cfg.vision_model if template.image_slot else self.cfg.text_model
-        if not model:
+        None when the item gets no generated text.
+
+        The template's kind of model is a list (FM-06): the first model's stored answer, or the
+        next's, serves; else each model is asked in turn, until one answers with something
+        `accept` takes (a caller's check that it can use the answer, such as JSON it can read).
+        When none does, the first answer there was is returned, for the caller to judge."""
+        chain = self.cfg.vision_models if template.image_slot else self.cfg.text_models
+        if not chain:
             return None
+        assert self.client is not None, "a session with a model needs a client"
+        if self.client.replays:
+            chain = chain[:1]  # a recording answers as it was made
         text = template.render(values)
-        if template.image_slot is None:
-            messages: list[dict] = [{"role": "user", "content": text}]
-        else:
-            assert image is not None, f"{template.key} needs an image"
-            url = f"data:{mime};base64,{base64.b64encode(image).decode()}"
-            parts = [{"type": "text", "text": text}, {"type": "image_url", "image_url": {"url": url}}]
-            first = next(x for x in (image_first, self.image_first, template.image_first) if x is not None)
-            if first:  # by default, as Google advises for gemma (FU-015); calibrated per model (plan VA)
-                parts.reverse()
-            messages = [{"role": "user", "content": parts}]
-        key = request_key(messages)
         item = inputs[0] if inputs else ""
-        try:  # the log serves quality review; a failure to write it must not cost the answer
-            self.store.log_request(model, key, template.key, project, item, values, text,
-                                   sha256_bytes(image) if image is not None else None, image_path, notes or {})
-        except sqlite3.DatabaseError as e:
-            log.warning("cannot log LLM request: %s", e)
-        res = self._complete(model, messages, item, template.partial)
-        if res is None:
-            return None
-        answer, key, cut = res
-        return answer, Derivation(method="llm", model=model, prompt_sha256=key, template=template.key, inputs=inputs,
-                                  partial=cut)
+        tries = [(m, self._messages(template, text, m, image, mime, image_first)) for m in chain]
+        logged: set[str] = set()
+
+        def log_request(model: str, messages: list[dict]) -> None:
+            if model in logged:
+                return
+            logged.add(model)
+            try:  # the log serves quality review; a failure to write it must not cost the answer
+                self.store.log_request(model, request_key(messages), template.key, project, item, values, text,
+                                       sha256_bytes(image) if image is not None else None, image_path, notes or {})
+            except sqlite3.DatabaseError as e:
+                log.warning("cannot log LLM request: %s", e)
+
+        def answer(model: str, got: tuple[str, str, str | None]) -> tuple[str, Derivation]:
+            if model != chain[0]:
+                with self._lock:
+                    self.outcomes["fallback"] += 1
+                log.info("%s answered for %s, after %s", model, item, ", ".join(chain[:chain.index(model)]))
+            return got[0], Derivation(method="llm", model=model, prompt_sha256=got[1], template=template.key,
+                                      inputs=inputs, partial=got[2])
+
+        first: tuple[str, tuple[str, str, str | None]] | None = None  # an answer refused by `accept`
+        stored: set[str] = set()
+        if not self.client.replays:
+            for model, messages in tries:  # what a model said before is its answer (FM-D6)
+                hit = self._stored(self.cfg.base_url or "", model, request_key(messages), template.partial)
+                if hit is None:
+                    continue
+                stored.add(model)
+                log_request(model, messages)
+                with self._lock:
+                    self.outcomes["cached"] += 1
+                got = (hit[0], request_key(messages), hit[1])
+                if accept is None or accept(got[0]):
+                    return answer(model, got)
+                first = first or (model, got)
+        misses: list[Miss] = []
+        for model, messages in tries:
+            if model in stored:
+                continue
+            log_request(model, messages)
+            res = self._complete(model, messages, item, template.partial,
+                                 "vision" if template.image_slot else "text")
+            if isinstance(res, Miss):
+                misses.append(res)
+                if res.outcome == "skipped_budget":
+                    break
+                continue
+            if accept is None or accept(res[0]):
+                return answer(model, res)
+            log.warning("LLM answer from %s for %s can't be used%s", model, item,
+                        "" if model == chain[-1] else "; asking the next model")
+            first = first or (model, res)
+        if first is not None:
+            return answer(*first)
+        with self._lock:
+            kinds = [m.outcome for m in misses]
+            outcome = next((k for k in ("failed", "empty", "skipped_budget") if k in kinds), "skipped_disabled")
+            self._skip(item, outcome, "; ".join(m.detail for m in misses if m.detail))
+        return None
+
+    def _messages(self, template: Template, text: str, model: str, image: bytes | None, mime: str,
+                  image_first: bool | None) -> list[dict]:
+        """The request for `model`: the image's place is the call's, then the model's calibrated
+        one, then the template's (plan VA; per model, FM-06)."""
+        if template.image_slot is None:
+            return [{"role": "user", "content": text}]
+        assert image is not None, f"{template.key} needs an image"
+        url = f"data:{mime};base64,{base64.b64encode(image).decode()}"
+        parts = [{"type": "text", "text": text}, {"type": "image_url", "image_url": {"url": url}}]
+        first = next(x for x in (image_first, self.image_first.get(model), template.image_first) if x is not None)
+        if first:  # by default, as Google advises for gemma (FU-015); calibrated per model (plan VA)
+            parts.reverse()
+        return [{"role": "user", "content": parts}]
+
+    @contextmanager
+    def only(self, model: str, kind: str) -> Iterator[None]:
+        """Requests of `kind` ("text" or "vision") go to `model` alone, and the other kind's to
+        none, while the block runs: a calibration measures one model, never its fallbacks (FM-10)."""
+        before = self.cfg
+        if kind == "text":
+            self.cfg = replace(before, text_model=model, text_fallbacks=(), vision_model=None, vision_fallbacks=())
+        else:
+            self.cfg = replace(before, vision_model=model, vision_fallbacks=(), text_model=None, text_fallbacks=())
+        try:
+            yield
+        finally:
+            self.cfg = before

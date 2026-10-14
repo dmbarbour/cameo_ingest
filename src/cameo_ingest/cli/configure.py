@@ -131,7 +131,9 @@ def check_config(out: Path, action: str, text: str | None) -> int:
         for model, created in models:
             if text and text.lower() not in model.lower():
                 continue
-            marks = [m for m, on in (("text model", model == cfg.text_model), ("vision model", model == cfg.vision_model),
+            marks = [m for m, on in (("text model", model == cfg.text_model), ("text fallback", model in cfg.text_fallbacks),
+                                     ("vision model", model == cfg.vision_model),
+                                     ("vision fallback", model in cfg.vision_fallbacks),
                                      ("calibrated", model in calibrated)) if on]
             print(f"  {model}" + (f"  [{', '.join(marks)}]" if marks else ""))
         return 0

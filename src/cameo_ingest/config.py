@@ -154,26 +154,38 @@ class ProjectOptions:
     sketch: tuple[int, float, int] = SKETCH  # font, arrowhead legs and line width, in pixels
     image_first: bool = True  # the image before the text in vision requests (plan VA)
     part_chars: int = PART_CHARS[1]  # a package's parts, and a package summarized at once (plan TC)
+    text_fallbacks: tuple[str, ...] = ()  # asked when the first gives no usable answer (FM-07)
+    vision_fallbacks: tuple[tuple[str, bool], ...] = ()  # each with its image order
 
     @classmethod
     def of(cls, settings: TreeSettings, text_model: str | None, vision_model: str | None,
-           max_calls: int | None, calibration: dict[str, Any] | None = None) -> ProjectOptions:
-        """A run's options, from the tree's settings, the models the LLM configuration chose, and
-        the models' calibrations."""
+           max_calls: int | None, calibration: dict[str, Any] | None = None, *,
+           text_fallbacks: tuple[str, ...] = (),
+           vision_fallbacks: tuple[tuple[str, bool], ...] = ()) -> ProjectOptions:
+        """A run's options, from the tree's settings, the models the LLM configuration chose (the
+        fallbacks' with their image order), and the first models' calibrations."""
         from .prompts import CURRENT
 
         settings = settings.calibrated(calibration)
         enabled = bool(text_model or vision_model)
         return cls(settings.render, text_model, vision_model, max_calls, settings.image_pixels or IMAGE_PIXELS,
                    settings.modules, tuple(sorted(t.key for t in CURRENT.values())) if enabled else (),
-                   settings.sketch, settings.image_first is not False, settings.part_chars or PART_CHARS[1])
+                   settings.sketch, settings.image_first is not False, settings.part_chars or PART_CHARS[1],
+                   tuple(text_fallbacks) if text_model else (), tuple(vision_fallbacks) if vision_model else ())
+
+    def image_order(self) -> dict[str, bool]:
+        """Each vision model's image order, for the session (FM-06)."""
+        if not self.vision_model:
+            return {}
+        return {self.vision_model: self.image_first, **dict(self.vision_fallbacks)}
 
     def as_dict(self) -> dict[str, Any]:
         """As run.json records them, and as they are hashed."""
         out = {"render": self.render, "text_model": self.text_model, "vision_model": self.vision_model,
                "max_calls": self.max_calls, "image_pixels": self.image_pixels, "modules": list(self.modules),
                "templates": list(self.templates), "sketch": list(self.sketch), "image_first": self.image_first,
-               "part_chars": self.part_chars}
+               "part_chars": self.part_chars, "text_fallbacks": list(self.text_fallbacks),
+               "vision_fallbacks": [list(f) for f in self.vision_fallbacks]}
         return out
 
     def hash(self) -> str:
@@ -189,7 +201,7 @@ class Setting:
 
     key: str  # as `config` names it
     field: str  # the TreeSettings field that holds it
-    kind: str  # "switch", "text", "count" or "choice"
+    kind: str  # "switch", "text", "models", "count" or "choice"
     about: str
     default: str  # how `config show` names the default
     choices: tuple[str, ...] = ()
@@ -199,8 +211,10 @@ class Setting:
 
 SETTINGS = (
     Setting("llm", "no_llm", "switch", "use the LLM for summaries and descriptions", "on", inverse=True),
-    Setting("text-model", "text_model", "text", "the model for package summaries, at $OPENAI_BASE_URL", "none"),
-    Setting("vision-model", "vision_model", "text", "the model for diagram and image descriptions", "the text model"),
+    Setting("text-model", "text_model", "models",
+            "the model for package summaries, at $OPENAI_BASE_URL; \"A, B\": B when A gives no answer", "none"),
+    Setting("vision-model", "vision_model", "models",
+            "the model for diagram and image descriptions; \"A, B\" as for text-model", "the text model"),
     Setting("render", "render", "switch", "draw diagram sketches, which the vision model reads", "on"),
     Setting("rag-files", "rag_files", "switch", "write rag/: a file per chunk, for RAG tools that read files", "on"),
     Setting("rag-source", "rag_source", "choice", "how a rag/ file names its source", "trace", ("trace", "id")),
@@ -231,6 +245,11 @@ def parse_setting(key: str, text: str) -> Any:
         if t not in s.choices:
             raise ValueError(f"{key} is one of {', '.join(s.choices)}, not {text!r}")
         return t
+    if s.kind == "models":  # the first, then its fallbacks (FM-05)
+        names = [m.strip() for m in t.split(",")]
+        if not all(names) or len(set(names)) < len(names):
+            raise ValueError(f"{key} is a model's name, or several, \"A, B\", each once, not {text!r}")
+        return ", ".join(names)
     if s.kind == "count":
         if not t.isdigit() or int(t) < s.least:
             raise ValueError(f"{key} is a whole number of {s.least} or more, not {text!r}")

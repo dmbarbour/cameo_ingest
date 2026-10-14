@@ -331,6 +331,11 @@ def batches(f: Family) -> list[list[str]]:
     return out
 
 
+def answered_by(reply: Any) -> str | None:
+    """The model that gave an answer (`ask`'s derivation), if it says."""
+    return getattr(reply[1], "model", None) if isinstance(reply, tuple) and len(reply) > 1 else None
+
+
 def _asker(llm: Any, f: Family) -> Any:
     return asker(llm, f"subjects:{f.name}", (f.tokens[0],))
 
@@ -347,7 +352,8 @@ def ways_for(llm: Any, fams: list[Family], concurrency: int = 1, advance: Any = 
             advance(1)
         ways = [w for w in ((reply_json(got) or {}).get("ways") or [])[:WAYS] if isinstance(w, dict)]
         ways = [(w, [s for s in w.get("subjects") or [] if isinstance(s, dict) and s.get("label")]) for w in ways]
-        return [{"principle": w.get("principle"), "subjects": subs} for w, subs in ways if len(subs) >= 2] or None
+        return [{"principle": w.get("principle"), "subjects": subs, "model": answered_by(got)}
+                for w, subs in ways if len(subs) >= 2] or None
 
     with ThreadPoolExecutor(max(1, concurrency)) as pool:
         proposed = dict(zip((f.tokens[0] for f in fams), pool.map(propose, fams), strict=True))
@@ -362,15 +368,18 @@ def ways_for(llm: Any, fams: list[Family], concurrency: int = 1, advance: Any = 
         if advance:
             advance(1)
         reply = reply_json(r)
-        return {key: (reply or {}).get(str(i)) for i, key in enumerate(batch, 1)}, reply is None
+        return {key: (reply or {}).get(str(i)) for i, key in enumerate(batch, 1)}, reply is None, answered_by(r)
 
     with ThreadPoolExecutor(max(1, concurrency)) as pool:
         answers = list(pool.map(assign, tasks))
     assigned: dict[tuple[str, int], dict[str, Any]] = defaultdict(dict)
     failed: Counter[tuple[str, int]] = Counter()  # requests that got no answer it could read (FM-02)
-    for (f, n, _), (got, lost) in zip(tasks, answers, strict=True):
+    models: dict[tuple[str, int], set[str]] = defaultdict(set)  # the models that answered (FM-06)
+    for (f, n, _), (got, lost, model) in zip(tasks, answers, strict=True):
         assigned[f.tokens[0], n].update(got)
         failed[f.tokens[0], n] += lost
+        if model and not lost:
+            models[f.tokens[0], n].add(model)
     out: dict[str, list[dict[str, Any]] | None] = {}
     for f in fams:
         ways = proposed[f.tokens[0]]
@@ -382,7 +391,8 @@ def ways_for(llm: Any, fams: list[Family], concurrency: int = 1, advance: Any = 
             subjects = way["subjects"]
             members, unsorted = place(assigned[f.tokens[0], n], len(subjects))
             views.append({"id": f"ways-{n + 1}", "kind": "llm", "title": str(way["principle"] or f"Way {n + 1}")[:80],
-                          "model": llm.cfg.text_model,
+                          "model": way["model"] or llm.cfg.text_model,
+                          **({"also": sorted(also)} if (also := models[f.tokens[0], n] - {way["model"]}) else {}),
                           "subjects": [{"label": str(subjects[g]["label"])[:80],
                                         "holds": str(subjects[g].get("holds", ""))[:300], "diagrams": members[g]}
                                        for g in range(len(subjects)) if members.get(g)],

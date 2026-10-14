@@ -10,7 +10,7 @@ plan yet is in `docs/roadmap.md`. When a plan is done, its content goes to `docs
 | Plan | Prefix | Status |
 |---|---|---|
 | [Lineage of models, and choosing them](lineage-2026-10-07.md) | LN | CP1 to CP4 done (0.24.0); the maintainer's trial |
-| [Fallback models, and subjects robust to a failed request](fallback-models-2026-10-14.md) | FM | CP1 done (0.31.4), CP2 (0.31.5); CP3 under way |
+| [Fallback models, and subjects robust to a failed request](fallback-models-2026-10-14.md) | FM | CP1 done (0.31.4), CP2 (0.31.5), CP3; CP4 under way |
 
 ## Archived
 

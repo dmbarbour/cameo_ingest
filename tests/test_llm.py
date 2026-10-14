@@ -401,10 +401,12 @@ def test_llm_circuit_breaker(tmp_path, fake_chat, monkeypatch):
     out = tmp_path / "out"
     # Four items (a diagram, two images, a package summary); the endpoint fails every request.
     assert cli([str(src), "-o", str(out), "--text-model", "m", "--no-calibrate", "--no-preflight"]) == 0
-    assert len(fake_chat[0].requests) == 3  # then enrichment is switched off (BASE-006)
+    # Three image requests fail, so the model is off for images (BASE-006); the summary, text, is
+    # counted apart (FM-04): one that fails on images may still read text.
+    assert len(fake_chat[0].requests) == 4
     report = json.loads((out / "run.json").read_text())["llm"]
-    assert report["disabled_after_failures"] and report["outcomes"] == {"failed": 3, "skipped_disabled": 1}
-    assert report["incomplete"][0]["detail"] == "RuntimeError: endpoint down"
+    assert report["disabled_after_failures"] == ["m (vision)"] and report["outcomes"] == {"failed": 4}
+    assert report["incomplete"][0]["detail"] == "m: RuntimeError: endpoint down"  # the model that failed
 
 
 def test_items_left_without_text_are_asked_for_again(tmp_path, fake_chat, monkeypatch, caplog, capsys):
@@ -424,7 +426,7 @@ def test_items_left_without_text_are_asked_for_again(tmp_path, fake_chat, monkey
         return capsys.readouterr().out
 
     monkeypatch.setattr(FakeChat, "fail", True)
-    assert run()["llm"]["outcomes"] == {"failed": 3, "skipped_disabled": 1}
+    assert run()["llm"]["outcomes"] == {"failed": 4}
     for _ in range(4):  # still failing: built again, every run
         caplog.clear()
         assert run()["projects"]["written"] == 1
@@ -635,6 +637,7 @@ def test_the_breaker_is_per_model_and_counts_requests_in_flight(tmp_path):
     """A model is off after 3 consecutive failures, and one more per other request in flight at
     once; a success starts the count again; another model goes on answering (FM-04)."""
     from cameo_ingest.llm import EnrichmentSession, LLMConfig
+    from cameo_ingest.prompts import Template
 
     class Chat:
         replays = False
@@ -647,22 +650,25 @@ def test_the_breaker_is_per_model_and_counts_requests_in_flight(tmp_path):
                 raise TimeoutError("no word for 120 s")
             return f"{model} answers"
 
+    plain = Template("plain", 1, "a test", "{{X}}", ())
+
     def session(concurrency, failing):
         cfg = LLMConfig(text_model="t", vision_model="v", base_url=None, concurrency=concurrency)
         return EnrichmentSession(cfg, tmp_path / f"store{concurrency}", Chat(failing))
 
-    def ask(llm, model, item):
-        return llm._complete(model, [{"role": "user", "content": item}], item)
+    def ask(llm, item):
+        return llm.ask(plain, {"X": item}, inputs=(item,))
 
     llm = session(1, {"a", "b", "d", "e", "f"})
-    assert [ask(llm, "t", x) is None for x in "abcdef"] == [True, True, False, True, True, True]  # c resets the count
-    assert llm.off == {"t"} and ask(llm, "t", "g") is None and llm.outcomes["skipped_disabled"] == 1
-    assert ask(llm, "v", "h")[0] == "v answers"  # the other model goes on
-    assert llm.report()["disabled_after_failures"] == ["t"]
+    assert [ask(llm, x) is None for x in "abcdef"] == [True, True, False, True, True, True]  # c resets the count
+    assert llm.off == {"t (text)"} and ask(llm, "g") is None and llm.outcomes["skipped_disabled"] == 1
+    assert llm.report()["disabled_after_failures"] == ["t (text)"]
+    llm.cfg.text_model = "v"  # another model goes on
+    assert ask(llm, "h")[0] == "v answers"
 
     llm = session(8, set("abcdefghijk"))
     for x in "abcdefghi":
-        ask(llm, "t", x)
+        ask(llm, x)
     assert not llm.off and llm.breaker == 10  # 8 in flight together can fail together
-    ask(llm, "t", "j")
-    assert llm.off == {"t"}
+    ask(llm, "j")
+    assert llm.off == {"t (text)"}

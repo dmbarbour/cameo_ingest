@@ -69,7 +69,7 @@ def note_models(out: Path, client: Any, cfg: LLMConfig) -> None:
         return
     st = State(out)
     try:
-        for model in dict.fromkeys(m for m in (cfg.text_model, cfg.vision_model) if m):
+        for model in dict.fromkeys((*cfg.text_models, *cfg.vision_models)):
             key, now = f"model:{cfg.base_url or ''}|{model}", created.get(model)
             if now is None:
                 continue

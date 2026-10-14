@@ -63,11 +63,13 @@ def reply_json(reply: Any) -> Any:
 
 
 def asker(llm: Any, project: str, inputs: tuple[str, ...]) -> Callable[[Any, dict[str, str]], Any]:
-    """`llm.ask` for requests logged under `project` and `inputs`; in a replayed run, a miss at the
-    root is an unanswered request, not a failure."""
+    """`llm.ask` for requests logged under `project` and `inputs`, whose answers are JSON: one it
+    can't read goes to the next model (FM-06); in a replayed run, a miss at the root is an
+    unanswered request, not a failure."""
     def ask(template: Any, values: dict[str, str]) -> Any:
         try:
-            return llm.ask(template, values, project=project, inputs=inputs)
+            return llm.ask(template, values, project=project, inputs=inputs,
+                           accept=lambda text: reply_json(text) is not None)
         except ReplayMiss as e:
             log.debug("%s: %s", project, e)
             return None

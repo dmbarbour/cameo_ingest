@@ -1,6 +1,6 @@
 # Plan: fallback models, and subjects robust to a failed request
 
-- **Status:** CP1 done (0.31.4), CP2 (0.31.5); CP3 under way.
+- **Status:** CP1 done (0.31.4), CP2 (0.31.5), CP3; CP4 under way.
 - **Prefix:** `FM`. Steps are `FM-01` and so on.
 - **From:** the maintainer, 2026-10-14:
 
@@ -80,7 +80,8 @@ the part-size guard. The question is which calibration sets the sizes:
 
 ### FM-D4: the breaker
 
-- *Per model, tripping after `3 + concurrency - 1` consecutive failures (chosen):* requests in
+- *Per model (and, since CP3, per kind of request), tripping after `3 + concurrency - 1`
+  consecutive failures (chosen):* requests in
   flight together share a fate, so a breaker that counts them separately trips on one bad moment.
   Per model, a broken first model sends the rest to the fallback at once, without each request
   waiting out its timeout. Enrichment is off when every model of a kind is.
@@ -139,6 +140,10 @@ changes, the requests follow the new list.
   from the setting (`session.llm_config`), rather than from the runner, so calibrations count
   the same way. `run.json`'s `disabled_after_failures` lists the models. Test:
   `test_the_breaker_is_per_model_and_counts_requests_in_flight`.
+- **Changed in CP3:** the breaker counts each model's text and image requests apart ("m (text)",
+  "m (vision)"): in a run with a fallback, three images the first model timed out on switched it
+  off for the package summaries too, which it reads well. The cost: an endpoint that is down
+  costs up to three failures per model and kind before it is off, not three in all.
 
 ### CP3: fallback models (FM-05 to FM-09)
 
@@ -158,6 +163,15 @@ changes, the requests follow the new list.
   on the next build; JSON refused by the first and accepted from the second; provenance and
   `run.json`.
 - Commit.
+- **Done:** `llm.model_list`, `LLMConfig.text_fallbacks`, `vision_fallbacks`, `text_models`,
+  `vision_models`; the setting kind `models` (`config.parse_setting`); `EnrichmentSession.ask`
+  (stored answers along the list, then each model; `accept`; one outcome per item, a failure's
+  detail naming each model; `fallback` counted), `_complete` returning a `Miss`, `_messages` (the
+  image order per model, `image_first` a dict), `only` (for CP4); `ProjectOptions.text_fallbacks`,
+  `vision_fallbacks` (with their image order), `image_order`; `cli.tree.fallbacks`;
+  `checks.run_checks`, `preflight`, `note_models`, `config models` over every model;
+  `discovery.asker`'s `accept` (JSON it can read); a subjects way's `model` is the proposal's,
+  and `also` the other models that assigned its diagrams. Tests: `tests/test_fallbacks.py`.
 
 ### CP4: calibrating the fallbacks (FM-10 to FM-11)
 

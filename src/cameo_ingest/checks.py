@@ -51,21 +51,22 @@ def run_checks(client: Any, cfg: LLMConfig) -> list[Check]:
         models = client.models()
         return True, f"{len(models)} models listed"
 
-    def text() -> tuple[bool, str]:
-        reply = client.complete(cfg.text_model, [{"role": "user", "content": "Reply with the single word: ready"}], 0)
+    def text(model: str) -> tuple[bool, str]:
+        reply = client.complete(model, [{"role": "user", "content": "Reply with the single word: ready"}], 0)
         return "ready" in reply.lower(), f"answered {reply[:60]!r}"
 
-    def vision() -> tuple[bool, str]:
+    def vision(model: str) -> tuple[bool, str]:
         url = f"data:image/png;base64,{base64.b64encode(card_png()).decode()}"
-        reply = client.complete(cfg.vision_model, [{"role": "user", "content": [
+        reply = client.complete(model, [{"role": "user", "content": [
             {"type": "text", "text": "What number is written in this image? Reply with the number only."},
             {"type": "image_url", "image_url": {"url": url}}]}], 0)
         ok = CARD_NUMBER in reply
         return ok, f"read {reply[:60]!r}" + ("" if ok else f", not {CARD_NUMBER}: it may not take images")
 
     out = [_timed("the endpoint lists its models", listing)]
-    if cfg.text_model:
-        out.append(_timed(f"the text model {cfg.text_model} answers", text))
-    if cfg.vision_model:
-        out.append(_timed(f"the vision model {cfg.vision_model} reads an image", vision))
+    for n, m in enumerate(cfg.text_models):  # every model of each list (FM-08)
+        out.append(_timed(f"the text {'model' if n == 0 else f'fallback {n}'} {m} answers", lambda m=m: text(m)))
+    for n, m in enumerate(cfg.vision_models):
+        out.append(_timed(f"the vision {'model' if n == 0 else f'fallback {n}'} {m} reads an image",
+                          lambda m=m: vision(m)))
     return out

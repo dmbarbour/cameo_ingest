@@ -66,7 +66,7 @@ def test_live_bad_model(tmp_path, live, capsys):
     out = tmp_path / "b"
     assert cli([str(src), "-o", str(out), "--text-model", bad, "--no-calibrate", "--no-preflight"]) == 0
     report = llm_report(out)
-    assert report["disabled_after_failures"] and report["outcomes"] == {"failed": 3, "skipped_disabled": 1}
+    assert report["disabled_after_failures"] == [f"{bad} (vision)"] and report["outcomes"] == {"failed": 4}
 
 
 @pytest.mark.skipif(not DRONE.exists(), reason="sample not fetched (scripts/fetch_samples.py --small)")

@@ -142,11 +142,13 @@ def run(out: Path, args: argparse.Namespace) -> int:
         def prepare() -> ProjectOptions:  # after the scan: the models calibrated, if they aren't yet
             options = ProjectOptions.of(settings, cfg.text_model, cfg.vision_model, cfg.max_calls,
                                         calibration_for_run(out, state, llm, settings, progress,
-                                                            calibrate=not args.no_calibrate))
-            llm.image_first = options.image_first
+                                                            calibrate=not args.no_calibrate),
+                                        **fallbacks(cfg))
+            llm.image_first = options.image_order()
             return options
 
-        runner = Runner(state, out, llm, ProjectOptions.of(settings, cfg.text_model, cfg.vision_model, cfg.max_calls),
+        runner = Runner(state, out, llm, ProjectOptions.of(settings, cfg.text_model, cfg.vision_model, cfg.max_calls,
+                                                           **fallbacks(cfg)),
                         progress, concurrency=settings.llm_concurrency or 1, prepare=prepare,
                         ask_again=settings.ask_again)
         previous = signal.signal(signal.SIGTERM, _interrupt)
@@ -162,6 +164,14 @@ def run(out: Path, args: argparse.Namespace) -> int:
               + ", ".join(f"{n} {s}" for s, n in sorted(counts.items())))
         return code
 
+
+
+def fallbacks(cfg: Any, image_first: dict[str, bool] | None = None) -> dict[str, Any]:
+    """The fallback models for `ProjectOptions.of`: the vision ones with their image order, the
+    calibrated one or the default, image first (FM-07)."""
+    order = image_first or {}
+    return {"text_fallbacks": cfg.text_fallbacks,
+            "vision_fallbacks": tuple((m, order.get(m, True)) for m in cfg.vision_fallbacks)}
 
 
 def _interrupt(signum: int, frame: Any) -> None:
