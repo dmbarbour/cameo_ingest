@@ -75,6 +75,15 @@ def test_the_llms_topics_and_its_failures(monkeypatch):
     assert topics.requests(subs) == 4
     view = topics.llm_view(FakeLLM(fail=2), subs)
     assert len(view["unsorted"]) == 3 and sum(len(t["subjects"]) for t in view["topics"]) == 6
+    assert view["requests"] == {"failed": 1, "of": 3}  # FM-02
+    rec = topics.entry(subs, view, asked=True)
+    assert rec["ways"] == "incomplete" and rec["default"] == "words"  # a third unsorted: words first
+    assert topics.problem(rec) == ('topics across models: 1 of 4 requests failed, so 3 of 9 subjects are unsorted; '
+                                   '"By shared words and elements" is shown first; the next run asks again for those')
+    assert topics.problem(topics.entry(subs, None, asked=True), ask_again=False) == (
+        "topics across models: the request for the LLM's topics failed; \"By shared words and elements\" is shown "
+        "first; ask-again is off")
+    assert topics.problem(topics.entry(subs, topics.llm_view(FakeLLM(), subs), asked=True)) is None
 
 
 def test_topics_in_the_page():

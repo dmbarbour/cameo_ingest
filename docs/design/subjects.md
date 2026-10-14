@@ -19,8 +19,8 @@ How a model's diagrams are split into subjects, for browsing and for grouping se
 
 | View | How | When it comes first |
 |---|---|---|
-| The LLM's ways (`ways-1` to `ways-3`) | `SUBJECTS_PROPOSE`: an outline (packages three deep with diagram counts, 60 example diagrams) to about three ways, each a principle and labelled subjects; then `SUBJECTS_ASSIGN`, 30 diagrams a request, batches cut by package | When every way assigned at least 95% of the diagrams |
-| Shared elements (`shared`) | Louvain on a graph of diagrams: an edge per element two diagrams show, weighted by the log of how rare it is; half that for an owner they share; half for a relationship between what they show. Merged down to the target, groups under 3 always; a diagram that shows nothing goes by its package. Labelled by distinctive words, leaving out those in over 30% of the about texts | When the tree has no LLM, the proposal failed, or a way left over 5% unsorted |
+| The LLM's ways (`ways-1` to `ways-3`) | `SUBJECTS_PROPOSE`: an outline (packages three deep with diagram counts, 60 example diagrams) to about three ways, each a principle and labelled subjects; then `SUBJECTS_ASSIGN`, 30 diagrams a request, batches cut by package | The first way that assigned at least 95% of the diagrams (FM-01) |
+| Shared elements (`shared`) | Louvain on a graph of diagrams: an edge per element two diagrams show, weighted by the log of how rare it is; half that for an owner they share; half for a relationship between what they show. Merged down to the target, groups under 3 always; a diagram that shows nothing goes by its package. Labelled by distinctive words, leaving out those in over 30% of the about texts | When the tree has no LLM, the proposal failed, or every way left over 5% unsorted |
 | Packages (`packages`) | The package tree, cut at the depth whose number of groups is nearest the target | For a family too small to split |
 
 - **Unsorted diagrams** stay under "Not sorted yet". Placing them by their shared-element group's
@@ -64,8 +64,11 @@ shows the elements its diagrams show. Topics need at least two families (`MIN_FA
   `diagrams` (key to the versions holding it), `views` and `default`, and `ways`: `found`,
   `incomplete`, `failed`, `not asked` or `too few diagrams`; then `topics`: its signature, `views`
   (each topic's `subjects` as `token/n`, a family's newest token and the subject's place in its
-  default view; `unsorted`), `default`, and `ways` as a family's, or `too few models`. `run.json`
-  and `status` count them.
+  default view; `unsorted`), `default`, and `ways` as a family's, or `too few models`. An LLM
+  view records its requests, `{"failed": n, "of": n}` (FM-02). `run.json` and `status` count them,
+  and the log and `status` give a line for each family (and the topics) that lacks something: the
+  requests that failed, what each way left unsorted, what is shown first, and whether the next
+  run asks again (`subjects.problem`, `topics.problem`; FM-03).
 
 ## In the exports
 

@@ -258,20 +258,22 @@ def llm_view(llm: Any, subs: list[Subject], concurrency: int = 1, advance: Any =
         return None
     menu = "\n".join(f"{n}. {t['label']}: {t.get('holds', '')}" for n, t in enumerate(topics, 1))
 
-    def assign(batch: list[int]) -> dict[int, Any]:
+    def assign(batch: list[int]) -> tuple[dict[int, Any], bool]:
         text = "\n".join(f"{n}. {subs[i].describe()}" for n, i in enumerate(batch, 1))
-        reply = reply_json(ask(TOPICS_ASSIGN, {"TOPICS": menu, "SUBJECTS": text})) or {}
+        reply = reply_json(ask(TOPICS_ASSIGN, {"TOPICS": menu, "SUBJECTS": text}))
         if advance:
             advance(1)
-        return {i: reply.get(str(n)) for n, i in enumerate(batch, 1)}
+        return {i: (reply or {}).get(str(n)) for n, i in enumerate(batch, 1)}, reply is None
 
     with ThreadPoolExecutor(max(1, concurrency)) as pool:
         answers = list(pool.map(assign, batches(subs)))
-    members, unsorted = place({i: v for got_ in answers for i, v in got_.items()}, len(topics))
+    members, unsorted = place({i: v for got_, _ in answers for i, v in got_.items()}, len(topics))
     split = {i: t for t, ids in members.items() for i in ids}
-    return _view(subs, split, "llm", "llm", "Topics across models",
+    view = _view(subs, split, "llm", "llm", "Topics across models",
                  {t: str(topics[t]["label"])[:80] for t in range(len(topics))},
                  {t: str(topics[t].get("holds", ""))[:300] for t in range(len(topics))}, unsorted)
+    view["requests"] = {"failed": sum(lost for _, lost in answers), "of": len(answers)}  # FM-02
+    return view
 
 
 # -- the root file -----------------------------------------------------------------------------------
@@ -294,6 +296,21 @@ def entry(subs: list[Subject], view: dict[str, Any] | None, asked: bool) -> dict
     rec.update(views=views, default=views[0]["id"],
                ways=status(view is not None, unsorted == 0, asked))
     return rec
+
+
+def problem(rec: dict[str, Any], ask_again: bool = True) -> str | None:
+    """What the topics record lacks, in a line for the log and `status` (FM-03); None if nothing."""
+    if not rec or rec.get("ways") not in ("failed", "incomplete"):
+        return None
+    first = rec["views"][0]["title"]
+    again = "the next run asks again" if ask_again else "ask-again is off"
+    if rec["ways"] == "failed":
+        return f'topics across models: the request for the LLM\'s topics failed; "{first}" is shown first; {again}'
+    view = next(v for v in rec["views"] if v["kind"] == "llm")
+    lost, asked = view.get("requests", {}).get("failed", 0), view.get("requests", {}).get("of", 0)
+    head = f"{lost} of {asked + 1} requests failed, so " if lost else ""
+    return (f"topics across models: {head}{len(view['unsorted'])} of {rec['subjects']} subjects are unsorted; "
+            f'"{first}" is shown first; {again} for those')
 
 
 def update(fams: list[Family], records: list[dict[str, Any]], before: dict[str, Any] | None, llm: Any = None,

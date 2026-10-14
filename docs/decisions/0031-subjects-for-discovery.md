@@ -34,8 +34,9 @@
   their distinctive words. It serves when the tree has no LLM, or the family's proposal fails.
 - **A way partly assigned** keeps its unanswered diagrams under "Not sorted yet", never a guess
   (placing them by their community's majority matched the LLM's own choice 49% of the time).
-  The next run retries them, since failures aren't stored. While more than 5% are unsorted, the
-  fallback is the family's default view.
+  The next run retries them, since failures aren't stored. The default view is the first way with
+  at most 5% unsorted, so a failed request costs its way, not the family (FM-01); while every way
+  has more, the fallback is the default.
 - **The package tree** is always a view, as fact.
 - **Views, not settings** (ADR-0027): every tree computes the same splits. The search page offers
   them as views of a family, the default first.
@@ -59,5 +60,6 @@
 
 ## Changes
 
+- 2026-10-14: the default is the first way with at most 5% unsorted, not the fallback whenever any way has more (plan FM, FM-01). Before: `6e82e96`.
 - 2026-10-07: families from lineage (ADR-0032), so that rival bids keep their own diagrams. Before: `9536e4d`.
 - 2026-10-07: topics across models (plan SB CP4; `docs/research/subjects-2026-10-07.md`). Before: `5831a93`.

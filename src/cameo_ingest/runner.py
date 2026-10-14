@@ -326,7 +326,7 @@ def status(state: State) -> dict[str, Any]:
             "gaps": [{"token": f"sha256:{r['content_sha256']}", "name": r["name"], "items": r["items"],
                       "builds": r["builds"], "again": again} for r in state.gaps()],
         },
-        "subjects": subjects.summary(state.out),
+        "subjects": subjects.summary(state.out, again),
         "calibrations": [{"model": r["model"], "kind": r["kind"], "endpoint": r["endpoint"], "created": r["created"],
                           "settings": json.loads(r["settings"]), "report": r["report"],
                           "validation": json.loads(r["validation"]) if r["validation"] else None}

@@ -202,11 +202,11 @@ def print_status(state: State, as_json: bool) -> None:
               + ("the next run asks again)" if p["again"] else "ask-again is off)"))
     sub = s.get("subjects") or {}
     if sub.get("families"):
-        parts = [f"{n} {w}" for w, n in sub.items() if w not in ("families", "topics")]
+        parts = [f"{n} {w}" for w, n in sub.items() if w not in ("families", "topics", "problems")]
         print(f"subjects: {sub['families']} famil{'y' if sub['families'] == 1 else 'ies'} of versions ({', '.join(parts)})"
-              + (("; a run asks again for those failed or incomplete" if s["ask_again"] else "; ask-again is off")
-                 if sub.get("failed") or sub.get("incomplete") else "")
               + (f"; topics across models: {sub['topics']}" if sub.get("topics") else ""))
+        for line in sub.get("problems", []):  # what failed, what it costs, what happens next (FM-03)
+            print(f"  {line}")
     for p in s["projects"]["recovered"]:
         n = sum(e["names"] for e in p["entries"].values())
         first = next(iter(p["entries"].values()))["first"]

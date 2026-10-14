@@ -361,14 +361,16 @@ def ways_for(llm: Any, fams: list[Family], concurrency: int = 1, advance: Any = 
         r = _asker(llm, f)(SUBJECTS_ASSIGN, {"SUBJECTS": listing, "DIAGRAMS": text})
         if advance:
             advance(1)
-        reply = reply_json(r) or {}
-        return {key: reply.get(str(i)) for i, key in enumerate(batch, 1)}
+        reply = reply_json(r)
+        return {key: (reply or {}).get(str(i)) for i, key in enumerate(batch, 1)}, reply is None
 
     with ThreadPoolExecutor(max(1, concurrency)) as pool:
         answers = list(pool.map(assign, tasks))
     assigned: dict[tuple[str, int], dict[str, Any]] = defaultdict(dict)
-    for (f, n, _), got in zip(tasks, answers, strict=True):
+    failed: Counter[tuple[str, int]] = Counter()  # requests that got no answer it could read (FM-02)
+    for (f, n, _), (got, lost) in zip(tasks, answers, strict=True):
         assigned[f.tokens[0], n].update(got)
+        failed[f.tokens[0], n] += lost
     out: dict[str, list[dict[str, Any]] | None] = {}
     for f in fams:
         ways = proposed[f.tokens[0]]
@@ -384,7 +386,8 @@ def ways_for(llm: Any, fams: list[Family], concurrency: int = 1, advance: Any = 
                           "subjects": [{"label": str(subjects[g]["label"])[:80],
                                         "holds": str(subjects[g].get("holds", ""))[:300], "diagrams": members[g]}
                                        for g in range(len(subjects)) if members.get(g)],
-                          "unsorted": unsorted})
+                          "unsorted": unsorted,
+                          "requests": {"failed": failed[f.tokens[0], n], "of": len(batches(f))}})
         out[f.tokens[0]] = views
     return out
 
@@ -405,13 +408,34 @@ def entry(f: Family, ways: list[dict[str, Any]] | None, asked: bool) -> dict[str
         rec.update(views=[package_view(f)], default="packages", ways="too few diagrams")
         return rec
     views: list[dict[str, Any]] = list(ways or [])
-    worst = max((len(v["unsorted"]) / len(f.items) for v in views), default=1.0)
-    if not views or worst > UNSORTED_LIMIT:
+    shown = next((v for v in views if len(v["unsorted"]) <= UNSORTED_LIMIT * len(f.items)), None)
+    if shown is None:
         views.insert(0, shared_view(f))  # the fallback, first
+    else:  # the first way sorted well enough, though another lost a batch (FM-01)
+        views.remove(shown)
+        views.insert(0, shown)
     views.append(package_view(f))
     rec.update(views=views, default=views[0]["id"],
-               ways=status(bool(ways), worst == 0, asked))
+               ways=status(bool(ways), bool(ways) and not any(v["unsorted"] for v in ways), asked))
     return rec
+
+
+def problem(rec: dict[str, Any], ask_again: bool = True) -> str | None:
+    """What a family's record lacks, in a line for the log and `status` (FM-03): which requests
+    failed, what they left unsorted, what is shown first, and what happens next; None if nothing."""
+    if rec.get("ways") not in ("failed", "incomplete"):
+        return None
+    first = rec["views"][0]["title"]
+    again = "the next run asks again" if ask_again else "ask-again is off"
+    if rec["ways"] == "failed":
+        return f'subjects of {rec["name"]}: the request for the LLM\'s ways failed; "{first}" is shown first; {again}'
+    n = len(rec["diagrams"])
+    ways = [v for v in rec["views"] if v.get("kind") == "llm"]
+    lost = sum(v.get("requests", {}).get("failed", 0) for v in ways)
+    asked = sum(v.get("requests", {}).get("of", 0) for v in ways)
+    parts = [f'"{v["title"]}" leaves {len(v["unsorted"])} of {n} diagrams unsorted' for v in ways if v["unsorted"]]
+    head = f"{lost} of {asked + 1} requests failed, so " if lost else ""
+    return f'subjects of {rec["name"]}: {head}{"; ".join(parts)}; "{first}" is shown first; {again} for those'
 
 
 def load(out: Path) -> dict[str, dict[str, Any]]:
@@ -424,12 +448,14 @@ def load_topics(out: Path) -> dict[str, Any] | None:
     return (read(out) or {}).get("topics")
 
 
-def summary(out: Path) -> dict[str, Any]:
-    """For `status`: how many families, how their ways stand, and how the topics across models do."""
+def summary(out: Path, ask_again: bool = True) -> dict[str, Any]:
+    """For `status`: how many families, how their ways stand, how the topics across models do, and
+    a line for each that lacks something (FM-03)."""
     data = read(out) or {}
-    recs, topics = data.get("families", []), data.get("topics") or {}
+    recs, across = data.get("families", []), data.get("topics") or {}
+    lines = [problem(r, ask_again) for r in recs] + [topics.problem(across, ask_again)]
     return {"families": len(recs), **dict(sorted(Counter(r.get("ways") for r in recs).items())),
-            **({"topics": topics["ways"]} if topics.get("ways") else {})}
+            **({"topics": across["ways"]} if across.get("ways") else {}), "problems": [x for x in lines if x]}
 
 
 def update(state: Any, out: Path, llm: Any = None, concurrency: int = 1, progress: Progress = QUIET,
@@ -463,12 +489,7 @@ def update(state: Any, out: Path, llm: Any = None, concurrency: int = 1, progres
                           ask_again)
     write(out, records, found)
     counts = Counter(r.get("ways") for r in records)
-    until = "until a run completes them" if ask_again else "(ask-again is off)"
-    for r in records:
-        if r.get("ways") in ("failed", "incomplete"):
-            log.warning("subjects of %s: the LLM's ways %s; %s is shown first %s", r["name"],
-                        "failed" if r["ways"] == "failed" else "left diagrams unsorted", r["views"][0]["title"], until)
-    if found.get("ways") in ("failed", "incomplete"):
-        log.warning("topics across models: the LLM's %s; topics by words are shown first %s",
-                    "failed" if found["ways"] == "failed" else "left subjects unsorted", until)
+    for line in [problem(r, ask_again) for r in records] + [topics.problem(found, ask_again)]:
+        if line:
+            log.warning("%s", line)
     return {"families": len(records), **dict(sorted((k, v) for k, v in counts.items() if k)), "topics": found["ways"]}

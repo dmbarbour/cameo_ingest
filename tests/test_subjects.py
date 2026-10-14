@@ -152,9 +152,16 @@ def test_subjects_and_their_fallbacks(versions_tree, tmp_path):
     (out / discovery.FILE).unlink()
     _, fams = _update(out, FakeLLM(fail=1))
     f = fams[fork]
-    unsorted = f["views"][1]["unsorted"]
-    assert f["ways"] == "incomplete" and f["default"] == "shared" and unsorted  # over 5% unsorted
-    assert all(k not in s["diagrams"] for s in f["views"][1]["subjects"] for k in unsorted)  # never a guess
+    lost = next(v for v in f["views"] if v["id"] == "ways-1")  # its first batch unanswered
+    unsorted = lost["unsorted"]
+    assert len(unsorted) == 30 and lost["requests"] == {"failed": 1, "of": BATCHES}
+    assert all(k not in s["diagrams"] for s in lost["subjects"] for k in unsorted)  # never a guess
+    # One failed request costs its way, not the family: the next way, complete, is shown first (FM-01)
+    assert f["ways"] == "incomplete" and f["default"] == "ways-2" and f["views"][0]["id"] == "ways-2"
+    assert "shared" not in [v["id"] for v in f["views"]]
+    assert subjects.problem(f) == (f'subjects of {fork}: 1 of {1 + 3 * BATCHES} requests failed, so "By part" leaves '
+                                   '30 of 88 diagrams unsorted; "By activity" is shown first; the next run asks '
+                                   'again for those')
     held = FakeLLM()
     _, fams = _update(out, held, ask_again=False)  # `config set ask-again off`: kept as it is (RN-007)
     assert fams[fork]["ways"] == "incomplete" and not held.asked
@@ -201,4 +208,7 @@ def test_a_run_writes_subjects(tmp_path, fake_chat, capsys):
     assert rec["default"] == "shared" and rec["ways"] == "failed"
     capsys.readouterr()
     assert cli(["status", "-o", str(out)]) == 0
-    assert "subjects: 1 family of versions (1 failed); a run asks again" in capsys.readouterr().out
+    shown = capsys.readouterr().out
+    assert "subjects: 1 family of versions (1 failed)" in shown
+    assert ("  subjects of Port_Calder_Traffic_Signal_System.mdzip: the request for the LLM's ways failed; \"By shared elements\" "
+            "is shown first; the next run asks again\n") in shown
